@@ -83,7 +83,7 @@ export default function SignInscreen(){
             <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
           </TouchableOpacity>
           {/* Heading */}
-          <Text style={styles.heading}>Login to your{"\n"}Account</Text>
+          <Text style={styles.heading}>Welcome{"\n"}Back !</Text>
           {/* Email Input */}
           <View style={[styles.inputRow, hasError("email") && styles.inputError]}>
             <Ionicons name="mail-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />

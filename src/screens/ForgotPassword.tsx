@@ -66,7 +66,7 @@ function ForgotPassword(){
       setSuccess(true);
       // wait briefly so user sees success message then navigate
       setTimeout(() => {
-        navigation.navigate("CheckEmail");
+        navigation.navigate("verifyemail");
       }, 800);
     }, 3000);
   };
@@ -140,7 +140,7 @@ function ForgotPassword(){
           {loading ? (
             <ActivityIndicator size="small" color="#1A0E00" />
           ) : (
-            <Text style={styles.ctaText}>Send Reset Link</Text>
+            <Text style={styles.ctaText}>Request password reset</Text>
           )}
         </Pressable>
       </KeyboardAvoidingView>
