@@ -1,4 +1,4 @@
-import { StyleSheet, Text,  View } from 'react-native'
+import { Image, StyleSheet, Text,  View } from 'react-native'
 import React, { useEffect } from 'react'
 import {s} from "react-native-size-matters"
 import { useNavigation } from '@react-navigation/native'
@@ -10,7 +10,7 @@ const splashscreen = () => {
  useEffect(() => {
   const timer=setTimeout(() => {
     navigation.navigate("signin")
-  }, 4000);
+  }, 5000);
   return()=>clearTimeout(timer)
   }, [])
   
@@ -19,7 +19,10 @@ const splashscreen = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.logo}>Vydora</Text>
+       <Image
+                style={styles.logo}
+                source={require("../../assets/logo.png")}
+                />
     </View>
   )
 }
@@ -31,11 +34,12 @@ container:{
  flex:1,
  backgroundColor:'black',
  justifyContent:'center',
+ alignItems:'center',
 },
 logo:{
- fontSize:s(30),
- color:'#ffc107',
- textAlign:'center',
- fontWeight:'600',
+
+width:s(320),
+height:s(320),
+// marginRight:s(10),
 }
 })
