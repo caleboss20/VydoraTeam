@@ -9,8 +9,10 @@ import {
   StatusBar,
   ScrollView,
   Image,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,6 +29,7 @@ interface TouchedFields {
   password?: boolean;
 }
 export default function Signupscreen(){
+      const navigation=useNavigation()
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -76,11 +79,11 @@ export default function Signupscreen(){
           showsVerticalScrollIndicator={false}
         >
           {/* Back arrow */}
-          <TouchableOpacity style={styles.backBtn} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} activeOpacity={0.7} onPress={()=>navigation.navigate("splashscreen")}>
             <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
           </TouchableOpacity>
           {/* Heading */}
-          <Text style={styles.heading}>Login to your{"\n"}Account</Text>
+          <Text style={styles.heading}>Create your{"\n"}Account</Text>
           {/* Email Input */}
           <View style={[styles.inputRow, hasError("email") && styles.inputError]}>
             <Ionicons name="mail-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />
@@ -134,26 +137,13 @@ export default function Signupscreen(){
             <Text style={styles.errorText}>{errors.password}</Text>
           )}
           {/* Remember Me */}
-          <TouchableOpacity
-            style={styles.rememberRow}
-            onPress={() => setRememberMe(!rememberMe)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
-              {rememberMe && (
-                <Ionicons name="checkmark" size={ms(12)} color="#13151A" />
-              )}
-            </View>
-            <Text style={styles.rememberText}>Remember me</Text>
-          </TouchableOpacity>
+          
+          
           {/* Sign In CTA */}
           <TouchableOpacity style={styles.cta} onPress={handleSignup} activeOpacity={0.85}>
-            <Text style={styles.ctaText}>Sign In</Text>
+            <Text style={styles.ctaText}>Sign Up</Text>
           </TouchableOpacity>
-          {/* Forgot Password */}
-          <TouchableOpacity style={styles.forgotWrap} activeOpacity={0.7}>
-            <Text style={styles.forgotText}>Forgot the password?</Text>
-          </TouchableOpacity>
+         
           {/* Or continue with */}
           <Text style={styles.orText}>or continue with</Text>
           {/* Social icons row */}
@@ -176,10 +166,10 @@ export default function Signupscreen(){
           </View>
           {/* Sign Up */}
           <View style={styles.signupRow}>
-            <Text style={styles.signupMuted}>Don't have an account? </Text>
-            <TouchableOpacity activeOpacity={0.7}>
-              <Text style={styles.signupLink}>Sign up</Text>
-            </TouchableOpacity>
+            <Text style={styles.signupMuted}>Already have an account? </Text>
+             <Pressable onPress={()=>navigation.navigate("signin")}>
+                         <Text style={styles.signupLink}>Sign In</Text>
+                       </Pressable>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -189,7 +179,7 @@ export default function Signupscreen(){
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "black",
+    backgroundColor: "#13151c",
   },
   scroll: {
     // flexGrow: 1,
@@ -202,7 +192,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontSize: s(32),
-    marginTop: vs(10),
+    marginTop: vs(0),
     color: "#ffffff",
     fontWeight: "600",
     marginBottom: vs(35),
@@ -215,7 +205,7 @@ const styles = StyleSheet.create({
     borderRadius: s(10),
     paddingHorizontal: s(12),
     paddingVertical: vs(12),
-    marginBottom: vs(16),
+    marginBottom: vs(26),
     gap: s(10),
     borderWidth: s(0.5),
     borderColor: "transparent",
@@ -238,14 +228,7 @@ const styles = StyleSheet.create({
     marginBottom: s(10),
     marginLeft: s(4),
   },
-  rememberRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: s(10),
-    marginTop: vs(6),
-    marginBottom: vs(24),
-    alignSelf: "center",
-  },
+ 
   checkbox: {
     width: s(16),
     height: s(16),
@@ -270,10 +253,11 @@ const styles = StyleSheet.create({
     paddingVertical: vs(11),
     alignItems: "center",
     marginBottom: vs(16),
+    marginTop:s(40),
   },
   ctaText: {
     fontSize: ms(14),
-    fontWeight: "500",
+    fontWeight: "700",
     color: "#1A0E00",
   },
   forgotWrap: {
@@ -311,7 +295,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     gap: s(2),
-    marginTop: vs(10),
+    marginTop: vs(30),
   },
   signupMuted: {
     fontSize: ms(13),

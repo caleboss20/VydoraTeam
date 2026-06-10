@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 interface ValidationFields {
   email: string;
   password: string;
@@ -28,6 +29,7 @@ interface TouchedFields {
   password?: boolean;
 }
 export default function SignInscreen(){
+  const navigation=useNavigation()
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -77,7 +79,7 @@ export default function SignInscreen(){
           showsVerticalScrollIndicator={false}
         >
           {/* Back arrow */}
-          <TouchableOpacity style={styles.backBtn} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={()=>navigation.navigate("signup")}>
             <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
           </TouchableOpacity>
           {/* Heading */}
@@ -152,9 +154,9 @@ export default function SignInscreen(){
             <Text style={styles.ctaText}>Sign In</Text>
           </TouchableOpacity>
           {/* Forgot Password */}
-          <TouchableOpacity style={styles.forgotWrap} activeOpacity={0.7}>
+          <Pressable style={styles.forgotWrap } onPress={()=>navigation.navigate("forgotpassword")}>
             <Text style={styles.forgotText}>Forgot the password?</Text>
-          </TouchableOpacity>
+          </Pressable>
           {/* Or continue with */}
           <Text style={styles.orText}>or continue with</Text>
           {/* Social icons row */}
@@ -190,7 +192,7 @@ export default function SignInscreen(){
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "black",
+    backgroundColor: "#13151c",
   },
   scroll: {
     // flexGrow: 1,
@@ -203,7 +205,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontSize: s(32),
-    marginTop: vs(10),
+    marginTop: vs(0),
     color: "#ffffff",
     fontWeight: "600",
     marginBottom: vs(35),
@@ -236,7 +238,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: ms(11),
     color: "#FF4D4D",
-    marginBottom: s(10),
+    marginBottom: s(16),
     marginLeft: s(4),
   },
   rememberRow: {
@@ -274,7 +276,7 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     fontSize: ms(14),
-    fontWeight: "500",
+    fontWeight: "700",
     color: "#1A0E00",
   },
   forgotWrap: {
@@ -312,7 +314,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     gap: s(2),
-    marginTop: vs(10),
+    marginTop: vs(25),
   },
   signupMuted: {
     fontSize: ms(13),
