@@ -6,6 +6,7 @@ import Signupscreen from "./Signupscreen";
 import ForgotPassword from "./ForgotPassword";
 import VerifyEmail from "./OtpVerification";
 import PasswordReset from "./Passwordreset";
+import PasswordSuccess from "./Passwordsuccess";
 const Stack=createNativeStackNavigator();
 
 function MainStackNavigator(){
@@ -22,6 +23,7 @@ function MainStackNavigator(){
                <Stack.Screen name="forgotpassword" component={ForgotPassword} />
                 <Stack.Screen name="verifyemail" component={VerifyEmail} />
                  <Stack.Screen name="passwordreset" component={PasswordReset} />
+                 <Stack.Screen name="passwordsuccess" component={PasswordSuccess} />
         
               
         </Stack.Navigator>

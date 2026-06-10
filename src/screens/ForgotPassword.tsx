@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     marginTop: vs(1),
     color: "#ffffff",
     fontWeight: "600",
-    marginBottom: vs(25),
+    marginBottom: vs(15),
     lineHeight: s(46),
   },
   info: {

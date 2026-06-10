@@ -95,7 +95,7 @@ function PasswordReset(){
       setLoading(true);
       setTimeout(() => {
         setLoading(false);
-        navigation.navigate("PasswordSuccess");
+        navigation.navigate("passwordsuccess");
       }, 2000);
     }
   };
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     borderRadius: s(10),
     paddingHorizontal: s(12),
     paddingVertical: vs(13),
-    marginBottom: vs(18),
+    marginBottom: vs(10),
     gap: s(10),
     borderWidth: s(0.5),
     borderColor: "transparent",
