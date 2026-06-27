@@ -10,12 +10,14 @@ import {
   ScrollView,
   Image,
   Pressable,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import { useAuth } from "./Contexts/Authcontext";
 interface ValidationFields {
   email: string;
   password: string;
@@ -28,8 +30,9 @@ interface TouchedFields {
   email?: boolean;
   password?: boolean;
 }
-export default function SignInscreen(){
-  const navigation=useNavigation()
+export default function SignInscreen() {
+  const navigation = useNavigation();
+  const { login, isLoadingAuth, error } = useAuth();
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -56,12 +59,12 @@ export default function SignInscreen(){
     const e = validate({ email, password });
     setErrors(e);
   };
-  const handleSignIn = (): void => {
+  const handleSignIn = async (): Promise<void> => {
     setTouched({ email: true, password: true });
     const e = validate({ email, password });
     setErrors(e);
     if (Object.keys(e).length === 0) {
-      console.log("Sign in:", { email, password, rememberMe });
+      await login(email, password);
     }
   };
   const hasError = (field: keyof ValidationErrors): boolean =>
@@ -79,8 +82,10 @@ export default function SignInscreen(){
           showsVerticalScrollIndicator={false}
         >
           {/* Back arrow */}
-          <TouchableOpacity style={styles.backBtn}
-           onPress={()=>navigation.navigate("signup")}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.navigate("signup")}
+          >
             <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
           </TouchableOpacity>
           {/* Heading */}
@@ -137,6 +142,8 @@ export default function SignInscreen(){
           {hasError("password") && (
             <Text style={styles.errorText}>{errors.password}</Text>
           )}
+          {/* Auth error from context */}
+          {error && <Text style={styles.errorText}>{error}</Text>}
           {/* Remember Me */}
           <TouchableOpacity
             style={styles.rememberRow}
@@ -151,12 +158,23 @@ export default function SignInscreen(){
             <Text style={styles.rememberText}>Remember me</Text>
           </TouchableOpacity>
           {/* Sign In CTA */}
-          <TouchableOpacity style={styles.cta} onPress={handleSignIn} activeOpacity={0.85}>
-            <Text style={styles.ctaText}>Sign In</Text>
+          <TouchableOpacity
+            style={[styles.cta, isLoadingAuth && styles.ctaDisabled]}
+            onPress={handleSignIn}
+            activeOpacity={0.85}
+            disabled={isLoadingAuth}
+          >
+            {isLoadingAuth ? (
+              <ActivityIndicator size="small" color="#1A0E00" />
+            ) : (
+              <Text style={styles.ctaText}>Sign In</Text>
+            )}
           </TouchableOpacity>
           {/* Forgot Password */}
-          <Pressable style={styles.forgotWrap }
-           onPress={()=>navigation.navigate("forgotpassword")}>
+          <Pressable
+            style={styles.forgotWrap}
+            onPress={() => navigation.navigate("forgotpassword")}
+          >
             <Text style={styles.forgotText}>Forgot password?</Text>
           </Pressable>
           {/* Or continue with */}
@@ -182,7 +200,7 @@ export default function SignInscreen(){
           {/* Sign Up */}
           <View style={styles.signupRow}>
             <Text style={styles.signupMuted}>Don't have an account? </Text>
-            <Pressable onPress={()=>navigation.navigate("signup")}>
+            <Pressable onPress={() => navigation.navigate("signup")}>
               <Text style={styles.signupLink}>Sign up</Text>
             </Pressable>
           </View>
@@ -327,4 +345,11 @@ const styles = StyleSheet.create({
     color: "#F5A623",
     fontWeight: "700",
   },
+  ctaDisabled:{
+     backgroundColor: "#ccc",
+    borderRadius: s(50),
+    paddingVertical: vs(11),
+    alignItems: "center",
+    marginBottom: vs(16),
+  }
 });
