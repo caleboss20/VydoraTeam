@@ -17,6 +17,7 @@ import { useNavigation, NavigationProp } from "@react-navigation/native";
 import { useState } from "react";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "./Contexts/Authcontext";
 // ── Types ─────────────────────────────────────────────────────────
 type RootStackParamList = {
   splashscreen: undefined;
@@ -38,15 +39,15 @@ interface TouchedFields {
   email?: boolean;
   password?: boolean;
 }
-export default function Signupscreen(): JSX.Element {
+export default function Signupscreen(){
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const { register, isLoadingAuth, error } = useAuth();
   const [fullName, setFullName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
-  const [loading, setLoading] = useState<boolean>(false);
   // ── Validation ────────────────────────────────────────────────
   const validate = (fields: ValidationFields): ValidationErrors => {
     const e: ValidationErrors = {};
@@ -74,16 +75,12 @@ export default function Signupscreen(): JSX.Element {
     const e = validate({ fullName, email, password });
     setErrors(e);
   };
-  const handleSignup = (): void => {
+  const handleSignup = async (): Promise<void> => {
     setTouched({ fullName: true, email: true, password: true });
     const e = validate({ fullName, email, password });
     setErrors(e);
     if (Object.keys(e).length === 0) {
-      setLoading(true);
-      setTimeout(() => {
-        setLoading(false);
-        navigation.navigate("onboarding");
-      }, 3000);
+      await register(fullName, email, password);
     }
   };
   const hasError = (field: keyof ValidationErrors): boolean =>
@@ -184,14 +181,16 @@ export default function Signupscreen(): JSX.Element {
           {hasError("password") && (
             <Text style={styles.errorText}>{errors.password}</Text>
           )}
+          {/* Auth error from context */}
+          {error && <Text style={styles.errorText}>{error}</Text>}
           {/* Sign Up CTA */}
           <TouchableOpacity
-            style={[styles.cta, loading && styles.ctaDisabled]}
+            style={[styles.cta, isLoadingAuth && styles.ctaDisabled]}
             onPress={handleSignup}
             activeOpacity={0.85}
-            disabled={loading}
+            disabled={isLoadingAuth}
           >
-            {loading ? (
+            {isLoadingAuth ? (
               <ActivityIndicator size="small" color="#1A0E00" />
             ) : (
               <Text style={styles.ctaText}>Sign Up</Text>
@@ -229,6 +228,8 @@ export default function Signupscreen(): JSX.Element {
     </SafeAreaView>
   );
 }
+
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
