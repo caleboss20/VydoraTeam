@@ -1,29 +1,39 @@
 import { CONFIG } from '../config';
 import { Project, ProjectStatus } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
+
 const MOCK_PROJECTS: Project[] = [
   {
-    id: '1',
-    name: 'Summer campaign',
-    status: 'Active',
-    ownerId: '1',
-    createdAt: '2026-06-10',
+    id: '1', name: 'Summer campaign',
+    status: 'Active', ownerId: 'u1',
+    createdAt: '2026-06-20T10:00:00Z',
+    updatedAt: '2026-06-27T08:30:00Z',
+    members: [
+      { id: 'm1', initials: 'M',  color: '#E05C5C', online: true  },
+      { id: 'm2', initials: 'JR', color: '#3DBFBF', online: true  },
+      { id: 'm3', initials: 'S',  color: '#9B59B6', online: false },
+    ],
   },
   {
-    id: '2',
-    name: 'Product launch',
-    status: 'Draft',
-    ownerId: '1',
-    createdAt: '2026-06-05',
+    id: '2', name: 'Product launch',
+    status: 'Active', ownerId: 'u1',
+    createdAt: '2026-06-18T09:00:00Z',
+    updatedAt: '2026-06-26T14:00:00Z',
+    members: [
+      { id: 'm4', initials: 'S',  color: '#9B59B6', online: false },
+      { id: 'm5', initials: 'YO', color: '#F5C518', online: true  },
+    ],
   },
   {
-    id: '3',
-    name: 'Brand video',
-    status: 'Archived',
-    ownerId: '2',
-    createdAt: '2026-05-20',
+    id: '3', name: 'Behind the scenes',
+    status: 'Draft', ownerId: 'u1',
+    createdAt: '2026-06-15T07:00:00Z',
+    updatedAt: '2026-06-25T11:00:00Z',
+    members: [
+      { id: 'm6', initials: 'MA', color: '#E05C5C', online: false },
+    ],
   },
-];
+]
 // ─── Service ─────────────────────────────────────────────────────────────────
 export const projectService = {
   // get all projects where user is owner OR member
@@ -57,6 +67,9 @@ export const projectService = {
         status: 'Active',
         ownerId: '1',
         createdAt: new Date().toISOString(),
+         updatedAt: new Date().toISOString(),
+         members:[],
+
       };
     }
     const res = await fetch(`${CONFIG.API_BASE}/projects`, {
