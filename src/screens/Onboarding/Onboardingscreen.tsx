@@ -13,14 +13,16 @@ import React, { useRef, useState } from 'react'
 import { s, vs, ms } from "react-native-size-matters";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 type RootStackParamList = {
   home: undefined;
+  signin: undefined;
 };
 interface Slide {
   id: string;
   title: string;
   description: string;
-  image:any;
+  image: any;
 }
 const { width } = Dimensions.get('window');
 const slides: Slide[] = [
@@ -28,23 +30,22 @@ const slides: Slide[] = [
     id: '1',
     title: 'Edit Your Videos Together, In Real Time',
     description: 'Work with your team on the same timeline simultaneously. See every change as it happens.',
- image:require("../../../assets/editimage.png"),  
-},
+    image: require("../../../assets/editimage.png"),
+  },
   {
     id: '2',
     title: 'Share & Comment Instantly',
     description: 'Pin feedback directly on timeline segments. Tag teammates and resolve notes fast.',
-  image:require("../../../assets/editimage2.png"),   
-},
+    image: require("../../../assets/editimage2.png"),
+  },
   {
     id: '3',
     title: 'Export In Seconds',
     description: 'Finish editing and ship your video instantly. Share directly to any platform.',
-    image:require("../../../assets/editimage3.png"),  
-},
+    image: require("../../../assets/editimage3.png"),
+  },
 ];
-
-function Onboarding(){
+function Onboarding() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const flatListRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -53,7 +54,6 @@ function Onboarding(){
     [{ nativeEvent: { contentOffset: { x: scrollX } } }],
     { useNativeDriver: false }
   );
-  
   const handleViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (viewableItems[0]) {
@@ -61,35 +61,27 @@ function Onboarding(){
       }
     }
   ).current;
-
-  const handleNext = (): void => {
+  const handleNext = async (): Promise<void> => {
     if (currentIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({
         index: currentIndex + 1,
         animated: true,
       });
     } else {
-      navigation.navigate('projects');
+      // mark onboarding as done so splash never shows it again
+      await AsyncStorage.setItem('vydora:onboarding:done', 'true');
+      navigation.navigate('signin');
     }
   };
-
-  const renderSlide = ({ item }: { item: Slide })=> (
+  const renderSlide = ({ item }: { item: Slide }) => (
     <View style={styles.slide}>
-      {/* Image — same for all slides, swap later */}
-      <Image
-        style={styles.editimage}
-        source={item.image}
-      />
-      {/* Bold title */}
+      <Image style={styles.editimage} source={item.image} />
       <Text style={styles.title}>{item.title}</Text>
-      {/* Description */}
       <Text style={styles.description}>{item.description}</Text>
     </View>
   );
-
   return (
     <SafeAreaView style={styles.container}>
-      {/* Swipeable slides */}
       <FlatList
         ref={flatListRef}
         data={slides}
@@ -102,20 +94,15 @@ function Onboarding(){
         onViewableItemsChanged={handleViewableItemsChanged}
         showsHorizontalScrollIndicator={false}
       />
-      {/* Dot indicators */}
       <View style={styles.dotsWrap}>
         {slides.map((_, index) => (
           <View
             key={index}
-            style={[
-              styles.dot,
-              index === currentIndex && styles.dotActive,
-            ]}
+            style={[styles.dot, index === currentIndex && styles.dotActive]}
           />
         ))}
       </View>
-      {/* Continue button */}
-      <Pressable style={styles.cta} onPress={handleNext} >
+      <Pressable style={styles.cta} onPress={handleNext}>
         <Text style={styles.ctaText}>
           {currentIndex === slides.length - 1 ? 'Get Started' : 'Continue'}
         </Text>
