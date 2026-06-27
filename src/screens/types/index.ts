@@ -16,6 +16,8 @@ export interface Project {
   ownerId: string;
   thumbnailUrl?: string;
   createdAt: string;
+  updatedAt:string;
+  members:Pick<Member, 'id'|'initials'|'color'|'online'>[];
 }
 // ─── Clip ────────────────────────────────────────────────────────────────────
 export interface Clip {
