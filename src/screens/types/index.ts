@@ -30,6 +30,7 @@ export interface Clip {
   resolution: string;
   uploadedAt: string;
   uploadedBy: string;
+  thumbnailUrl?: string;
 }
 // ─── Member ──────────────────────────────────────────────────────────────────
 export type MemberRole = 'Owner' | 'Editor' | 'Viewer';
@@ -65,4 +66,20 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   projectId?: string;
+}
+
+// ─── export ────────────────────────────────
+export type ExportStatus='Ready'|'Processing'|'Failed';
+export interface Export{
+     id: string;
+     projectId: string;
+     projectName:string;
+     title: string;
+     resolution:string;
+     format:string;
+     sizeMb:number;
+     status:ExportStatus;
+     isFinal?:boolean;
+     errorMessage?:string;
+     createdAt:string
 }
