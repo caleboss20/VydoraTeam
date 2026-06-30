@@ -17,6 +17,8 @@ export interface Project {
   thumbnailUrl?: string;
   createdAt: string;
   updatedAt:string;
+  description:string;
+  visibility:'Private'|'Team'|'Public';
   members:Pick<Member, 'id'|'initials'|'color'|'online'>[];
 }
 // ─── Clip ────────────────────────────────────────────────────────────────────

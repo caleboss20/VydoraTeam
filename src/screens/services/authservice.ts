@@ -47,6 +47,7 @@ export const authService = {
         token: 'mock-jwt-token-123',
       };
     }
+    
     const res = await fetch(`${CONFIG.API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,187 +7,253 @@ import {
   ScrollView,
   Switch,
   Pressable,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { moderateScale, verticalScale, scale } from 'react-native-size-matters';
 import { Ionicons } from '@expo/vector-icons';
-// ─── Types ───────────────────────────────────────────────────────────────────
-type Tab = 'Clips' | 'Members' | 'Comments' | 'Settings';
-interface Clip {
-  id: string;
-  title: string;
-  duration: string;
-  resolution: string;
-  date: string;
-}
-interface Member {
-  id: string;
-  name: string;
-  role: 'Owner' | 'Editor' | 'Viewer';
-  initials: string;
-  color: string;
-  online: boolean;
-}
-interface Comment {
-  id: string;
-  author: string;
-  initials: string;
-  color: string;
-  text: string;
-  timestamp: string;
-  clip: string;
-}
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-const CLIPS: Clip[] = [
-  { id: '1', title: 'Intro clip', duration: '00:18', resolution: '1080p', date: 'Jun 12, 2026' },
-  { id: '2', title: 'Main segment', duration: '00:42', resolution: '4K', date: 'Jun 11, 2026' },
-  { id: '3', title: 'Outro', duration: '00:12', resolution: '1080p', date: 'Jun 10, 2026' },
-  { id: '4', title: 'B-Roll montage', duration: '01:05', resolution: '1080p', date: 'Jun 9, 2026' },
-];
-const MEMBERS: Member[] = [
-  { id: '1', name: 'Caleboss', role: 'Owner', initials: 'CD', color: '#F5C518', online: true },
-  { id: '2', name: 'Jesse Sarfo', role: 'Editor', initials: 'JS', color: '#4CAF50', online: true },
-  { id: '3', name: 'Ama Owusu', role: 'Editor', initials: 'AO', color: '#E91E63', online: false },
-  { id: '4', name: 'Dave', role: 'Viewer', initials: 'KM', color: '#2196F3', online: false },
-];
-const COMMENTS: Comment[] = [
-  { id: '1', author: 'Jesse Sarfo', initials: 'JS', color: '#4CAF50', text: 'The transition at 0:14 feels abrupt, can we smooth it out?', timestamp: '2h ago', clip: 'Intro clip' },
-  { id: '2', author: 'Ama Owusu', initials: 'AO', color: '#E91E63', text: 'Color grading on the main segment looks great! 🔥', timestamp: '5h ago', clip: 'Main segment' },
-  { id: '3', author: 'Kofi Mensah', initials: 'KM', color: '#2196F3', text: 'Should the outro have the logo watermark?', timestamp: '1d ago', clip: 'Outro' },
-  { id: '4', author: 'Caleb Dwamena', initials: 'CD', color: '#F5C518', text: 'Final render is scheduled for Friday.', timestamp: '2d ago', clip: 'General' },
-];
+import { useProject } from '../Contexts/projectContext'; 
+import { useClip } from '../Contexts/clipContext';
+import { useMember } from '../Contexts/memberContext'; 
+import { useComment } from '../Contexts/commentContext'; 
+import { Clip, Member, Comment } from '../types';
+// ─── Constants ────────────────────────────────────────────────────────────────
+const YELLOW       = '#F5C518';
+const BG           = '#111111';
+const CARD         = '#1C1C1C';
+const BORDER       = '#2A2A2A';
+const TEXT_PRIMARY = '#FFFFFF';
+const TEXT_MUTED   = '#888888';
 const ROLE_COLORS: Record<string, string> = {
-  Owner: '#F5C518',
+  Owner:  '#F5C518',
   Editor: '#4CAF50',
   Viewer: '#888',
 };
-// ─── Constants ────────────────────────────────────────────────────────────────
-const YELLOW = '#F5C518';
-const BG = '#111111';
-const CARD = '#1C1C1C';
-const BORDER = '#2A2A2A';
-const TEXT_PRIMARY = '#FFFFFF';
-const TEXT_MUTED = '#888888';
+// ─── Types ───────────────────────────────────────────────────────────────────
+type Tab = 'Clips' | 'Members' | 'Comments' | 'Settings';
 // ─── Sub-components ───────────────────────────────────────────────────────────
-const Avatar = ({
-  initials,
-  color,
-  size = 38,
+const Avatar = ({ initials, color, size = 38 }: { initials: string; color: string; size?: number }) => (
+  <View style={[styles.avatar, { backgroundColor: color + '33', width: size, height: size, borderRadius: size / 2, borderColor: color }]}>
+    <Text style={[styles.avatarText, { color, fontSize: moderateScale(size * 0.35) }]}>{initials}</Text>
+  </View>
+);
+// ─── Clips Tab ────────────────────────────────────────────────────────────────
+const ClipsTab = ({
+  clips,
+  isLoading,
+  onUpload,
 }: {
-  initials: string;
-  color: string;
-  size?: number;
-}) => (
-  <View
-    style={[
-      styles.avatar,
-      {
-        backgroundColor: color + '33',
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderColor: color,
-      },
-    ]}
-  >
-    <Text style={[styles.avatarText, { color, fontSize: moderateScale(size * 0.35) }]}>
-      {initials}
-    </Text>
-  </View>
-);
-// ─── Tab Content ──────────────────────────────────────────────────────────────
-const ClipsTab = () => (
-  <View>
-    {CLIPS.map((clip) => (
-      <TouchableOpacity key={clip.id} style={styles.clipRow} activeOpacity={0.7}>
-        <View style={styles.clipThumb}>
-          <Ionicons name="play" size={moderateScale(18)} color={YELLOW} />
-        </View>
-        <View style={styles.clipInfo}>
-          <Text style={styles.clipTitle}>{clip.title}</Text>
-          <Text style={styles.clipMeta}>
-            {clip.duration} · {clip.resolution}
-          </Text>
-        </View>
-        <Text style={styles.clipDate}>{clip.date}</Text>
-        <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={TEXT_MUTED} />
+  clips: Clip[];
+  isLoading: boolean;
+  onUpload: () => void;
+}) => {
+  if (isLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={YELLOW} />
+      </View>
+    );
+  }
+  if (clips.length === 0) {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="film-outline" size={moderateScale(36)} color={TEXT_MUTED} />
+        <Text style={styles.emptyTitle}>No clips yet</Text>
+        <Text style={styles.emptySubtitle}>Upload your first clip to get started</Text>
+        <TouchableOpacity style={styles.emptyBtn} onPress={onUpload} activeOpacity={0.8}>
+          <Ionicons name="cloud-upload-outline" size={moderateScale(16)} color="#000" />
+          <Text style={styles.emptyBtnText}>Upload clip</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+  return (
+    <View>
+      {clips.map((clip) => (
+        <TouchableOpacity key={clip.id} style={styles.clipRow} activeOpacity={0.7}>
+          <View style={styles.clipThumb}>
+            <Ionicons name="play" size={moderateScale(18)} color={YELLOW} />
+          </View>
+          <View style={styles.clipInfo}>
+            <Text style={styles.clipTitle}>{clip.title}</Text>
+            <Text style={styles.clipMeta}>{clip.duration} · {clip.resolution}</Text>
+          </View>
+          <Text style={styles.clipDate}>{new Date(clip.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+          <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={TEXT_MUTED} />
+        </TouchableOpacity>
+      ))}
+      <TouchableOpacity style={styles.uploadBtn} onPress={onUpload} activeOpacity={0.8}>
+        <Ionicons name="cloud-upload-outline" size={moderateScale(18)} color={TEXT_MUTED} />
+        <Text style={styles.uploadBtnText}>Upload new clip</Text>
       </TouchableOpacity>
-    ))}
-    <TouchableOpacity style={styles.uploadBtn} activeOpacity={0.8}>
-      <Ionicons name="cloud-upload-outline" size={moderateScale(18)} color={TEXT_MUTED} />
-      <Text style={styles.uploadBtnText}>Upload new clip</Text>
-    </TouchableOpacity>
-  </View>
-);
-
-
-const MembersTab = () => (
-  <View>
-    {MEMBERS.map((member) => (
-      <View key={member.id} style={styles.memberRow}>
-        <View>
-          <Avatar initials={member.initials} color={member.color} />
-          {member.online && <View style={styles.onlineDot} />}
-        </View>
-        <View style={styles.memberInfo}>
-          <Text style={styles.memberName}>{member.name}</Text>
-          <Text style={[styles.memberRole, { color: ROLE_COLORS[member.role] }]}>
-            {member.role}
-          </Text>
-        </View>
-        {member.role !== 'Owner' && (
-          <TouchableOpacity style={styles.memberAction}>
-            <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={TEXT_MUTED} />
-          </TouchableOpacity>
-        )}
-      </View>
-    ))}
-    <TouchableOpacity style={styles.inviteBtn} activeOpacity={0.8}>
-      <Ionicons name="person-add-outline" size={moderateScale(16)} color={YELLOW} />
-      <Text style={styles.inviteBtnText}>Invite member</Text>
-    </TouchableOpacity>
-  </View>
-);
-
-const CommentsTab = () => (
-  <View>
-    {COMMENTS.map((comment) => (
-      <View key={comment.id} style={styles.commentRow}>
-        <Avatar initials={comment.initials} color={comment.color} size={34} />
-        <View style={styles.commentBody}>
-          <View style={styles.commentHeader}>
-            <Text style={styles.commentAuthor}>{comment.author}</Text>
-            <Text style={styles.commentTimestamp}>{comment.timestamp}</Text>
+    </View>
+  );
+};
+// ─── Members Tab ──────────────────────────────────────────────────────────────
+const MembersTab = ({
+  members,
+  isLoading,
+  projectId,
+  onInvite,
+}: {
+  members: Member[];
+  isLoading: boolean;
+  projectId: string;
+  onInvite: () => void;
+}) => {
+  const { changeRole, removeMember } = useMember();
+  const handleMemberAction = (member: Member) => {
+    Alert.alert(member.name, 'What would you like to do?', [
+      {
+        text: 'Change role',
+        onPress: () => {
+          Alert.alert('Change role', `Set role for ${member.name}`, [
+            { text: 'Editor',  onPress: () => changeRole(projectId, member.id, 'Editor')  },
+            { text: 'Viewer',  onPress: () => changeRole(projectId, member.id, 'Viewer')  },
+            { text: 'Cancel',  style: 'cancel' },
+          ]);
+        },
+      },
+      {
+        text: 'Remove member',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert('Remove member', `Remove ${member.name} from this project?`, [
+            { text: 'Remove', style: 'destructive', onPress: () => removeMember(projectId, member.id) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+  if (isLoading) return <View style={styles.centered}><ActivityIndicator color={YELLOW} /></View>;
+  return (
+    <View>
+      {members.map((member) => (
+        <View key={member.id} style={styles.memberRow}>
+          <View>
+            <Avatar initials={member.initials} color={member.color} />
+            {member.online && <View style={styles.onlineDot} />}
           </View>
-          <View style={styles.commentClipTag}>
-            <Ionicons name="attach" size={moderateScale(10)} color={TEXT_MUTED} />
-            <Text style={styles.commentClipText}> {comment.clip}</Text>
+          <View style={styles.memberInfo}>
+            <Text style={styles.memberName}>{member.name}</Text>
+            <Text style={[styles.memberRole, { color: ROLE_COLORS[member.role] }]}>{member.role}</Text>
           </View>
-          <Text style={styles.commentText}>{comment.text}</Text>
+          {member.role !== 'Owner' && (
+            <TouchableOpacity style={styles.memberAction} onPress={() => handleMemberAction(member)}>
+              <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={TEXT_MUTED} />
+            </TouchableOpacity>
+          )}
         </View>
+      ))}
+      <TouchableOpacity style={styles.inviteBtn} onPress={onInvite} activeOpacity={0.8}>
+        <Ionicons name="person-add-outline" size={moderateScale(16)} color={YELLOW} />
+        <Text style={styles.inviteBtnText}>Invite member</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+// ─── Comments Tab ─────────────────────────────────────────────────────────────
+const CommentsTab = ({
+  comments,
+  isLoading,
+}: {
+  comments: Comment[];
+  isLoading: boolean;
+}) => {
+  if (isLoading) return <View style={styles.centered}><ActivityIndicator color={YELLOW} /></View>;
+  if (comments.length === 0) {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="chatbubble-outline" size={moderateScale(36)} color={TEXT_MUTED} />
+        <Text style={styles.emptyTitle}>No comments yet</Text>
+        <Text style={styles.emptySubtitle}>Comments will appear here</Text>
       </View>
-    ))}
-  </View>
-);
-
-const SettingsTab = () => {
-  const [notifications, setNotifications] = useState(true);
-  const [autoSave, setAutoSave] = useState(true);
-  const [publicAccess, setPublicAccess] = useState(false);
-  const [watermark, setWatermark] = useState(false);
-  const SettingToggle = ({
-    icon,
-    label,
-    sub,
-    value,
-    onChange,
-  }: {
+    );
+  }
+  return (
+    <View>
+      {comments.map((comment) => (
+        <View key={comment.id} style={styles.commentRow}>
+          <Avatar initials={comment.initials} color={comment.color} size={34} />
+          <View style={styles.commentBody}>
+            <View style={styles.commentHeader}>
+              <Text style={styles.commentAuthor}>{comment.author}</Text>
+              <Text style={styles.commentTimestamp}>{comment.timestamp}</Text>
+            </View>
+            <View style={styles.commentClipTag}>
+              <Ionicons name="attach" size={moderateScale(10)} color={TEXT_MUTED} />
+              <Text style={styles.commentClipText}> {comment.clipId}</Text>
+            </View>
+            <Text style={styles.commentText}>{comment.text}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+};
+// ─── Settings Tab ─────────────────────────────────────────────────────────────
+const SettingsTab = ({
+  projectId,
+  projectName,
+}: {
+  projectId: string;
+  projectName: string;
+}) => {
+  const navigation                          = useNavigation<any>();
+  const { renameProject, updateStatus, deleteProject } = useProject();
+  const [notifications, setNotifications]  = useState(true);
+  const [autoSave, setAutoSave]            = useState(true);
+  const [publicAccess, setPublicAccess]    = useState(false);
+  const [watermark, setWatermark]          = useState(false);
+  const handleRename = () => {
+    Alert.prompt(
+      'Rename project',
+      'Enter a new project name',
+      (newName) => {
+        if (newName && newName.trim().length >= 3) {
+          renameProject(projectId, newName.trim());
+        } else {
+          Alert.alert('Invalid name', 'Name must be at least 3 characters.');
+        }
+      },
+      'plain-text',
+      projectName
+    );
+  };
+  const handleArchive = () => {
+    Alert.alert('Archive project', 'Hide this project without deleting it?', [
+      {
+        text: 'Archive',
+        style: 'destructive',
+        onPress: () => {
+          updateStatus(projectId, 'Archived');
+          navigation.navigate('dashboard');
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+  const handleDelete = () => {
+    Alert.alert('Delete project', 'This will permanently remove the project. This cannot be undone.', [
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteProject(projectId);
+          navigation.navigate('dashboard');
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+  const SettingToggle = ({ icon, label, sub, value, onChange }: {
     icon: keyof typeof Ionicons.glyphMap;
-    label: string;
-    sub: string;
-    value: boolean;
-    onChange: (v: boolean) => void;
+    label: string; sub: string;
+    value: boolean; onChange: (v: boolean) => void;
   }) => (
     <View style={styles.settingRow}>
       <View style={styles.settingIconBox}>
@@ -197,32 +263,17 @@ const SettingsTab = () => {
         <Text style={styles.settingLabel}>{label}</Text>
         <Text style={styles.settingSub}>{sub}</Text>
       </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ false: '#333', true: '#F5C51880' }}
-        thumbColor={value ? '#F5C518' : '#666'}
-      />
+      <Switch value={value} onValueChange={onChange} trackColor={{ false: '#333', true: '#F5C51880' }} thumbColor={value ? YELLOW : '#666'} />
     </View>
   );
-  const SettingAction = ({
-    icon,
-    label,
-    sub,
-    danger,
-  }: {
+  const SettingAction = ({ icon, label, sub, danger, onPress }: {
     icon: keyof typeof Ionicons.glyphMap;
-    label: string;
-    sub: string;
-    danger?: boolean;
+    label: string; sub: string;
+    danger?: boolean; onPress?: () => void;
   }) => (
-    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7} onPress={onPress}>
       <View style={[styles.settingIconBox, danger && { backgroundColor: '#FF444420' }]}>
-        <Ionicons
-          name={icon}
-          size={moderateScale(18)}
-          color={danger ? '#FF4444' : YELLOW}
-        />
+        <Ionicons name={icon} size={moderateScale(18)} color={danger ? '#FF4444' : YELLOW} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.settingLabel, danger && { color: '#FF4444' }]}>{label}</Text>
@@ -234,54 +285,102 @@ const SettingsTab = () => {
   return (
     <View>
       <Text style={styles.settingSection}>PROJECT</Text>
-      <SettingAction icon="pencil-outline" label="Rename project" sub="Change the project display name" />
-      <SettingAction icon="image-outline" label="Project thumbnail" sub="Update the cover image" />
-      <SettingAction icon="settings-outline" label="Export settings" sub="Resolution, format, frame rate" />
+      <SettingAction icon="pencil-outline"  label="Rename project"    sub="Change the project display name"   onPress={handleRename} />
+      <SettingAction icon="image-outline"   label="Project thumbnail" sub="Update the cover image"            />
+      <SettingAction icon="settings-outline" label="Export settings"  sub="Resolution, format, frame rate"    />
       <Text style={styles.settingSection}>COLLABORATION</Text>
       <SettingToggle icon="notifications-outline" label="Notifications" sub="Get alerts for comments and edits" value={notifications} onChange={setNotifications} />
-      <SettingToggle icon="save-outline" label="Auto-save" sub="Save changes every 30 seconds" value={autoSave} onChange={setAutoSave} />
-      <SettingToggle icon="globe-outline" label="Public access" sub="Anyone with the link can view" value={publicAccess} onChange={setPublicAccess} />
-      <SettingToggle icon="water-outline" label="Watermark" sub="Add studio watermark on export" value={watermark} onChange={setWatermark} />
+      <SettingToggle icon="save-outline"          label="Auto-save"     sub="Save changes every 30 seconds"    value={autoSave}       onChange={setAutoSave}       />
+      <SettingToggle icon="globe-outline"         label="Public access" sub="Anyone with the link can view"    value={publicAccess}   onChange={setPublicAccess}   />
+      <SettingToggle icon="water-outline"         label="Watermark"     sub="Add studio watermark on export"   value={watermark}      onChange={setWatermark}      />
       <Text style={styles.settingSection}>DANGER ZONE</Text>
       <SettingAction icon="swap-horizontal-outline" label="Transfer ownership" sub="Hand over project to another member" />
-      <SettingAction icon="archive-outline" label="Archive project" sub="Hide project without deleting" danger />
-      <SettingAction icon="trash-outline" label="Delete project" sub="Permanently remove this project" danger />
+      <SettingAction icon="archive-outline"         label="Archive project"    sub="Hide project without deleting"       danger onPress={handleArchive} />
+      <SettingAction icon="trash-outline"           label="Delete project"     sub="Permanently remove this project"     danger onPress={handleDelete}  />
     </View>
   );
 };
-
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProjectDetailScreen() {
-    const navigation=useNavigation()
-  const [activeTab, setActiveTab] = useState<Tab>('Clips');
-  const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap }[] = [
-    { key: 'Clips', icon: 'film-outline', iconActive: 'film' },
-    { key: 'Members', icon: 'people-outline', iconActive: 'people' },
-    { key: 'Comments', icon: 'chatbubble-outline', iconActive: 'chatbubble' },
-    { key: 'Settings', icon: 'settings-outline', iconActive: 'settings' },
-  ];
+  const navigation                                  = useNavigation<any>();
+  const { currentProject }                          = useProject();
+  const { fetchClips, getClipsForProject, isLoading: clipsLoading }     = useClip();
+  const { fetchMembers, getMembersForProject, isLoading: membersLoading } = useMember();
+  const { fetchComments, getCommentsForProject, isLoading: commentsLoading } = useComment();
+  const [activeTab, setActiveTab]                   = useState<Tab>('Clips');
+  useEffect(() => {
+    if (!currentProject) return;
+    fetchClips(currentProject.id);
+    fetchMembers(currentProject.id);
+    fetchComments(currentProject.id);
+  }, [currentProject?.id]);
+  if (!currentProject) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={YELLOW} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+  const projectClips    = getClipsForProject(currentProject.id);
+  const projectMembers  = getMembersForProject(currentProject.id);
+  const projectComments = getCommentsForProject(currentProject.id);
   const stats = [
-    { label: 'Videos', value: 3, icon: 'videocam-outline' as keyof typeof Ionicons.glyphMap },
-    { label: 'Members', value: 4, icon: 'people-outline' as keyof typeof Ionicons.glyphMap },
-    { label: 'Comments', value: 7, icon: 'chatbubble-outline' as keyof typeof Ionicons.glyphMap },
-    { label: 'Versions', value: 12, icon: 'git-branch-outline' as keyof typeof Ionicons.glyphMap },
+    { label: 'Videos',   value: projectClips.length,    icon: 'videocam-outline'   as keyof typeof Ionicons.glyphMap },
+    { label: 'Members',  value: projectMembers.length,  icon: 'people-outline'     as keyof typeof Ionicons.glyphMap },
+    { label: 'Comments', value: projectComments.length, icon: 'chatbubble-outline' as keyof typeof Ionicons.glyphMap },
+    { label: 'Versions', value: 0,                      icon: 'git-branch-outline' as keyof typeof Ionicons.glyphMap },
   ];
+  const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap }[] = [
+    { key: 'Clips',    icon: 'film-outline',       iconActive: 'film'        },
+    { key: 'Members',  icon: 'people-outline',     iconActive: 'people'      },
+    { key: 'Comments', icon: 'chatbubble-outline', iconActive: 'chatbubble'  },
+    { key: 'Settings', icon: 'settings-outline',   iconActive: 'settings'    },
+  ];
+  const isActive = currentProject.status === 'Active';
   const renderTab = () => {
     switch (activeTab) {
-      case 'Clips': return <ClipsTab />;
-      case 'Members': return <MembersTab />;
-      case 'Comments': return <CommentsTab />;
-      case 'Settings': return <SettingsTab />;
+      case 'Clips':
+        return (
+          <ClipsTab
+            clips={projectClips}
+            isLoading={clipsLoading}
+            onUpload={() => navigation.navigate('uploadvideo')}
+          />
+        );
+      case 'Members':
+        return (
+          <MembersTab
+            members={projectMembers}
+            isLoading={membersLoading}
+            projectId={currentProject.id}
+            onInvite={() => navigation.navigate('invitemember')}
+          />
+        );
+      case 'Comments':
+        return (
+          <CommentsTab
+            comments={projectComments}
+            isLoading={commentsLoading}
+          />
+        );
+      case 'Settings':
+        return (
+          <SettingsTab
+            projectId={currentProject.id}
+            projectName={currentProject.name}
+          />
+        );
     }
   };
+
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable
-        onPress={()=>navigation.navigate("projects")} 
-        style={styles.headerBtn}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.headerBtn}>
           <Ionicons name="arrow-back" size={moderateScale(20)} color={TEXT_PRIMARY} />
         </Pressable>
         <TouchableOpacity style={styles.headerBtn}>
@@ -295,10 +394,12 @@ export default function ProjectDetailScreen() {
         </View>
         {/* Title + Badge */}
         <View style={styles.titleRow}>
-          <Text style={styles.projectTitle}>Summer campaign</Text>
-          <View style={styles.activeBadge}>
-            <View style={styles.activeDot} />
-            <Text style={styles.activeBadgeText}>Active</Text>
+          <Text style={styles.projectTitle}>{currentProject.name}</Text>
+          <View style={[styles.activeBadge, !isActive && styles.draftBadge]}>
+            {isActive && <View style={styles.activeDot} />}
+            <Text style={[styles.activeBadgeText, !isActive && { color: TEXT_MUTED }]}>
+              {currentProject.status}
+            </Text>
           </View>
         </View>
         {/* Stats Row */}
@@ -316,7 +417,11 @@ export default function ProjectDetailScreen() {
         </View>
         {/* CTA Buttons */}
         <View style={styles.ctaRow}>
-          <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('editorscreen')}
+          >
             <Ionicons name="create-outline" size={moderateScale(16)} color="#111" />
             <Text style={styles.primaryBtnText}>Open editor</Text>
           </TouchableOpacity>
@@ -328,24 +433,17 @@ export default function ProjectDetailScreen() {
         {/* Tabs */}
         <View style={styles.tabBar}>
           {TABS.map((tab) => {
-            const isActive = activeTab === tab.key;
+            const active = activeTab === tab.key;
             return (
-              <TouchableOpacity
-                key={tab.key}
-                style={styles.tabItem}
-                onPress={() => setActiveTab(tab.key)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity key={tab.key} style={styles.tabItem} onPress={() => setActiveTab(tab.key)} activeOpacity={0.7}>
                 <Ionicons
-                  name={isActive ? tab.iconActive : tab.icon}
+                  name={active ? tab.iconActive : tab.icon}
                   size={moderateScale(16)}
-                  color={isActive ? YELLOW : TEXT_MUTED}
+                  color={active ? YELLOW : TEXT_MUTED}
                   style={{ marginBottom: verticalScale(4) }}
                 />
-                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                  {tab.key}
-                </Text>
-                {isActive && <View style={styles.tabUnderline} />}
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.key}</Text>
+                {active && <View style={styles.tabUnderline} />}
               </TouchableOpacity>
             );
           })}
@@ -356,6 +454,10 @@ export default function ProjectDetailScreen() {
     </SafeAreaView>
   );
 }
+
+
+
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: {
@@ -391,6 +493,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: verticalScale(16),
   },
+
+    centered:{ 
+      flex: 1, 
+      justifyContent: 'center',
+       alignItems: 'center',
+    },
   // Title
   titleRow: {
     flexDirection: 'row',
@@ -641,8 +749,9 @@ const styles = StyleSheet.create({
     // flexDirection:'row',
     alignSelf:'center',
     width:'100%',
-    marginTop: verticalScale(4),
+    marginTop: verticalScale(40),
     backgroundColor: YELLOW + '10',
+    marginBottom:scale(20),
   },
   inviteBtnText: {
     color: YELLOW,
@@ -726,4 +835,55 @@ const styles = StyleSheet.create({
     fontSize:moderateScale(12),
    fontWeight:'500'
   },
+
+//empty state//
+ emptyState:        
+  { alignItems: 'center',
+     paddingVertical: verticalScale(40) 
+    },
+  emptyTitle: { 
+    color: TEXT_PRIMARY,
+     fontSize: moderateScale(15), 
+     fontWeight: '600',
+      marginTop: verticalScale(12) 
+    },
+  emptySubtitle: { 
+    color: TEXT_MUTED,
+     fontSize: moderateScale(12), 
+     marginTop: verticalScale(4), 
+     marginBottom: verticalScale(16)
+     },
+  emptyBtn:{ 
+    flexDirection: 'row',
+     alignItems: 'center',
+      backgroundColor: YELLOW,
+       borderRadius: scale(10),
+        paddingVertical: verticalScale(10),
+         paddingHorizontal: scale(20)
+         },
+  emptyBtnText:{ 
+    color: '#000', 
+    fontWeight: '700', 
+    fontSize: moderateScale(13),
+     marginLeft: scale(6) 
+    },
+
+     settingIconBox:     {
+       width: scale(36), 
+       height: scale(36), 
+       borderRadius: scale(8), 
+      backgroundColor: '#2A2000',
+       justifyContent: 'center',
+       alignItems:'center',
+     },
+    draftBadge:{ 
+        backgroundColor: '#2A2A2A'
+
+       },
+
+
+
+
+
+
 })

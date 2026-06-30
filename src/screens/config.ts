@@ -4,6 +4,8 @@ export const CONFIG = {
   ASYNC_STORAGE_KEYS: {
     USER: 'vydora:user',
     TOKEN: 'vydora:token',
+    PROJECTS: 'vydora:projects',
+    CURRENT_PROJECT: 'vydora:currentProject',
   },
-  USE_MOCK: true, // ← change to false when backend is ready
+  USE_MOCK: true,
 };

@@ -45,3 +45,10 @@ logs/
 logs/
 *.log
 *debug*
+
+.claude/
+clean/
+Stack.Screen
+clear
+AGENTS.md
+CLAUDE.md

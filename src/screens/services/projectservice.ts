@@ -1,39 +1,7 @@
 import { CONFIG } from '../config';
 import { Project, ProjectStatus } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
-
-const MOCK_PROJECTS: Project[] = [
-  {
-    id: '1', name: 'Summer campaign',
-    status: 'Active', ownerId: 'u1',
-    createdAt: '2026-06-20T10:00:00Z',
-    updatedAt: '2026-06-27T08:30:00Z',
-    members: [
-      { id: 'm1', initials: 'M',  color: '#E05C5C', online: true  },
-      { id: 'm2', initials: 'JR', color: '#3DBFBF', online: true  },
-      { id: 'm3', initials: 'S',  color: '#9B59B6', online: false },
-    ],
-  },
-  {
-    id: '2', name: 'Product launch',
-    status: 'Active', ownerId: 'u1',
-    createdAt: '2026-06-18T09:00:00Z',
-    updatedAt: '2026-06-26T14:00:00Z',
-    members: [
-      { id: 'm4', initials: 'S',  color: '#9B59B6', online: false },
-      { id: 'm5', initials: 'YO', color: '#F5C518', online: true  },
-    ],
-  },
-  {
-    id: '3', name: 'Behind the scenes',
-    status: 'Draft', ownerId: 'u1',
-    createdAt: '2026-06-15T07:00:00Z',
-    updatedAt: '2026-06-25T11:00:00Z',
-    members: [
-      { id: 'm6', initials: 'MA', color: '#E05C5C', online: false },
-    ],
-  },
-]
+const MOCK_PROJECTS: Project[] = [];
 // ─── Service ─────────────────────────────────────────────────────────────────
 export const projectService = {
   // get all projects where user is owner OR member
@@ -59,16 +27,23 @@ export const projectService = {
     return res.json();
   },
   // create new project — creator becomes Owner automatically
-  createProject: async (name: string, token: string): Promise<Project> => {
+  createProject: async (
+    name: string,
+    description: string,
+    visibility: 'Private' | 'Team' | 'Public',
+    token: string
+  ): Promise<Project> => {
     if (CONFIG.USE_MOCK) {
       return {
         id: Date.now().toString(),
         name,
+        description,
+        visibility,
         status: 'Active',
-        ownerId: '1',
+        ownerId: 'u1',
         createdAt: new Date().toISOString(),
-         updatedAt: new Date().toISOString(),
-         members:[],
+        updatedAt: new Date().toISOString(),
+        members: [],
 
       };
     }
@@ -78,11 +53,34 @@ export const projectService = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, description, visibility }),
     });
     if (!res.ok) throw new Error('Failed to create project');
     return res.json();
   },
+
+  // rename project status
+  renameProject: async (projectId: string, name: string, token: string): Promise<Project> => {
+    if (CONFIG.USE_MOCK) {
+      const project = MOCK_PROJECTS.find(p => p.id === projectId)!;
+      return { ...project, name };
+    }
+    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}/rename`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Failed to rename project');
+    return res.json();
+  },
+
+
+
+
+
   // update project status
   updateStatus: async (
     projectId: string,
@@ -104,6 +102,9 @@ export const projectService = {
     if (!res.ok) throw new Error('Failed to update project');
     return res.json();
   },
+
+
+
   // delete project — only Owner can do this
   deleteProject: async (projectId: string, token: string): Promise<void> => {
     if (CONFIG.USE_MOCK) return;

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react'
 import {
   View,
@@ -15,8 +14,8 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { ms, s, vs } from 'react-native-size-matters'
 import { useNavigation } from '@react-navigation/native'
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useProject } from '../Contexts/projectContext' 
 // ─── Palette ────────────────────────────────────────────────────────────────
 const C = {
   bg: '#111111',
@@ -35,11 +34,6 @@ const C = {
 } as const
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Visibility = 'Private' | 'Team' | 'Public'
-type RootStackParamList = {
-  NewProject: undefined
-  editorscreen: { projectName: string; description: string; visibility: Visibility }
-}
-type NavProp = NativeStackNavigationProp<RootStackParamList, 'NewProject'>
 type VisibilityOption = {
   value: Visibility
   label: string
@@ -48,36 +42,21 @@ type VisibilityOption = {
 }
 // ─── Visibility Options ──────────────────────────────────────────────────────
 const VISIBILITY_OPTIONS: VisibilityOption[] = [
-  {
-    value: 'Private',
-    label: 'Private',
-    sub: 'Only invited members',
-    icon: 'lock-closed-outline',
-  },
-  {
-    value: 'Team',
-    label: 'Team',
-    sub: 'Anyone in your team',
-    icon: 'people-outline',
-  },
-  {
-    value: 'Public',
-    label: 'Public',
-    sub: 'Anyone with the link',
-    icon: 'globe-outline',
-  },
+  { value: 'Private', label: 'Private', sub: 'Only invited members',  icon: 'lock-closed-outline' },
+  { value: 'Team',    label: 'Team',    sub: 'Anyone in your team',   icon: 'people-outline'      },
+  { value: 'Public',  label: 'Public',  sub: 'Anyone with the link',  icon: 'globe-outline'       },
 ]
 const NAME_MAX = 30
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 const NewProjectScreen: React.FC = () => {
-  const navigation = useNavigation<NavProp>()
+  const navigation = useNavigation<any>()
+  const { createProject, error: contextError } = useProject()
   const [projectName, setProjectName] = useState<string>('')
   const [description, setDescription] = useState<string>('')
-  const [visibility, setVisibility] = useState<Visibility>('Team')
-  const [creating, setCreating] = useState<boolean>(false)
-  // Errors
-  const [nameError, setNameError] = useState<string>('')
-  const [descError, setDescError] = useState<string>('')
+  const [visibility, setVisibility]   = useState<Visibility>('Team')
+  const [creating, setCreating]       = useState<boolean>(false)
+  const [nameError, setNameError]     = useState<string>('')
+  const [descError, setDescError]     = useState<string>('')
   // ── Validation ──
   const validate = (): boolean => {
     let valid = true
@@ -102,229 +81,171 @@ const NewProjectScreen: React.FC = () => {
     return valid
   }
   // ── Submit ──
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!validate()) return
-    setCreating(true)
-    setTimeout(() => {
+    try {
+      setCreating(true)
+      await createProject(projectName.trim(), description.trim(), visibility)
+      await new Promise(res=>setTimeout(res,2000))
+      // currentProject is set inside context after createProject
+      navigation.navigate('projectdetail')
+    } catch (e) {
+      // error already in contextError
+    } finally {
       setCreating(false)
-      navigation.navigate('editorscreen', {
-        projectName: projectName.trim(),
-        description: description.trim(),
-        visibility,
-      })
-    }, 3000)
+    }
   }
   return (
-   <SafeAreaView style={styles.container}>
-     <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View >
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        {/* ── Top Bar ── */}
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.topBarIcon}
-            disabled={creating}
-          >
-            <Ionicons name="close" size={ms(22)} color={C.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.topBarTitle}>New project</Text>
-          <TouchableOpacity onPress={handleCreate} disabled={creating}>
-            <Text
-              style={[
-                styles.topBarCreate,
-                { opacity: creating ? 0.4 : 1 },
-              ]}
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.flex}>
+          <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+          {/* ── Top Bar ── */}
+          <View style={styles.topBar}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.topBarIcon}
+              disabled={creating}
             >
-              Create
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.divider} />
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* ── Cover Image ── */}
-          <TouchableOpacity style={styles.coverBox} activeOpacity={0.8}>
-            <View style={styles.coverIconCircle}>
-              <Ionicons name="image-outline" size={ms(26)} color={C.accent} />
-            </View>
-            <Text style={styles.coverLabel}>Add cover image</Text>
-          </TouchableOpacity>
-          {/* ── Project Name ── */}
-          <Text style={styles.fieldLabel}>PROJECT NAME</Text>
-          <View
-            style={[
-              styles.inputBox,
-              nameError ? styles.inputBoxError : null,
-            ]}
-          >
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Summer campaign 2026"
-              placeholderTextColor={C.textMuted}
-              value={projectName}
-              onChangeText={(t) => {
-                if (t.length <= NAME_MAX) setProjectName(t)
-                if (nameError) setNameError('')
-              }}
-              maxLength={NAME_MAX}
-              editable={!creating}
-            />
-            <Text style={styles.charCount}>
-              {NAME_MAX - projectName.length}
-            </Text>
+              <Ionicons name="close" size={ms(22)} color={C.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.topBarTitle}>New project</Text>
+            <TouchableOpacity onPress={handleCreate} disabled={creating}>
+              <Text style={[styles.topBarCreate, { opacity: creating ? 0.4 : 1 }]}>
+                Create
+              </Text>
+            </TouchableOpacity>
           </View>
-          {nameError ? (
-            <View style={styles.errorRow}>
-              <Ionicons
-                name="alert-circle-outline"
-                size={ms(13)}
-                color={C.errorRed}
-              />
-              <Text style={styles.errorText}>{nameError}</Text>
-            </View>
-          ) : null}
-          {/* ── Description ── */}
-          <Text style={[styles.fieldLabel, { marginTop: vs(18) }]}>
-            DESCRIPTION
-          </Text>
-          <View
-            style={[
-              styles.inputBox,
-              styles.textAreaBox,
-              descError ? styles.inputBoxError : null,
-            ]}
+          <View style={styles.divider} />
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
           >
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder={'A collaborative summer video series\nfeaturing product highlights and BTS'}
-              placeholderTextColor={C.textMuted}
-              value={description}
-              onChangeText={(t) => {
-                setDescription(t)
-                if (descError) setDescError('')
-              }}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              editable={!creating}
-            />
-          </View>
-          {descError ? (
-            <View style={styles.errorRow}>
-              <Ionicons
-                name="alert-circle-outline"
-                size={ms(13)}
-                color={C.errorRed}
+            {/* ── Context error ── */}
+            {contextError ? (
+              <View style={styles.errorRow}>
+                <Ionicons name="alert-circle-outline" size={ms(13)} color={C.errorRed} />
+                <Text style={styles.errorText}>{contextError}</Text>
+              </View>
+            ) : null}
+            {/* ── Cover Image ── */}
+            <TouchableOpacity style={styles.coverBox} activeOpacity={0.8}>
+              <View style={styles.coverIconCircle}>
+                <Ionicons name="image-outline" size={ms(26)} color={C.accent} />
+              </View>
+              <Text style={styles.coverLabel}>Add cover image</Text>
+            </TouchableOpacity>
+            {/* ── Project Name ── */}
+            <Text style={styles.fieldLabel}>PROJECT NAME</Text>
+            <View style={[styles.inputBox, nameError ? styles.inputBoxError : null]}>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Summer campaign 2026"
+                placeholderTextColor={C.textMuted}
+                value={projectName}
+                onChangeText={(t) => {
+                  if (t.length <= NAME_MAX) setProjectName(t)
+                  if (nameError) setNameError('')
+                }}
+                maxLength={NAME_MAX}
+                editable={!creating}
               />
-              <Text style={styles.errorText}>{descError}</Text>
+              <Text style={styles.charCount}>{NAME_MAX - projectName.length}</Text>
             </View>
-          ) : null}
-          {/* ── Visibility ── */}
-          <Text style={[styles.fieldLabel, { marginTop: vs(18) }]}>
-            VISIBILITY
-          </Text>
-          {VISIBILITY_OPTIONS.map((opt) => {
-            const isSelected = visibility === opt.value
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.visibilityCard,
-                  isSelected && styles.visibilityCardSelected,
-                ]}
-                onPress={() => setVisibility(opt.value)}
-                activeOpacity={0.8}
-                disabled={creating}
-              >
-                {/* Left icon */}
-                <View
-                  style={[
-                    styles.visibilityIconBox,
-                    isSelected && styles.visibilityIconBoxSelected,
-                  ]}
+            {nameError ? (
+              <View style={styles.errorRow}>
+                <Ionicons name="alert-circle-outline" size={ms(13)} color={C.errorRed} />
+                <Text style={styles.errorText}>{nameError}</Text>
+              </View>
+            ) : null}
+            {/* ── Description ── */}
+            <Text style={[styles.fieldLabel, { marginTop: vs(18) }]}>DESCRIPTION</Text>
+            <View style={[styles.inputBox, styles.textAreaBox, descError ? styles.inputBoxError : null]}>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder={'A collaborative summer video series\nfeaturing product highlights and BTS'}
+                placeholderTextColor={C.textMuted}
+                value={description}
+                onChangeText={(t) => {
+                  setDescription(t)
+                  if (descError) setDescError('')
+                }}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                editable={!creating}
+              />
+            </View>
+            {descError ? (
+              <View style={styles.errorRow}>
+                <Ionicons name="alert-circle-outline" size={ms(13)} color={C.errorRed} />
+                <Text style={styles.errorText}>{descError}</Text>
+              </View>
+            ) : null}
+            {/* ── Visibility ── */}
+            <Text style={[styles.fieldLabel, { marginTop: vs(18) }]}>VISIBILITY</Text>
+            {VISIBILITY_OPTIONS.map((opt) => {
+              const isSelected = visibility === opt.value
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.visibilityCard, isSelected && styles.visibilityCardSelected]}
+                  onPress={() => setVisibility(opt.value)}
+                  activeOpacity={0.8}
+                  disabled={creating}
                 >
-                  <Ionicons
-                    name={opt.icon}
-                    size={ms(18)}
-                    color={isSelected ? C.accent : C.textSecondary}
-                  />
-                </View>
-                {/* Labels */}
-                <View style={styles.visibilityText}>
-                  <Text
-                    style={[
-                      styles.visibilityLabel,
-                      isSelected && { color: C.accent },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                  <Text style={styles.visibilitySub}>{opt.sub}</Text>
-                </View>
-                {/* Radio */}
-                <View
-                  style={[
-                    styles.radio,
-                    isSelected && styles.radioSelected,
-                  ]}
-                >
-                  {isSelected && (
+                  <View style={[styles.visibilityIconBox, isSelected && styles.visibilityIconBoxSelected]}>
                     <Ionicons
-                      name="checkmark"
-                      size={ms(12)}
-                      color={C.bg}
+                      name={opt.icon}
+                      size={ms(18)}
+                      color={isSelected ? C.accent : C.textSecondary}
                     />
-                  )}
+                  </View>
+                  <View style={styles.visibilityText}>
+                    <Text style={[styles.visibilityLabel, isSelected && { color: C.accent }]}>
+                      {opt.label}
+                    </Text>
+                    <Text style={styles.visibilitySub}>{opt.sub}</Text>
+                  </View>
+                  <View style={[styles.radio, isSelected && styles.radioSelected]}>
+                    {isSelected && <Ionicons name="checkmark" size={ms(12)} color={C.bg} />}
+                  </View>
+                </TouchableOpacity>
+              )
+            })}
+            {/* ── Create Button ── */}
+            <TouchableOpacity
+              style={[styles.createBtn, creating && styles.createBtnLoading]}
+              onPress={handleCreate}
+              activeOpacity={0.85}
+              disabled={creating}
+            >
+              {creating ? (
+                <View style={styles.createBtnInner}>
+                  <ActivityIndicator size="small" color="#000000" style={{ marginRight: s(8) }} />
+                  <Text style={styles.createBtnText}>Creating...</Text>
                 </View>
-              </TouchableOpacity>
-            )
-          })}
-          {/* ── Create Button ── */}
-          <TouchableOpacity
-            style={[
-              styles.createBtn,
-              creating && styles.createBtnLoading,
-            ]}
-            onPress={handleCreate}
-            activeOpacity={0.85}
-            disabled={creating}
-          >
-            {creating ? (
-              <View style={styles.createBtnInner}>
-                <ActivityIndicator
-                  size="small"
-                  color="#000000"
-                  style={{ marginRight: s(8) }}
-                />
-                <Text style={styles.createBtnText}>Creating...</Text>
-              </View>
-            ) : (
-              <View style={styles.createBtnInner}>
-                <Ionicons
-                  name="add"
-                  size={ms(20)}
-                  color="#000000"
-                  style={{ marginRight: s(4) }}
-                />
-                <Text style={styles.createBtnText}>Create project</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <View style={{ height: vs(32) }} />
-        </ScrollView>
-      </View>
-    </KeyboardAvoidingView>
-   </SafeAreaView>
+              ) : (
+                <View style={styles.createBtnInner}>
+                  <Ionicons name="add" size={ms(20)} color="#000000" style={{ marginRight: s(4) }} />
+                  <Text style={styles.createBtnText}>Create project</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <View style={{ height: vs(32) }} />
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   )
 }
 export default NewProjectScreen
+
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   flex: {
