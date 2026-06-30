@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +10,14 @@ import {
   Animated,
   Easing,
   Platform,
-  Clipboard,
+Clipboard,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ms, s, vs } from "react-native-size-matters";
+import { useMember } from '../Contexts/memberContext';
+import { useProject } from '../Contexts/projectContext'; 
 // ---------------------------------------------------------------------------
 // Vydora — Invite Member screen
 // Collaborative video editor. Dark theme, single yellow accent.
@@ -50,29 +53,23 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 export default function InviteMemberScreen({ navigation }: any) {
-  const [emails, setEmails] = useState<string[]>
-  ([ 'james@gmail.com']);
+  const { inviteMember } = useMember();
+  const { currentProject } = useProject();
+  const projectId = currentProject?.id;
+  const [emails, setEmails] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
   const [draftError, setDraftError] = useState(false);
   const [role, setRole] = useState<Role>('editor');
-  const [message, setMessage] = useState('Hey! Join our Summer campaign project on Vydora. Excited to collab!');
+  const [message, setMessage] = useState('');
   const [status, setStatus] = useState<InviteStatus>('idle');
   const [copied, setCopied] = useState(false);
-  const [liveTyping, setLiveTyping] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
   const isAddingRef = useRef(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const sendScale = useRef(new Animated.Value(1)).current;
   const checkAnim = useRef(new Animated.Value(1)).current;
+  // TWEAK: invite link is static/mocked — no real backend link generation yet
   const inviteLink = 'vydora.io/invite/sc2026x';
-  // Simulate a teammate "currently typing" in this project — collaborative,
-  // real-time feel without needing a real backend.
-  const triggerLiveCollab = useCallback(() => {
-    const names = ['Maya', 'Theo', 'Priya'];
-    const name = names[Math.floor(Math.random() * names.length)];
-    setLiveTyping(`${name} is editing the timeline…`);
-    setTimeout(() => setLiveTyping(null), 2600);
-  }, []);
   const shake = () => {
     shakeAnim.setValue(0);
     Animated.sequence([
@@ -96,6 +93,7 @@ export default function InviteMemberScreen({ navigation }: any) {
     if (emails.includes(value)) {
       setDraftError(true);
       shake();
+      Alert.alert('Already added', 'This email has already been entered.');
       isAddingRef.current = false;
       return;
     }
@@ -124,26 +122,36 @@ export default function InviteMemberScreen({ navigation }: any) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
-  const handleSend = () => {
+  const handleSend = async () => {
     if (emails.length === 0) {
       shake();
       return;
     }
     if (status !== 'idle') return;
+    if (!projectId) {
+      Alert.alert('No project selected', 'Could not find the current project to invite members to.');
+      return;
+    }
     Animated.sequence([
       Animated.timing(sendScale, { toValue: 0.96, duration: 90, useNativeDriver: true }),
       Animated.timing(sendScale, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
     setStatus('sending');
-    setTimeout(() => {
+    try {
+      // inviteMember handles one email at a time — fire all invites in this batch together
+      await Promise.all(emails.map((email) => inviteMember(projectId, email, role)));
       setStatus('sent');
       checkAnim.setValue(0);
       Animated.spring(checkAnim, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }).start();
-      triggerLiveCollab();
-    }, 1100);
-    setTimeout(() => {
+      setTimeout(() => {
+        setStatus('idle');
+        setEmails([]);
+        setMessage('');
+      }, 3200);
+    } catch (e: any) {
       setStatus('idle');
-    }, 3200);
+      Alert.alert('Invite failed', e?.message || 'Something went wrong sending these invites. Please try again.');
+    }
   };
   const handleClose = () => {
     if (navigation?.goBack) navigation.goBack();
@@ -172,13 +180,6 @@ export default function InviteMemberScreen({ navigation }: any) {
           </Text>
         </Pressable>
       </View>
-      {/* Live collaboration banner — real-time presence, not just static UI */}
-      {liveTyping && (
-        <View style={styles.liveBanner}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveBannerText}>{liveTyping}</Text>
-        </View>
-      )}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -266,7 +267,7 @@ export default function InviteMemberScreen({ navigation }: any) {
             );
           })}
         </View>
-        {/* Personal message */}
+        {/* Personal message — TWEAK: UI-only for now, not sent to backend (inviteMember has no message param) */}
         <Text style={[styles.sectionLabel, { marginTop: 24 }]}>PERSONAL MESSAGE (OPTIONAL)</Text>
         <TextInput
           value={message}
@@ -278,7 +279,7 @@ export default function InviteMemberScreen({ navigation }: any) {
           maxLength={200}
         />
         <Text style={styles.charCount}>{message.length}/200</Text>
-        {/* Invite link */}
+        {/* Invite link — TWEAK: static mocked link, not generated per-project yet */}
         <Text style={[styles.sectionLabel, { marginTop: 24 }]}>OR SHARE INVITE LINK</Text>
         <View style={styles.linkRow}>
           <Ionicons name="link-outline" size={16} color={COLORS.textMuted} />
