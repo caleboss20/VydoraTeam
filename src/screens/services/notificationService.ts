@@ -3,42 +3,42 @@ import { CONFIG } from '../config';
 import { Notification } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
 const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    type: 'invite',
-    title: 'Project Invitation',
-    message: 'Jesse Sarfo invited you to Summer campaign',
-    read: false,
-    createdAt: '2h ago',
-    projectId: '1',
-  },
-  {
-    id: '2',
-    type: 'comment',
-    title: 'New Comment',
-    message: 'Ama Owusu commented on Intro clip',
-    read: false,
-    createdAt: '5h ago',
-    projectId: '1',
-  },
-  {
-    id: '3',
-    type: 'clip_upload',
-    title: 'New Clip Uploaded',
-    message: 'Kofi Mensah uploaded B-Roll montage',
-    read: true,
-    createdAt: '1d ago',
-    projectId: '1',
-  },
-  {
-    id: '4',
-    type: 'role_change',
-    title: 'Role Updated',
-    message: 'Your role in Brand video was changed to Editor',
-    read: true,
-    createdAt: '2d ago',
-    projectId: '3',
-  },
+  // {
+  //   id: '1',
+  //   type: 'invite',
+  //   title: 'Project Invitation',
+  //   message: 'Jesse Sarfo invited you to Summer campaign',
+  //   read: false,
+  //   createdAt: '2h ago',
+  //   projectId: '1',
+  // },
+  // {
+  //   id: '2',
+  //   type: 'comment',
+  //   title: 'New Comment',
+  //   message: 'Ama Owusu commented on Intro clip',
+  //   read: false,
+  //   createdAt: '5h ago',
+  //   projectId: '1',
+  // },
+  // {
+  //   id: '3',
+  //   type: 'clip_upload',
+  //   title: 'New Clip Uploaded',
+  //   message: 'Kofi Mensah uploaded B-Roll montage',
+  //   read: true,
+  //   createdAt: '1d ago',
+  //   projectId: '1',
+  // },
+  // {
+  //   id: '4',
+  //   type: 'role_change',
+  //   title: 'Role Updated',
+  //   message: 'Your role in Brand video was changed to Editor',
+  //   read: true,
+  //   createdAt: '2d ago',
+  //   projectId: '3',
+  // },
 ];
 // ─── Service ─────────────────────────────────────────────────────────────────
 export const notificationService = {
