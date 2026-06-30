@@ -1,13 +1,15 @@
-//For clip context//
 import React, {
   createContext,
   useContext,
   useState,
+  useEffect,
   ReactNode,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Clip } from '../types';
 import { clipService } from '../services/clipService';
 import { useAuth } from './Authcontext';
+import { CONFIG } from '../config';
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface ClipContextType {
   clips: { [projectId: string]: Clip[] };
@@ -26,12 +28,31 @@ export function ClipProvider({ children }: { children: ReactNode }) {
   const [clips, setClips] = useState<{ [projectId: string]: Clip[] }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ── Rehydrate the whole { [projectId]: Clip[] } map from AsyncStorage ──
+  useEffect(() => {
+    const rehydrate = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.CLIPS);
+        if (cached) setClips(JSON.parse(cached));
+      } catch (e) {
+        console.log('Clip rehydration failed', e);
+      }
+    };
+    rehydrate();
+  }, []);
+  // Small helper so every mutation persists the same way — avoids repeating
+  // the AsyncStorage.setItem call (and risking a typo'd key) in four places.
+  const persist = async (next: { [projectId: string]: Clip[] }) => {
+    await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.CLIPS, JSON.stringify(next));
+  };
   const fetchClips = async (projectId: string) => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await clipService.getClips(projectId, token!);
-      setClips(prev => ({ ...prev, [projectId]: data }));
+      const next = { ...clips, [projectId]: data };
+      setClips(next);
+      await persist(next);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -47,17 +68,13 @@ export function ClipProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       setError(null);
-      const newClip = await clipService.addClip(
-        projectId,
-        title,
-        duration,
-        resolution,
-        token!
-      );
-      setClips(prev => ({
-        ...prev,
-        [projectId]: [newClip, ...(prev[projectId] || [])],
-      }));
+      const newClip = await clipService.addClip(projectId, title, duration, resolution, token!);
+      const next = {
+        ...clips,
+        [projectId]: [newClip, ...(clips[projectId] || [])],
+      };
+      setClips(next);
+      await persist(next);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -68,10 +85,12 @@ export function ClipProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       await clipService.deleteClip(projectId, clipId, token!);
-      setClips(prev => ({
-        ...prev,
-        [projectId]: (prev[projectId] || []).filter(c => c.id !== clipId),
-      }));
+      const next = {
+        ...clips,
+        [projectId]: (clips[projectId] || []).filter(c => c.id !== clipId),
+      };
+      setClips(next);
+      await persist(next);
     } catch (e: any) {
       setError(e.message);
     }

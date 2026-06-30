@@ -1,4 +1,3 @@
-
 import React, {
   createContext,
   useContext,
@@ -7,9 +6,11 @@ import React, {
   useRef,
   ReactNode,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Export } from '../types';
 import { exportService } from '../services/exportService';
 import { useAuth } from './Authcontext';
+import { CONFIG } from '../config';
 // ─── Config ────────────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS = 15000; // 15s — exports are background work, not live editing
 // ─── Context Type ─────────────────────────────────────────────────────────────
@@ -31,6 +32,22 @@ export function ExportProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ── Rehydrate from AsyncStorage on launch (offline-first, same pattern as ProjectContext) ──
+  useEffect(() => {
+    const rehydrate = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS);
+        if (cached) setExports(JSON.parse(cached));
+      } catch (e) {
+        console.log('Export rehydration failed', e);
+      }
+    };
+    rehydrate();
+  }, []);
+  // ── Fetch fresh data once token is available ──
+  useEffect(() => {
+    if (token) fetchExports();
+  }, [token]);
   // Global fetch — no projectId, this pulls every export for the logged-in user.
   const fetchExports = async () => {
     try {
@@ -38,6 +55,7 @@ export function ExportProvider({ children }: { children: ReactNode }) {
       setError(null);
       const data = await exportService.getExports(token!);
       setExports(data);
+      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS, JSON.stringify(data));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -48,7 +66,9 @@ export function ExportProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       await exportService.deleteExport(exportId, token!);
-      setExports(prev => prev.filter(e => e.id !== exportId));
+      const updated = exports.filter(e => e.id !== exportId);
+      setExports(updated);
+      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS, JSON.stringify(updated));
     } catch (e: any) {
       setError(e.message);
     }
@@ -56,8 +76,10 @@ export function ExportProvider({ children }: { children: ReactNode }) {
   const retryExport = async (exportId: string) => {
     try {
       setError(null);
-      const updated = await exportService.retryExport(exportId, token!);
-      setExports(prev => prev.map(e => (e.id === exportId ? updated : e)));
+      const updatedItem = await exportService.retryExport(exportId, token!);
+      const updated = exports.map(e => (e.id === exportId ? updatedItem : e));
+      setExports(updated);
+      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS, JSON.stringify(updated));
     } catch (e: any) {
       setError(e.message);
     }
@@ -66,10 +88,6 @@ export function ExportProvider({ children }: { children: ReactNode }) {
     if (status === 'All') return exports;
     return exports.filter(e => e.status === status);
   };
-  // ── Initial fetch once authenticated ──
-  useEffect(() => {
-    if (token) fetchExports();
-  }, [token]);
   // ── Poll only while something is actively Processing. ──
   // Starts an interval when a Processing export appears, clears it once
   // nothing's left in that state — avoids polling forever for no reason.

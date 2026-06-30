@@ -1,13 +1,15 @@
-//Comment context//
 import React, {
   createContext,
   useContext,
   useState,
   ReactNode,
+  useEffect,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Comment } from '../types';
 import { commentService } from '../services/commentService';
 import { useAuth } from './Authcontext';
+import { CONFIG } from '../config';
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface CommentContextType {
   comments: { [projectId: string]: Comment[] };
@@ -27,12 +29,29 @@ export function CommentProvider({ children }: { children: ReactNode }) {
   const [comments, setComments] = useState<{ [projectId: string]: Comment[] }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ── Rehydrate the whole { [projectId]: Comment[] } map from AsyncStorage ──
+  useEffect(() => {
+    const rehydrate = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.COMMENTS);
+        if (cached) setComments(JSON.parse(cached));
+      } catch (e) {
+        console.log('Comment rehydration failed', e);
+      }
+    };
+    rehydrate();
+  }, []);
+  const persist = async (next: { [projectId: string]: Comment[] }) => {
+    await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.COMMENTS, JSON.stringify(next));
+  };
   const fetchComments = async (projectId: string) => {
     try {
       setIsLoading(true);
       setError(null);
       const data = await commentService.getComments(projectId, token!);
-      setComments(prev => ({ ...prev, [projectId]: data }));
+      const next = { ...comments, [projectId]: data };
+      setComments(next);
+      await persist(next);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -47,16 +66,13 @@ export function CommentProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       setError(null);
-      const newComment = await commentService.addComment(
-        projectId,
-        clipId,
-        text,
-        token!
-      );
-      setComments(prev => ({
-        ...prev,
-        [projectId]: [newComment, ...(prev[projectId] || [])],
-      }));
+      const newComment = await commentService.addComment(projectId, clipId, text, token!);
+      const next = {
+        ...comments,
+        [projectId]: [newComment, ...(comments[projectId] || [])],
+      };
+      setComments(next);
+      await persist(next);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -67,10 +83,12 @@ export function CommentProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       await commentService.deleteComment(projectId, commentId, token!);
-      setComments(prev => ({
-        ...prev,
-        [projectId]: (prev[projectId] || []).filter(c => c.id !== commentId),
-      }));
+      const next = {
+        ...comments,
+        [projectId]: (comments[projectId] || []).filter(c => c.id !== commentId),
+      };
+      setComments(next);
+      await persist(next);
     } catch (e: any) {
       setError(e.message);
     }
