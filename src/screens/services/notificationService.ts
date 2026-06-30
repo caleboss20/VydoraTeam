@@ -2,7 +2,7 @@
 import { CONFIG } from '../config';
 import { Notification } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
-const MOCK_NOTIFICATIONS: Notification[] = [
+let MOCK_NOTIFICATIONS: Notification[] = [
   // {
   //   id: '1',
   //   type: 'invite',

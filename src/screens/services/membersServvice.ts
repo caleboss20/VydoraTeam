@@ -1,7 +1,7 @@
 import { CONFIG } from '../config';
 import { Member, MemberRole } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
-const MOCK_MEMBERS: Member[] = [
+let MOCK_MEMBERS: Member[] = [
   {
     id: '1',
     projectId: '1',

@@ -2,7 +2,7 @@
 import { CONFIG } from '../config';
 import { Comment } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
-const MOCK_COMMENTS: Comment[] = [
+let MOCK_COMMENTS: Comment[] = [
   {
     id: '1',
     projectId: '1',

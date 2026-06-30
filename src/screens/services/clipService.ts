@@ -1,7 +1,7 @@
 import { CONFIG } from '../config';
 import { Clip } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
-const MOCK_CLIPS: Clip[] = [
+let MOCK_CLIPS: Clip[] = [
   {
     id: '1',
     projectId: '1',

@@ -2,12 +2,14 @@ import { Export } from '../types';
 import { CONFIG } from '../config';
 // Thin service layer, same pattern as clipService / projectService.
 //
-// NOTE: CONFIG.USE_MOCK is true in your current config, meaning your other
-// services (clipService, projectservice) likely branch to return mock data
-// instead of hitting localhost:8080. I haven't seen those files, so this is
-// a reasonable guess at that pattern, not a confirmed match. Paste
-// clipService.ts or projectservice.ts and I'll align this exactly.
-const MOCK_EXPORTS: Export[] = [
+// CONFIG.USE_MOCK is true, so this branches to mock data instead of hitting
+// localhost:8080. IMPORTANT: the mock store below is a mutable `let` array,
+// not a const — earlier versions of this file returned the same frozen
+// MOCK_EXPORTS on every getExports() call, which meant deletes/retries never
+// actually stuck: the next fetch would just hand back the original data.
+// Now delete/retry mutate this array directly, so repeated fetches within
+// the same app session reflect prior changes.
+let mockStore: Export[] = [
   { id: 'e1', projectId: 'p1', projectName: 'Test', title: 'Summer campaign', resolution: '1080p', format: 'MP4', sizeMb: 184, status: 'Ready', isFinal: true, createdAt: '2026-06-14T00:00:00Z' },
   { id: 'e2', projectId: 'p1', projectName: 'Test', title: 'Campaign, v3', resolution: '1080p', format: 'MP4', sizeMb: 179, status: 'Ready', createdAt: '2026-06-13T00:00:00Z' },
   { id: 'e3', projectId: 'p1', projectName: 'Test', title: 'Behind the scenes', resolution: '720p', format: 'MOV', sizeMb: 96, status: 'Processing', createdAt: '2026-06-12T00:00:00Z' },
@@ -15,7 +17,7 @@ const MOCK_EXPORTS: Export[] = [
   { id: 'e5', projectId: 'p1', projectName: 'Test', title: 'Client review cut', resolution: '1080p', format: 'MP4', sizeMb: 152, status: 'Ready', createdAt: '2026-06-08T00:00:00Z' },
 ];
 async function getExports(token: string): Promise<Export[]> {
-  if (CONFIG.USE_MOCK) return Promise.resolve(MOCK_EXPORTS);
+  if (CONFIG.USE_MOCK) return Promise.resolve(mockStore);
   const res = await fetch(`${CONFIG.API_BASE}/exports`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -23,7 +25,10 @@ async function getExports(token: string): Promise<Export[]> {
   return res.json();
 }
 async function deleteExport(exportId: string, token: string): Promise<void> {
-  if (CONFIG.USE_MOCK) return Promise.resolve();
+  if (CONFIG.USE_MOCK) {
+    mockStore = mockStore.filter(e => e.id !== exportId);
+    return Promise.resolve();
+  }
   const res = await fetch(`${CONFIG.API_BASE}/exports/${exportId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
@@ -32,9 +37,10 @@ async function deleteExport(exportId: string, token: string): Promise<void> {
 }
 async function retryExport(exportId: string, token: string): Promise<Export> {
   if (CONFIG.USE_MOCK) {
-    const found = MOCK_EXPORTS.find(e => e.id === exportId);
-    if (!found) throw new Error('Export not found');
-    return Promise.resolve({ ...found, status: 'Processing' });
+    const idx = mockStore.findIndex(e => e.id === exportId);
+    if (idx === -1) throw new Error('Export not found');
+    mockStore[idx] = { ...mockStore[idx], status: 'Processing', errorMessage: undefined };
+    return Promise.resolve(mockStore[idx]);
   }
   const res = await fetch(`${CONFIG.API_BASE}/exports/${exportId}/retry`, {
     method: 'POST',
