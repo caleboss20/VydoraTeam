@@ -391,8 +391,9 @@ const styles = StyleSheet.create({
   centered: { flex: 1, backgroundColor: C.bg, justifyContent: "center" },
   scrollContent: {
     paddingHorizontal: s(10),
-    paddingTop: vs(56),
-    paddingBottom: vs(26),
+    paddingTop: vs(6),
+    paddingBottom: vs(36),
+    marginTop:s(8),
   },
 
   // Welcome card
@@ -402,7 +403,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
     borderRadius: s(12),
     padding: s(14),
-    marginBottom: vs(8),
+    marginBottom: s(5),
    
   },
 
@@ -491,7 +492,7 @@ flexDirection:'column',
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: vs(14),
+    marginBottom: vs(44),
   },
   headerGreeting: {
     color: C.textSecondary,
@@ -697,3 +698,4 @@ flexDirection:'column',
     textAlign: "center",
   },
 });
+
