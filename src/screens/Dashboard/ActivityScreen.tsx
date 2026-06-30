@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react'
+import React from 'react'
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { ms, s, vs } from 'react-native-size-matters'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useNotification } from '../Contexts/notificatinContext'
+import { Notification, NotificationType } from '../types'
 // ─── Palette ────────────────────────────────────────────────────────────────
 const C = {
   bg: '#111111',
@@ -26,219 +28,151 @@ const C = {
   filterInactiveTxt: '#CCCCCC',
   unreadDot: '#F5C518',
 } as const
-// ─── Types ───────────────────────────────────────────────────────────────────
-type FilterTab = 'All' | 'Mentions' | 'Comments' | 'Invites'
-type NotifType = 'comment' | 'invite' | 'resolve' | 'mention' | 'export' | 'upload'
-type Notification = {
-  id: string
-  name: string
-  initials: string
-  avatarColor: string
-  type: NotifType
-  action: string
-  project: string
-  time: string
-  unread: boolean
+// ─── Filter Tabs (mapped to real NotificationType) ──────────────────────────
+type FilterTab = 'All' | 'Comments' | 'Invites' | 'Clips'
+const FILTER_TABS: FilterTab[] = ['All', 'Comments', 'Invites', 'Clips']
+const FILTER_TO_TYPE: Record<FilterTab, NotificationType | null> = {
+  All: null,
+  Comments: 'comment',
+  Invites: 'invite',
+  Clips: 'clip_upload',
 }
-// ─── Icon map per notification type ─────────────────────────────────────────
-const TYPE_ICON: Record<NotifType, keyof typeof Ionicons.glyphMap> = {
+// ─── Icon + color per real notification type ────────────────────────────────
+const TYPE_ICON: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
   comment: 'chatbubble-outline',
   invite: 'person-add-outline',
-  resolve: 'checkmark-outline',
-  mention: 'at-outline',
-  export: 'download-outline',
-  upload: 'cloud-upload-outline',
+  clip_upload: 'cloud-upload-outline',
+  role_change: 'swap-horizontal-outline',
 }
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-const NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    name: 'Maya Alvarez',
-    initials: 'MA',
-    avatarColor: '#E05C5C',
-    type: 'comment',
-    action: 'commented on your clip at 0:24',
-    project: 'Summer campaign',
-    time: '5 min ago',
-    unread: true,
-  },
-  {
-    id: '2',
-    name: 'Jay Reyes',
-    initials: 'JR',
-    avatarColor: '#3DBFBF',
-    type: 'invite',
-    action: 'invited you to collaborate on',
-    project: 'Product launch teaser',
-    time: '32 min ago',
-    unread: true,
-  },
-  {
-    id: '3',
-    name: 'Sam Khan',
-    initials: 'SK',
-    avatarColor: '#9B59B6',
-    type: 'resolve',
-    action: 'resolved a comment you made in',
-    project: 'Behind the scenes',
-    time: '1 hr ago',
-    unread: true,
-  },
-  {
-    id: '4',
-    name: 'Maya Alvarez',
-    initials: 'MA',
-    avatarColor: '#E05C5C',
-    type: 'mention',
-    action: 'mentioned you in a comment in',
-    project: 'Summer campaign',
-    time: '3 hr ago',
-    unread: false,
-  },
-  {
-    id: '5',
-    name: 'Jay Reyes',
-    initials: 'JR',
-    avatarColor: '#3DBFBF',
-    type: 'export',
-    action: 'exported a new version of',
-    project: 'Product launch teaser',
-    time: 'Yesterday',
-    unread: false,
-  },
-  {
-    id: '6',
-    name: 'Sam Khan',
-    initials: 'SK',
-    avatarColor: '#9B59B6',
-    type: 'upload',
-    action: 'uploaded 3 new clips to',
-    project: 'Summer campaign',
-    time: 'Yesterday',
-    unread: false,
-  },
-]
-
-const FILTER_TABS: FilterTab[] = ['All', 'Mentions', 'Comments', 'Invites']
-// ─── Sub-components ──────────────────────────────────────────────────────────
-type NotifCardProps = {
+const TYPE_COLOR: Record<NotificationType, string> = {
+  comment: '#3DBFBF',
+  invite: '#9B59B6',
+  clip_upload: '#E0A95C',
+  role_change: '#E05C5C',
+}
+// ─── Helper: relative time ───────────────────────────────────────────────────
+function timeAgo(dateStr: string): string {
+  // TWEAK: createdAt currently mock string like "2h ago" already —
+  // if backend sends ISO date later, replace this with real diffing logic
+  return dateStr
+}
+// ─── Sub-component ───────────────────────────────────────────────────────────
+const NotifCard: React.FC<{
   item: Notification
-}
-const NotifCard: React.FC<NotifCardProps> = ({ item }) => (
-  <View style={styles.card}>
-    {/* Unread dot + Avatar */}
+  onPress: () => void
+}> = ({ item, onPress }) => (
+  <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
     <View style={styles.avatarCol}>
-      <View
-        style={[
-          styles.unreadDot,
-          { opacity: item.unread ? 1 : 0 },
-        ]}
-      />
-      <View
-        style={[styles.avatar, { backgroundColor: item.avatarColor }]}
-      >
-        <Text style={styles.avatarText}>{item.initials}</Text>
-        {/* Type badge icon */}
-        <View style={styles.typeBadge}>
-          <Ionicons
-            name={TYPE_ICON[item.type]}
-            size={ms(9)}
-            color="#fff"
-          />
-        </View>
+      <View style={[styles.unreadDot, { opacity: item.read ? 0 : 1 }]} />
+      <View style={[styles.avatar, { backgroundColor: TYPE_COLOR[item.type] }]}>
+        <Ionicons name={TYPE_ICON[item.type]} size={ms(16)} color="#fff" />
       </View>
     </View>
-    {/* Text content */}
     <View style={styles.cardContent}>
       <View style={styles.cardTopRow}>
-        <Text style={styles.nameText}>{item.name}</Text>
-        <Text style={styles.timeText}>{item.time}</Text>
+        <Text style={styles.nameText}>{item.title}</Text>
+        <Text style={styles.timeText}>{timeAgo(item.createdAt)}</Text>
       </View>
-      <Text style={styles.actionText}>
-        {item.action}{' '}
-        <Text style={styles.projectLink}>{item.project}</Text>
-      </Text>
+      <Text style={styles.actionText}>{item.message}</Text>
     </View>
-  </View>
+  </TouchableOpacity>
 )
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 const ActivityScreen: React.FC = () => {
-  const [activeFilter, setActiveFilter] = useState<FilterTab>('All')
-  const filtered = NOTIFICATIONS.filter((n) => {
-    if (activeFilter === 'All') return true
-    if (activeFilter === 'Mentions') return n.type === 'mention'
-    if (activeFilter === 'Comments') return n.type === 'comment'
-    if (activeFilter === 'Invites') return n.type === 'invite'
-    return true
+  const {
+    notifications,
+    isLoading,
+    markAsRead,
+    markAllAsRead,
+  } = useNotification()
+  const [activeFilter, setActiveFilter] = React.useState<FilterTab>('All')
+  const filtered = notifications.filter((n) => {
+    const wantedType = FILTER_TO_TYPE[activeFilter]
+    if (wantedType === null) return true
+    return n.type === wantedType
   })
+  const handleCardPress = (notification: Notification) => {
+    if (!notification.read) {
+      markAsRead(notification.id)
+    }
+    // TWEAK: navigate to notification.projectId once project navigation
+    // from notifications is wired (e.g. navigation.navigate('projectdetail', { id: notification.projectId }))
+  }
   return (
-  <SafeAreaView style={styles.container}>
-      <View >
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <TouchableOpacity>
-          <Text style={styles.markAllRead}>Mark all read</Text>
-        </TouchableOpacity>
-      </View>
-      {/* ── Divider ── */}
-      <View style={styles.headerDivider} />
-      {/* ── Filter Pills ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {FILTER_TABS.map((tab) => {
-          const isActive = activeFilter === tab
-          return (
-            <TouchableOpacity
-              key={tab}
-              onPress={() => setActiveFilter(tab)}
-              style={[
-                styles.filterPill,
-                {
-                  backgroundColor: isActive
-                    ? C.filterActive
-                    : C.filterInactive,
-                },
-              ]}
-              activeOpacity={0.8}
-            >
-              <Text
+    <SafeAreaView style={styles.container}>
+      <View>
+        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+        {/* ── Header ── */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Notifications</Text>
+          <TouchableOpacity onPress={markAllAsRead}>
+            <Text style={styles.markAllRead}>Mark all read</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.headerDivider} />
+        {/* ── Filter Pills ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {FILTER_TABS.map((tab) => {
+            const isActive = activeFilter === tab
+            return (
+              <TouchableOpacity
+                key={tab}
+                onPress={() => setActiveFilter(tab)}
                 style={[
-                  styles.filterText,
+                  styles.filterPill,
                   {
-                    color: isActive
-                      ? C.filterActiveTxt
-                      : C.filterInactiveTxt,
-                    fontWeight: isActive ? '700' : '500',
+                    backgroundColor: isActive
+                      ? C.filterActive
+                      : C.filterInactive,
                   },
                 ]}
+                activeOpacity={0.8}
               >
-                {tab}
+                <Text
+                  style={[
+                    styles.filterText,
+                    {
+                      color: isActive ? C.filterActiveTxt : C.filterInactiveTxt,
+                      fontWeight: isActive ? '700' : '500',
+                    },
+                  ]}
+                >
+                  {tab}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
+        </ScrollView>
+        {/* ── Notification List ── */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+        >
+          {isLoading && notifications.length === 0 && (
+            <Text style={styles.emptyText}>Loading notifications...</Text>
+          )}
+          {!isLoading && filtered.length === 0 && (
+            <View style={styles.emptyState}>
+              <Ionicons name="notifications-off-outline" size={ms(40)} color={C.textSecondary} />
+              <Text style={styles.emptyTitle}>No notifications yet</Text>
+              <Text style={styles.emptySubtitle}>
+                You'll see comments, invites and updates here as they happen
               </Text>
-            </TouchableOpacity>
-          )
-        })}
-      </ScrollView>
-      {/* ── Notification List ── */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-      >
-        {filtered.map((item, index) => (
-          <View key={item.id}>
-            <NotifCard item={item} />
-            {index < filtered.length - 1 && (
-              <View style={styles.divider} />
-            )}
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  </SafeAreaView>
+            </View>
+          )}
+          {filtered.map((item, index) => (
+            <View key={item.id}>
+              <NotifCard item={item} onPress={() => handleCardPress(item)} />
+              {index < filtered.length - 1 && <View style={styles.divider} />}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </SafeAreaView>
   )
 }
 export default ActivityScreen
@@ -278,7 +212,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: s(16),
     paddingVertical: vs(14),
-    gap: s(8),
+    gap: s(18),
+    marginBottom:s(20),
   },
   filterPill: {
     paddingHorizontal: s(16),
@@ -288,17 +223,21 @@ const styles = StyleSheet.create({
   filterText: {
     fontSize: ms(13),
   },
+  emptyText:{
+
+  },
   // List
   listContent: {
     paddingHorizontal: s(16),
     paddingBottom: vs(24),
+    gap:s(20),
   },
   // Card
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: vs(14),
-    gap: s(12),
+    gap: s(14),
   },
   avatarCol: {
     flexDirection: 'row',
@@ -366,5 +305,26 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: C.divider,
+  },
+
+  //empty state//
+   emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: vs(100),
+    paddingHorizontal: s(32),
+  },
+  emptyTitle: {
+    color: C.textPrimary,
+    fontSize: ms(23),
+    fontWeight: '600',
+    marginTop: vs(12),
+  },
+  emptySubtitle: {
+    color: C.textSecondary,
+    fontSize: ms(13),
+    textAlign: 'center',
+    marginTop: vs(10),
+    lineHeight: ms(19),
   },
 })
