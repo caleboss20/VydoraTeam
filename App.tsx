@@ -8,6 +8,7 @@ import { ClipProvider } from './src/screens/Contexts/clipContext';
 import { MemberProvider } from './src/screens/Contexts/memberContext'; 
 import { CommentProvider } from './src/screens/Contexts/commentContext'; 
 import { NotificationProvider } from './src/screens/Contexts/notificatinContext'; 
+import { ExportProvider } from './src/screens/Contexts/exportContext';
 
 export default function App() {
   return (
@@ -15,7 +16,8 @@ export default function App() {
       <AuthProvider>
         <ProjectProvider>
           <ClipProvider>
-            <MemberProvider>
+           <ExportProvider>
+             <MemberProvider>
               <CommentProvider>
                 <NotificationProvider>
                   <NavigationContainer>
@@ -24,6 +26,7 @@ export default function App() {
                 </NotificationProvider>
               </CommentProvider>
             </MemberProvider>
+           </ExportProvider>
           </ClipProvider>
         </ProjectProvider>
       </AuthProvider>
