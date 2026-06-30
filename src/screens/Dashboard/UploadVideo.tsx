@@ -17,12 +17,19 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ms, s, vs } from "react-native-size-matters";
 import * as DocumentPicker from 'expo-document-picker';
+import { useProject } from '../Contexts/projectContext'; 
+import { useClip } from '../Contexts/clipContext';
 // ---------------------------------------------------------------------------
 // Vydora — Upload Video screen
 // Full screen (not a modal), dark theme, single yellow accent.
 // Real file selection via expo-image-picker / expo-document-picker.
 // Upload progress is simulated client-side (no backend), but file picking,
 // names, sizes, and the "voiceover added" flow are all real device data.
+//
+// WIRING NOTE: when a file's simulated progress hits 100%, we automatically
+// call addClip() from ClipContext to persist it against the current project.
+// Search "TWEAK:" comments below for the spots you'll likely want to revisit
+// once the real backend / real video metadata probing is wired in.
 // ---------------------------------------------------------------------------
 const COLORS = {
   bg: '#1A1A1A',
@@ -48,12 +55,31 @@ interface UploadFile {
   isAudio: boolean;
   progress: number; // 0-100
   status: FileStatus;
+  // TWEAK: duration comes from expo-image-picker's asset.duration (ms) when available.
+  // Falls back to a placeholder string until we wire real metadata probing for
+  // files picked via DocumentPicker / URL import.
+  durationLabel: string;
+  // TWEAK: resolution can't be reliably read without expo-av or a native module.
+  // Hardcoded for now — swap once we probe real video metadata.
+  resolution: string;
+  // guards against double-adding to ClipContext if progress effect re-fires
+  savedToClipContext: boolean;
 }
 function formatBytes(bytes: number) {
   if (!bytes || bytes <= 0) return '0 MB';
   const mb = bytes / (1024 * 1024);
   if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
   return `${(mb / 1024).toFixed(2)} GB`;
+}
+function formatDuration(ms?: number): string {
+  // TWEAK: this only works for camera roll picks where expo-image-picker
+  // returns `duration` in milliseconds. DocumentPicker / URL imports won't
+  // have this — they fall back to '--:--' until real probing is added.
+  if (!ms || ms <= 0) return '--:--';
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 function getExtension(name: string) {
   const parts = name.split('.');
@@ -63,11 +89,13 @@ function isAudioExt(ext: string) {
   return ['mp3', 'wav', 'm4a', 'aac'].includes(ext);
 }
 export default function UploadVideoScreen({ navigation }: any) {
-  const [files, setFiles] = useState<UploadFile[]>([
-    { id: 'seed-1', name: 'clip_01.mp4', sizeLabel: '128 MB', isAudio: false, progress: 72, status: 'uploading' },
-    { id: 'seed-2', name: 'b_roll_final.mp4', sizeLabel: '256 MB', isAudio: false, progress: 34, status: 'uploading' },
-    { id: 'seed-3', name: 'voiceover_v2.mp3', sizeLabel: '12 MB', isAudio: true, progress: 100, status: 'done' },
-  ]);
+  // TWEAK: currentProject must already be set (e.g. from ProjectDetailScreen
+  // navigating here). If null, we block uploads and show an alert — revisit
+  // if you want a project picker instead.
+  const { currentProject } = useProject();
+  const { addClip } = useClip();
+  // TWEAK: removed hardcoded seed files (clip_01.mp4 etc) — starts empty now.
+  const [files, setFiles] = useState<UploadFile[]>([]);
   const [urlModalVisible, setUrlModalVisible] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
   const [urlError, setUrlError] = useState(false);
@@ -84,28 +112,52 @@ export default function UploadVideoScreen({ navigation }: any) {
     loop.start();
     return () => loop.stop();
   }, []);
+  // ── Saves a completed file into ClipContext for the current project ──
+  // TWEAK: this is where real backend upload would actually happen instead
+  // of just registering metadata — right now addClip() in mock mode just
+  // stores the clip info, no real file bytes go anywhere.
+  const persistClipToContext = useCallback(
+    (file: UploadFile) => {
+      if (!currentProject) return;
+      addClip(currentProject.id, file.name, file.durationLabel, file.resolution);
+    },
+    [currentProject, addClip]
+  );
   const startSimulatedUpload = useCallback((id: string) => {
     const interval = setInterval(() => {
-      setFiles((prev):any => {
-        let cleared = false;
+      setFiles((prev): any => {
+        let justFinished: UploadFile | null = null;
         const next = prev.map((f) => {
           if (f.id !== id) return f;
           const bump = f.isAudio ? 18 : Math.random() * 9 + 3;
           const nextProgress = Math.min(100, f.progress + bump);
-          if (nextProgress >= 100) cleared = true;
-          return { ...f, progress: nextProgress, status: nextProgress >= 100 ? 'done' : 'uploading' };
+          const isDone = nextProgress >= 100;
+          if (isDone && f.status !== 'done') {
+            justFinished = { ...f, progress: 100, status: 'done' };
+          }
+          return { ...f, progress: nextProgress, status: isDone ? 'done' : 'uploading' };
         });
-        if (cleared) {
+        if (justFinished) {
           clearInterval(timersRef.current[id]);
           delete timersRef.current[id];
+          // TWEAK: auto-add to ClipContext the moment progress hits 100%.
+          // If you'd rather batch this (e.g. one "Done" button for all files),
+          // remove this call and do it in a separate handler instead.
+          persistClipToContext(justFinished);
         }
         return next;
       });
     }, 450);
     timersRef.current[id] = interval;
-  }, []);
+  }, [persistClipToContext]);
   const addFile = useCallback(
-    (name: string, bytes: number) => {
+    (name: string, bytes: number, durationMs?: number) => {
+      // TWEAK: block upload entirely if no project is active. Could instead
+      // redirect to a project picker or auto-create a draft project.
+      if (!currentProject) {
+        Alert.alert('No project selected', 'Open a project before uploading clips.');
+        return;
+      }
       const ext = getExtension(name);
       const audio = isAudioExt(ext);
       if (!audio && !VALID_EXTENSIONS.includes(ext)) {
@@ -124,11 +176,15 @@ export default function UploadVideoScreen({ navigation }: any) {
         isAudio: audio,
         progress: 0,
         status: 'uploading',
+        durationLabel: formatDuration(durationMs),
+        // TWEAK: hardcoded resolution — replace with real probing later.
+        resolution: '1080p',
+        savedToClipContext: false,
       };
       setFiles((prev) => [newFile, ...prev]);
       startSimulatedUpload(id);
     },
-    [startSimulatedUpload]
+    [startSimulatedUpload, currentProject]
   );
   const removeFile = (id: string) => {
     if (timersRef.current[id]) {
@@ -136,9 +192,11 @@ export default function UploadVideoScreen({ navigation }: any) {
       delete timersRef.current[id];
     }
     setFiles((prev) => prev.filter((f) => f.id !== id));
+    // TWEAK: this only removes from local UI state — does NOT call
+    // deleteClip() in ClipContext. If the file already finished uploading
+    // and got persisted, it will still exist in ClipContext after removal
+    // here. Wire deleteClip() if you want removal to be fully in sync.
   };
-
-
   // --- Real pickers -------------------------------------------------------
   const pickFromCameraRoll = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -153,7 +211,8 @@ export default function UploadVideoScreen({ navigation }: any) {
     if (result.canceled) return;
     const asset = result.assets[0];
     const name = asset.fileName || `camera_roll_${Date.now()}.mp4`;
-    addFile(name, asset.fileSize ?? 0);
+    // TWEAK: asset.duration is in milliseconds on iOS/Android via expo-image-picker.
+    addFile(name, asset.fileSize ?? 0, asset.duration ?? undefined);
   };
   const pickFromFiles = async () => {
     const result = await DocumentPicker.getDocumentAsync({
@@ -162,10 +221,9 @@ export default function UploadVideoScreen({ navigation }: any) {
       copyToCacheDirectory: false,
     });
     if (result.canceled) return;
+    // TWEAK: DocumentPicker doesn't return duration — falls back to '--:--'.
     result.assets.forEach((asset) => addFile(asset.name, asset.size ?? 0));
   };
-
-
   // No real cloud SDK is wired up (Drive/Dropbox would need API keys), so
   // "Cloud" routes through the same document picker — on-device, this surface
   // already includes cloud-linked locations like iCloud Drive / Google Drive.
@@ -192,8 +250,6 @@ export default function UploadVideoScreen({ navigation }: any) {
     { key: 'cloud', label: 'Cloud', icon: 'cloud-upload', onPress: pickFromCloud },
     { key: 'url', label: 'URL', icon: 'link', onPress: () => setUrlModalVisible(true) },
   ];
-
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Header */}
@@ -297,10 +353,6 @@ export default function UploadVideoScreen({ navigation }: any) {
     </SafeAreaView>
   );
 }
-
-
-
-
 function FileRow({ file, onRemove }: { file: UploadFile; onRemove: () => void }) {
   const widthAnim = useRef(new Animated.Value(file.progress)).current;
   const checkAnim = useRef(new Animated.Value(file.status === 'done' ? 1 : 0)).current;
@@ -356,7 +408,6 @@ function FileRow({ file, onRemove }: { file: UploadFile; onRemove: () => void })
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   safeArea: {
