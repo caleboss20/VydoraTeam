@@ -19,7 +19,8 @@ import { Settings } from "react-native";
 import SettingsScreen from "./Dashboard/Settings";
 import ProjectDetailScreen from "./Project/ProjectDetail";
 import ActivityScreen from "./Dashboard/ActivityScreen";
-// import Bottomtabbar from "./Tabbar/BottomTabbar";
+import ExportLibraryScreen from "./Editor/Export";
+
 const Stack=createNativeStackNavigator();
 
 function MainStackNavigator(){
@@ -47,7 +48,7 @@ function MainStackNavigator(){
                    <Stack.Screen name="uploadvideo" component={UploadVideoScreen} />
                     <Stack.Screen name="settings" component={SettingsScreen} />
                      <Stack.Screen name="activities" component={ActivityScreen} />
-
+                   
               
         </Stack.Navigator>
     )

@@ -8,10 +8,11 @@ import DashboardScreen from '../Dashboard/Dashboard'
 import LibraryScreen from '../Dashboard/LibraryScreen'
 import ActivityScreen from '../Dashboard/ActivityScreen'
 import ProfileScreen from '../Dashboard/ProfileScreen'
+import ExportLibraryScreen from '../Editor/Export'
 type IoniconName = keyof typeof Ionicons.glyphMap
 export type DashboardTabParamList = {
   projects: undefined
-  Library: undefined
+  export: undefined
   Activity: undefined
   Profile: undefined
 }
@@ -39,7 +40,7 @@ export default function Dashboardtabbar() {
           let iconName: IoniconName = 'ellipse-outline'
           if (route.name === 'projects') {
             iconName = focused ? 'folder' : 'folder-outline'
-          } else if (route.name === 'Library') {
+          } else if (route.name === 'export') {
             iconName = focused ? 'film' : 'film-outline'
           } else if (route.name === 'Activity') {
             iconName = focused ? 'pulse' : 'pulse-outline'
@@ -51,7 +52,7 @@ export default function Dashboardtabbar() {
       })}
     >
       <Tab.Screen name="projects" component={DashboardScreen} />
-      <Tab.Screen name="Library" component={LibraryScreen} />
+      <Tab.Screen name="export" component={ExportLibraryScreen} />
       <Tab.Screen name="Activity" component={ActivityScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

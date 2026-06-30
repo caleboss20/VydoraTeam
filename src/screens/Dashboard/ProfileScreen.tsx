@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,48 +7,48 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
-import { ms, s, vs } from 'react-native-size-matters'
+import { moderateScale, verticalScale,scale,ms,s,vs } from 'react-native-size-matters';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
-// ─── Seed data ────────────────────────────────────────────────────────────────
-const USER = {
-  initials: 'Y',
-  name: 'You',
-  email: 'you@vydora.io',
-  stats: [
-    { label: 'Projects', value: 12 },
-    { label: 'Exports', value: 48 },
-    { label: 'Teams', value: 6 },
-  ],
-  plan: {
-    name: 'Pro plan',
-    detail: '200 GB storage · 5 active projects',
-  },
-};
+import { useAuth } from '../Contexts/Authcontext'; 
+import { useProject } from '../Contexts/projectContext'; 
+import { useExport } from '../Contexts/exportContext'; 
+// ─── Static content (not user data — these don't need a context) ──────────────
 const ACCOUNT_ITEMS = [
   { icon: 'person-outline', label: 'Personal info' },
   { icon: 'lock-closed-outline', label: 'Privacy & security' },
   { icon: 'notifications-outline', label: 'Notifications' },
   { icon: 'people-outline', label: 'Teams & roles' },
-   
 ];
 const SUPPORT_ITEMS = [
   { icon: 'chatbubble-outline', label: 'Help & feedback' },
 ];
+// Static until a billing context exists — banner is tappable but the
+// numbers shown are not real plan data yet.
+const PLAN_PLACEHOLDER = {
+  name: 'Pro plan',
+  detail: '200 GB storage · 5 active projects',
+};
 // ─── Theme ────────────────────────────────────────────────────────────────────
 const C = {
   bg: '#0F0F0F',
   surface: '#1A1A1A',
   border: '#2A2A2A',
-  accent: '#C9A227',       // Vydora gold
-  accentDim: '#2A2210',    // dimmed gold for plan banner bg
+  accent: '#C9A227', // Vydora gold
+  accentDim: '#2A2210',
   text: '#FFFFFF',
   textMuted: '#9A9A9A',
   textDim: '#5A5A5A',
   iconBg: '#222222',
 };
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function getInitials(name: string | undefined): string {
+  if (!name || !name.trim()) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 // ─── Subcomponents ────────────────────────────────────────────────────────────
 const SectionLabel = ({ title }: { title: string }) => (
   <Text style={styles.sectionLabel}>{title}</Text>
@@ -65,7 +64,20 @@ const SettingRow = ({ icon, label }: { icon: string; label: string }) => (
 );
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
-  const navigation=useNavigation()
+  const navigation = useNavigation();
+  const { user, logout } = useAuth();
+  const { projects } = useProject();
+  const { exports: exportsList } = useExport();
+  const initials = useMemo(() => getInitials(user?.name), [user?.name]);
+  // Only Projects + Exports are backed by real contexts right now.
+  // Teams has no context yet, so it's omitted rather than shown as a fake number.
+  const stats = [
+    { label: 'Projects', value: projects.length },
+    { label: 'Exports', value: exportsList.length },
+  ];
+  const handleLogout = () => {
+    logout();
+  };
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* Header */}
@@ -74,11 +86,8 @@ export default function ProfileScreen() {
           <Ionicons name="menu-outline" size={moderateScale(24)} color={C.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity
-        onPress={()=>navigation.navigate("settings")}
-        >
-          <Ionicons 
-          name="settings-outline" size={moderateScale(22)} color={C.text} />
+        <TouchableOpacity onPress={() => navigation.navigate('settings' as never)}>
+          <Ionicons name="settings-outline" size={moderateScale(22)} color={C.text} />
         </TouchableOpacity>
       </View>
       <ScrollView
@@ -89,33 +98,33 @@ export default function ProfileScreen() {
         {/* Avatar + name */}
         <View style={styles.avatarSection}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarInitial}>{USER.initials}</Text>
+            <Text style={styles.avatarInitial}>{initials}</Text>
           </View>
-          <Text style={styles.userName}>{USER.name}</Text>
-          <Text style={styles.userEmail}>{USER.email}</Text>
+          <Text style={styles.userName}>{user?.name ?? 'Unnamed'}</Text>
+          <Text style={styles.userEmail}>{user?.email ?? ''}</Text>
           <TouchableOpacity style={styles.editBtn} activeOpacity={0.75}>
             <Text style={styles.editBtnText}>Edit</Text>
           </TouchableOpacity>
         </View>
-        {/* Stats row */}
+        {/* Stats row — Projects + Exports only (real data) */}
         <View style={styles.statsRow}>
-          {USER.stats.map((s, i) => (
-            <React.Fragment key={s.label}>
+          {stats.map((stat, i) => (
+            <React.Fragment key={stat.label}>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>{s.value}</Text>
-                <Text style={styles.statLabel}>{s.label}</Text>
+                <Text style={styles.statValue}>{stat.value}</Text>
+                <Text style={styles.statLabel}>{stat.label}</Text>
               </View>
-              {i < USER.stats.length - 1 && <View style={styles.statDivider} />}
+              {i < stats.length - 1 && <View style={styles.statDivider} />}
             </React.Fragment>
           ))}
         </View>
-        {/* Pro plan banner */}
+        {/* Pro plan banner — tappable, but data is placeholder until billing context exists */}
         <TouchableOpacity style={styles.planBanner} activeOpacity={0.8}>
           <View style={styles.planLeft}>
             <Ionicons name="star-outline" size={moderateScale(20)} color={C.accent} />
             <View style={styles.planText}>
-              <Text style={styles.planName}>{USER.plan.name}</Text>
-              <Text style={styles.planDetail}>{USER.plan.detail}</Text>
+              <Text style={styles.planName}>{PLAN_PLACEHOLDER.name}</Text>
+              <Text style={styles.planDetail}>{PLAN_PLACEHOLDER.detail}</Text>
             </View>
           </View>
           <Text style={styles.planManage}>Manage</Text>
@@ -141,14 +150,15 @@ export default function ProfileScreen() {
           ))}
         </View>
         <View style={{ height: verticalScale(24) }} />
-         <Pressable style={styles.logoutBtn}>
-        <Text style={styles.logoutBtnText}>Logout</Text>
-      </Pressable>
+        <Pressable style={styles.logoutBtn} onPress={handleLogout}>
+          <Text style={styles.logoutBtnText}>Logout</Text>
+        </Pressable>
       </ScrollView>
-     
     </SafeAreaView>
   );
 }
+
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: {

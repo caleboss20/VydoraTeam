@@ -6,6 +6,10 @@ export const CONFIG = {
     TOKEN: 'vydora:token',
     PROJECTS: 'vydora:projects',
     CURRENT_PROJECT: 'vydora:currentProject',
+    EXPORTS: 'vydora:exports',
+    CLIPS: 'vydora:clips',
+    COMMENTS: 'vydora:comments',
+    MEMBERS: 'vydora:members',
   },
   USE_MOCK: true,
 };
