@@ -68,8 +68,47 @@ export interface Notification {
   projectId?: string;
 }
 
+//video project//
+
+export type TextOverlay={
+    id: string;
+    text:string;
+    clipId:string;
+    startMs:number;
+    durationMs:number;
+    color?:string;
+    isAiGenerated?:boolean; //poers the sparkles icon eg:emotion//
+}
+
+
+export type VideoClip = {
+  id: string;
+  uri: string;
+  durationMs: number;
+  width?: number;
+  height?: number;
+  thumbnailUri?: string; // generated via expo-video-thumbnails
+  order: number;
+  textOverlays?:TextOverlay[];
+};
+
+
+export type VideoProject = {
+  id: string;
+  title: string;
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+  clips: VideoClip[];
+  coverThumbnailUri?: string;
+  totalDurationMs: number;
+  uri:string;
+  durationMs:number;
+};
+
+
 // ─── export ────────────────────────────────
 export type ExportStatus='Ready'|'Processing'|'Failed';
+
 export interface Export{
      id: string;
      projectId: string;
