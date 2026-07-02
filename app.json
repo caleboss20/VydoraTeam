@@ -25,6 +25,17 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Vydora needs access to your photos to select a video.",
+          "cameraPermission": "Vydora needs access to your camera to record videos.",
+          "microphonePermission": "Vydora needs access to your microphone to record video audio."
+        }
+      ]
+    ]
   }
 }

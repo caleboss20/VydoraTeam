@@ -420,7 +420,7 @@ export default function ProjectDetailScreen() {
           <TouchableOpacity
             style={styles.primaryBtn}
             activeOpacity={0.85}
-            onPress={() => navigation.navigate('editorscreen')}
+            onPress={() => navigation.navigate('uploadscreen')}
           >
             <Ionicons name="create-outline" size={moderateScale(16)} color="#111" />
             <Text style={styles.primaryBtnText}>Open editor</Text>

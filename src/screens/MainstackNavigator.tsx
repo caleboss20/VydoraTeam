@@ -20,6 +20,7 @@ import SettingsScreen from "./Dashboard/Settings";
 import ProjectDetailScreen from "./Project/ProjectDetail";
 import ActivityScreen from "./Dashboard/ActivityScreen";
 import ExportLibraryScreen from "./Editor/Export";
+import VideoUploadScreen from "./Dashboard/uploadScreen";
 
 const Stack=createNativeStackNavigator();
 
@@ -48,6 +49,7 @@ function MainStackNavigator(){
                    <Stack.Screen name="uploadvideo" component={UploadVideoScreen} />
                     <Stack.Screen name="settings" component={SettingsScreen} />
                      <Stack.Screen name="activities" component={ActivityScreen} />
+                      <Stack.Screen name="uploadscreen" component={VideoUploadScreen} />
                    
               
         </Stack.Navigator>

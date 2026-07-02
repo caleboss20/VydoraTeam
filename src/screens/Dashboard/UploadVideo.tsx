@@ -17,8 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ms, s, vs } from "react-native-size-matters";
 import * as DocumentPicker from 'expo-document-picker';
-import { useProject } from '../Contexts/projectContext'; 
-import { useClip } from '../Contexts/clipContext';
+import { useVideoProject } from '../Contexts/VideoProjectContext';
+import { VideoClip } from '../types';
 // ---------------------------------------------------------------------------
 // Vydora — Upload Video screen
 // Full screen (not a modal), dark theme, single yellow accent.
@@ -26,10 +26,15 @@ import { useClip } from '../Contexts/clipContext';
 // Upload progress is simulated client-side (no backend), but file picking,
 // names, sizes, and the "voiceover added" flow are all real device data.
 //
-// WIRING NOTE: when a file's simulated progress hits 100%, we automatically
-// call addClip() from ClipContext to persist it against the current project.
-// Search "TWEAK:" comments below for the spots you'll likely want to revisit
-// once the real backend / real video metadata probing is wired in.
+// WIRING NOTE: VideoProjectContext is the single source of truth for the
+// video being edited. As soon as a file is picked (not when simulated
+// progress finishes), we hand it to setCurrentVideoProject so EditorScreen
+// has something to read immediately. The old ProjectContext/ClipContext
+// (university project system) is intentionally not used here — this screen
+// is purely for Vydora's video editor now.
+//
+// Search "TWEAK:" comments below for spots you'll likely revisit once the
+// real backend / real video metadata probing is wired in.
 // ---------------------------------------------------------------------------
 const COLORS = {
   bg: '#1A1A1A',
@@ -51,19 +56,18 @@ type FileStatus = 'uploading' | 'done' | 'error';
 interface UploadFile {
   id: string;
   name: string;
+  uri: string;
   sizeLabel: string;
   isAudio: boolean;
   progress: number; // 0-100
   status: FileStatus;
-  // TWEAK: duration comes from expo-image-picker's asset.duration (ms) when available.
-  // Falls back to a placeholder string until we wire real metadata probing for
-  // files picked via DocumentPicker / URL import.
+  // TWEAK: durationMs comes from expo-image-picker's asset.duration (ms) when
+  // available. Falls back to 0 until we wire real metadata probing for files
+  // picked via DocumentPicker / URL import.
+  durationMs: number;
   durationLabel: string;
-  // TWEAK: resolution can't be reliably read without expo-av or a native module.
-  // Hardcoded for now — swap once we probe real video metadata.
-  resolution: string;
-  // guards against double-adding to ClipContext if progress effect re-fires
-  savedToClipContext: boolean;
+  // TWEAK: width/height can't be reliably read without expo-av or a native
+  // module. Left undefined for now — VideoClip.width/height are optional.
 }
 function formatBytes(bytes: number) {
   if (!bytes || bytes <= 0) return '0 MB';
@@ -89,11 +93,7 @@ function isAudioExt(ext: string) {
   return ['mp3', 'wav', 'm4a', 'aac'].includes(ext);
 }
 export default function UploadVideoScreen({ navigation }: any) {
-  // TWEAK: currentProject must already be set (e.g. from ProjectDetailScreen
-  // navigating here). If null, we block uploads and show an alert — revisit
-  // if you want a project picker instead.
-  const { currentProject } = useProject();
-  const { addClip } = useClip();
+  const { setCurrentVideoProject } = useVideoProject();
   // TWEAK: removed hardcoded seed files (clip_01.mp4 etc) — starts empty now.
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [urlModalVisible, setUrlModalVisible] = useState(false);
@@ -112,16 +112,40 @@ export default function UploadVideoScreen({ navigation }: any) {
     loop.start();
     return () => loop.stop();
   }, []);
-  // ── Saves a completed file into ClipContext for the current project ──
+  // ── Builds a VideoClip from a picked file and hands it to VideoProjectContext ──
   // TWEAK: this is where real backend upload would actually happen instead
-  // of just registering metadata — right now addClip() in mock mode just
-  // stores the clip info, no real file bytes go anywhere.
-  const persistClipToContext = useCallback(
+  // of just registering metadata — for now we just build the local project
+  // shape so EditorScreen has something real (uri, duration) to play.
+  //
+  // Current behavior: each picked file becomes (or is appended to) a single
+  // ongoing VideoProject — the one currently held in context. If none exists
+  // yet, a new one is created. If you want every upload to start a *new*
+  // project instead of appending, drop the `currentVideoProject` branch below
+  // and always build a fresh project.
+  const persistClipToVideoProject = useCallback(
     (file: UploadFile) => {
-      if (!currentProject) return;
-      addClip(currentProject.id, file.name, file.durationLabel, file.resolution);
+      // Always starts a fresh single-clip project — picking a new video
+      // replaces whatever was previously held, it doesn't accumulate into
+      // a multi-clip timeline. Matches the "hold the video being uploaded"
+      // intent for VideoProjectContext.
+      const newClip: VideoClip = {
+        id: file.id,
+        uri: file.uri,
+        durationMs: file.durationMs,
+        order: 0,
+        textOverlays: [],
+      };
+      const now = new Date().toISOString();
+      setCurrentVideoProject({
+        id: `vp-${Date.now()}`,
+        title: file.name,
+        createdAt: now,
+        updatedAt: now,
+        clips: [newClip],
+        totalDurationMs: file.durationMs,
+      });
     },
-    [currentProject, addClip]
+    [setCurrentVideoProject]
   );
   const startSimulatedUpload = useCallback((id: string) => {
     const interval = setInterval(() => {
@@ -140,24 +164,14 @@ export default function UploadVideoScreen({ navigation }: any) {
         if (justFinished) {
           clearInterval(timersRef.current[id]);
           delete timersRef.current[id];
-          // TWEAK: auto-add to ClipContext the moment progress hits 100%.
-          // If you'd rather batch this (e.g. one "Done" button for all files),
-          // remove this call and do it in a separate handler instead.
-          persistClipToContext(justFinished);
         }
         return next;
       });
     }, 450);
     timersRef.current[id] = interval;
-  }, [persistClipToContext]);
+  }, []);
   const addFile = useCallback(
-    (name: string, bytes: number, durationMs?: number) => {
-      // TWEAK: block upload entirely if no project is active. Could instead
-      // redirect to a project picker or auto-create a draft project.
-      if (!currentProject) {
-        Alert.alert('No project selected', 'Open a project before uploading clips.');
-        return;
-      }
+    (name: string, uri: string, bytes: number, durationMs?: number) => {
       const ext = getExtension(name);
       const audio = isAudioExt(ext);
       if (!audio && !VALID_EXTENSIONS.includes(ext)) {
@@ -172,19 +186,23 @@ export default function UploadVideoScreen({ navigation }: any) {
       const newFile: UploadFile = {
         id,
         name,
+        uri,
         sizeLabel: formatBytes(bytes),
         isAudio: audio,
         progress: 0,
         status: 'uploading',
+        durationMs: durationMs ?? 0,
         durationLabel: formatDuration(durationMs),
-        // TWEAK: hardcoded resolution — replace with real probing later.
-        resolution: '1080p',
-        savedToClipContext: false,
       };
       setFiles((prev) => [newFile, ...prev]);
       startSimulatedUpload(id);
+      // Hand the picked video straight to VideoProjectContext immediately —
+      // EditorScreen reads currentVideoProject, not upload progress state,
+      // so the video shows up in the editor right away rather than waiting
+      // for the simulated progress bar to finish.
+      persistClipToVideoProject(newFile);
     },
-    [startSimulatedUpload, currentProject]
+    [startSimulatedUpload, persistClipToVideoProject]
   );
   const removeFile = (id: string) => {
     if (timersRef.current[id]) {
@@ -192,10 +210,11 @@ export default function UploadVideoScreen({ navigation }: any) {
       delete timersRef.current[id];
     }
     setFiles((prev) => prev.filter((f) => f.id !== id));
-    // TWEAK: this only removes from local UI state — does NOT call
-    // deleteClip() in ClipContext. If the file already finished uploading
-    // and got persisted, it will still exist in ClipContext after removal
-    // here. Wire deleteClip() if you want removal to be fully in sync.
+    // TWEAK: this only removes from local UI state — does NOT remove the
+    // clip from VideoProjectContext. If the file was already handed off to
+    // the project, it stays there after removal here. Wire a removeClip
+    // call (VideoProjectContext doesn't currently expose one for this
+    // lightweight flow) if you want removal to stay fully in sync.
   };
   // --- Real pickers -------------------------------------------------------
   const pickFromCameraRoll = async () => {
@@ -212,7 +231,7 @@ export default function UploadVideoScreen({ navigation }: any) {
     const asset = result.assets[0];
     const name = asset.fileName || `camera_roll_${Date.now()}.mp4`;
     // TWEAK: asset.duration is in milliseconds on iOS/Android via expo-image-picker.
-    addFile(name, asset.fileSize ?? 0, asset.duration ?? undefined);
+    addFile(name, asset.uri, asset.fileSize ?? 0, asset.duration ?? undefined);
   };
   const pickFromFiles = async () => {
     const result = await DocumentPicker.getDocumentAsync({
@@ -222,7 +241,7 @@ export default function UploadVideoScreen({ navigation }: any) {
     });
     if (result.canceled) return;
     // TWEAK: DocumentPicker doesn't return duration — falls back to '--:--'.
-    result.assets.forEach((asset) => addFile(asset.name, asset.size ?? 0));
+    result.assets.forEach((asset) => addFile(asset.name, asset.uri, asset.size ?? 0));
   };
   // No real cloud SDK is wired up (Drive/Dropbox would need API keys), so
   // "Cloud" routes through the same document picker — on-device, this surface
@@ -236,7 +255,7 @@ export default function UploadVideoScreen({ navigation }: any) {
       return;
     }
     const fileName = trimmed.split('/').pop()?.split('?')[0] || 'remote_video.mp4';
-    addFile(fileName, Math.floor(Math.random() * 200 + 40) * 1024 * 1024);
+    addFile(fileName, trimmed, Math.floor(Math.random() * 200 + 40) * 1024 * 1024);
     setUrlDraft('');
     setUrlError(false);
     setUrlModalVisible(false);
@@ -271,141 +290,77 @@ export default function UploadVideoScreen({ navigation }: any) {
       >
         {/* Drop zone */}
         <Pressable onPress={pickFromFiles} style={styles.dropZone}>
-          <Animated.View style={[styles.dropIconWrap, { transform: [{ scale: dropPulse }] }]}>
-            <Ionicons name="cloud-upload-outline" size={26} color={COLORS.yellow} />
+          <Animated.View style={{ transform: [{ scale: dropPulse }] }}>
+            <Ionicons name="cloud-upload-outline" size={40} color={COLORS.yellow} />
           </Animated.View>
-          <Text style={styles.dropTitle}>Tap to choose a file</Text>
-          <Text style={styles.dropSubtitle}>MP4, MOV, AVI, MKV up to 10 GB</Text>
+          <Text style={styles.dropZoneText}>Tap to select a video</Text>
+          <Text style={styles.dropZoneSubtext}>MP4, MOV, AVI, MKV — up to 10 GB</Text>
         </Pressable>
-        {/* Import from */}
-        <Text style={styles.sectionLabel}>IMPORT FROM</Text>
-        <View style={styles.importRow}>
-          {importSources.map((src) => (
+        {/* Import sources */}
+        <View style={styles.sourceRow}>
+          {importSources.map((source) => (
             <Pressable
-              key={src.key}
-              onPress={src.onPress}
-              style={({ pressed }) => [styles.importTile, pressed && styles.importTilePressed]}
+              key={source.key}
+              onPress={source.onPress}
+              style={({ pressed }) => [styles.sourceButton, pressed && styles.sourceButtonPressed]}
             >
-              <Ionicons name={src.icon} size={20} color={COLORS.yellow} />
-              <Text style={styles.importLabel}>{src.label}</Text>
+              <Ionicons name={source.icon} size={22} color={COLORS.text} />
+              <Text style={styles.sourceLabel}>{source.label}</Text>
             </Pressable>
           ))}
         </View>
-        {/* Uploading list */}
-        {files.length > 0 && (
-          <>
-            <Text style={styles.sectionLabel}>
-              {files.some((f) => f.status === 'uploading') ? 'UPLOADING' : 'FILES'}
-            </Text>
-            <View style={{ gap: s(12) }}>
-              {files.map((file) => (
-                <FileRow key={file.id} file={file} onRemove={() => removeFile(file.id)} />
-              ))}
+        {/* File list */}
+        {files.map((file) => (
+          <View key={file.id} style={styles.fileRow}>
+            <View style={styles.fileIconWrap}>
+              <Ionicons
+                name={file.isAudio ? 'musical-notes' : 'film-outline'}
+                size={20}
+                color={COLORS.yellow}
+              />
             </View>
-          </>
-        )}
-        {/* Add more files */}
-        <Pressable
-          onPress={pickFromFiles}
-          style={({ pressed }) => [styles.addMoreButton, pressed && styles.addMorePressed]}
-        >
-          <Ionicons name="add" size={18} color={COLORS.text} />
-          <Text style={styles.addMoreText}>Add more files</Text>
-        </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
+              <Text style={styles.fileMeta}>
+                {file.sizeLabel} · {file.durationLabel}
+              </Text>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${file.progress}%` }]} />
+              </View>
+            </View>
+            <Pressable onPress={() => removeFile(file.id)} hitSlop={10}>
+              <Ionicons name="close-circle" size={20} color={COLORS.textFaint} />
+            </Pressable>
+          </View>
+        ))}
       </ScrollView>
       {/* URL import modal */}
-      <Modal visible={urlModalVisible} transparent animationType="fade" onRequestClose={() => setUrlModalVisible(false)}>
+      <Modal visible={urlModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Import from URL</Text>
             <TextInput
               value={urlDraft}
-              onChangeText={(t) => {
-                setUrlDraft(t);
-                setUrlError(false);
-              }}
+              onChangeText={(t) => { setUrlDraft(t); setUrlError(false); }}
               placeholder="https://example.com/video.mp4"
               placeholderTextColor={COLORS.textFaint}
               style={[styles.modalInput, urlError && styles.modalInputError]}
               autoCapitalize="none"
               autoCorrect={false}
-              keyboardType="url"
             />
-            {urlError && <Text style={styles.modalErrorText}>Enter a valid URL</Text>}
+            {urlError && <Text style={styles.modalErrorText}>Enter a valid URL.</Text>}
             <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => {
-                  setUrlModalVisible(false);
-                  setUrlDraft('');
-                  setUrlError(false);
-                }}
-                style={styles.modalCancel}
-              >
+              <Pressable onPress={() => setUrlModalVisible(false)} style={styles.modalCancelButton}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={submitUrl} style={styles.modalConfirm}>
-                <Text style={styles.modalConfirmText}>Add</Text>
+              <Pressable onPress={submitUrl} style={styles.modalSubmitButton}>
+                <Text style={styles.modalSubmitText}>Import</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
     </SafeAreaView>
-  );
-}
-function FileRow({ file, onRemove }: { file: UploadFile; onRemove: () => void }) {
-  const widthAnim = useRef(new Animated.Value(file.progress)).current;
-  const checkAnim = useRef(new Animated.Value(file.status === 'done' ? 1 : 0)).current;
-  React.useEffect(() => {
-    Animated.timing(widthAnim, {
-      toValue: file.progress,
-      duration: 300,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: false,
-    }).start();
-    if (file.status === 'done') {
-      Animated.spring(checkAnim, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }).start();
-    }
-  }, [file.progress, file.status]);
-  return (
-    <View style={styles.fileRow}>
-      <View style={styles.fileIconWrap}>
-        <Ionicons name={file.isAudio ? 'musical-notes' : 'film'} size={18} color={COLORS.text} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <View style={styles.fileTopRow}>
-          <Text style={styles.fileName} numberOfLines={1}>
-            {file.name}
-          </Text>
-          {file.status === 'done' ? (
-            <Animated.View style={{ transform: [{ scale: checkAnim }] }}>
-              <Ionicons name="checkmark-circle" size={18} color={COLORS.online} />
-            </Animated.View>
-          ) : (
-            <Text style={styles.filePercent}>{Math.floor(file.progress)}%</Text>
-          )}
-        </View>
-        <Text style={styles.fileSize}>{file.sizeLabel}</Text>
-        {file.status !== 'done' && (
-          <View style={styles.progressTrack}>
-            <Animated.View
-              style={[
-                styles.progressFill,
-                {
-                  width: widthAnim.interpolate({
-                    inputRange: [0, 100],
-                    outputRange: ['0%', '100%'],
-                  }),
-                },
-              ]}
-            />
-          </View>
-        )}
-      </View>
-      <Pressable onPress={onRemove} hitSlop={8} style={styles.fileRemove}>
-        <Ionicons name="close" size={16} color={COLORS.textFaint} />
-      </Pressable>
-    </View>
   );
 }
 
@@ -642,4 +597,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
-});
+    modalSubmitButton: {
+    backgroundColor: COLORS.yellow,
+    borderRadius: 8,
+    paddingHorizontal: s(16),
+    paddingVertical: vs(8),
+    marginLeft: s(8),
+  },
+  modalSubmitText: {
+     color: '#1A1A1A',
+      fontSize: ms(13), 
+     fontWeight: '600' },
+     sourceRow: {
+       flexDirection: 'row', 
+       justifyContent: 'space-between',
+     },
+       sourceLabel: { 
+        color: COLORS.textMuted, 
+        fontSize: ms(10),
+       },
+       modalCancelButton: { 
+        paddingHorizontal: s(14), 
+        paddingVertical: vs(8) 
+      },
+       
+  dropZoneText: { 
+    color: COLORS.text,
+     fontSize: ms(14),
+      fontWeight: '600', 
+      marginTop: vs(10) 
+    },
+
+     dropZoneSubtext: { 
+      color: COLORS.textMuted,
+       fontSize: ms(11),
+     },
+       sourceButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: vs(12),
+    marginHorizontal: s(4),
+    backgroundColor: COLORS.surface,
+    borderRadius: 10,
+  },
+  sourceButtonPressed: {
+     opacity: 0.7 
+    },
+  fileMeta: { color: COLORS.textFaint, 
+    fontSize: ms(10), 
+    marginTop: vs(2) 
+  },
+
+})

@@ -1,3 +1,7 @@
+
+
+//ASYNC_STORAGE_KEYS object ────//
+
 export const CONFIG = {
   API_BASE: 'http://localhost:8080/api',
   WS_BASE: 'ws://localhost:8080/ws',
@@ -10,6 +14,9 @@ export const CONFIG = {
     CLIPS: 'vydora:clips',
     COMMENTS: 'vydora:comments',
     MEMBERS: 'vydora:members',
+     VIDEO_PROJECTS: 'vydora:videoProjects',           
+    CURRENT_VIDEO_PROJECT: 'vydora:currentVideoProject',
   },
   USE_MOCK: true,
 };
+
