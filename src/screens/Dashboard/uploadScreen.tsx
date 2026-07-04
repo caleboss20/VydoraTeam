@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,7 +13,7 @@ import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { useVideoProject } from '../Contexts/VideoProjectContext';
-import { VideoProject } from '../types';
+import { VideoProject, VideoClip } from '../types';
 const CONFIG = {
   USE_MOCK: false,
 };
@@ -31,21 +30,43 @@ const COLORS = {
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function VideoUploadScreen() {
   const navigation = useNavigation<any>();
-  const { setCurrentVideoProject } = useVideoProject();
+  const { currentVideoProject, setCurrentVideoProject } = useVideoProject();
   const [isPicking, setIsPicking] = useState(false);
-  const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
-    const durationMs = (asset.duration ?? 0) * 1000;
-    const project: VideoProject = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      uri: asset.uri,
-      durationMs,
-      width: asset.width,
-      height: asset.height,
-      thumbnailUri: undefined,
-    };
-    setCurrentVideoProject(project);
-    navigation.navigate('editorscreen');
+  // If a video project already exists in context (i.e. the user already
+  // uploaded/recorded a clip at some point), there's no reason to show the
+  // picker again — jump straight to the editor instead. `replace` (not
+  // `navigate`) so this upload screen doesn't sit underneath the editor on
+  // the nav stack, otherwise the back button would bounce the user right
+  // back into this same auto-redirect.
+  useEffect(() => {
+    if (currentVideoProject && currentVideoProject.clips?.length > 0) {
+      navigation.replace('editorscreen');
+    }
+  }, [currentVideoProject]);
+const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+  const durationMs = (asset.duration ?? 0) * 1000;
+  const now = new Date().toISOString();
+  const clip: VideoClip = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    uri: asset.uri,
+    durationMs,
+    width: asset.width,
+    height: asset.height,
+    thumbnailUri: undefined,
+    order: 0,
   };
+  const project: VideoProject = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: 'Untitled Project',
+    createdAt: now,
+    updatedAt: now,
+    clips: [clip],
+    coverThumbnailUri: undefined,
+    totalDurationMs: durationMs,
+  };
+  setCurrentVideoProject(project);
+  navigation.navigate('editorscreen');
+};
   const requestPermissionAndPick = async () => {
     try {
       setIsPicking(true);
@@ -90,6 +111,11 @@ export default function VideoUploadScreen() {
       Alert.alert('Something went wrong', 'Could not open your camera. Try again.');
     }
   };
+  // While the redirect effect above is deciding (or mid-navigation), render
+  // nothing instead of flashing the picker UI for a frame.
+  if (currentVideoProject && currentVideoProject.clips?.length > 0) {
+    return <SafeAreaView style={styles.container} edges={['top', 'bottom']} />;
+  }
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
@@ -126,6 +152,9 @@ export default function VideoUploadScreen() {
     </SafeAreaView>
   );
 }
+
+
+
 // styles unchanged — keep whatever you already have below this line
 // -----------------------------------------------------------------------------
 // STYLES
