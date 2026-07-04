@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,34 +9,60 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
-} from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { moderateScale, verticalScale, scale } from 'react-native-size-matters';
-import { Ionicons } from '@expo/vector-icons';
-import { useProject } from '../Contexts/projectContext'; 
-import { useClip } from '../Contexts/clipContext';
-import { useMember } from '../Contexts/memberContext'; 
-import { useComment } from '../Contexts/commentContext'; 
-import { Clip, Member, Comment } from '../types';
+} from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { moderateScale, verticalScale, scale } from "react-native-size-matters";
+import { Ionicons } from "@expo/vector-icons";
+import { useProject } from "../Contexts/projectContext";
+import { useClip } from "../Contexts/clipContext";
+import { useMember } from "../Contexts/memberContext";
+import { useComment } from "../Contexts/commentContext";
+import { Clip, Member, Comment } from "../types";
 // ─── Constants ────────────────────────────────────────────────────────────────
-const YELLOW       = '#F5C518';
-const BG           = '#111111';
-const CARD         = '#1C1C1C';
-const BORDER       = '#2A2A2A';
-const TEXT_PRIMARY = '#FFFFFF';
-const TEXT_MUTED   = '#888888';
+const YELLOW = "#F5C518";
+const BG = "#111111";
+const CARD = "#1C1C1C";
+const BORDER = "#2A2A2A";
+const TEXT_PRIMARY = "#FFFFFF";
+const TEXT_MUTED = "#888888";
 const ROLE_COLORS: Record<string, string> = {
-  Owner:  '#F5C518',
-  Editor: '#4CAF50',
-  Viewer: '#888',
+  Owner: "#F5C518",
+  Editor: "#4CAF50",
+  Viewer: "#888",
 };
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Tab = 'Clips' | 'Members' | 'Comments' | 'Settings';
+type Tab = "Clips" | "Members" | "Comments" | "Settings";
 // ─── Sub-components ───────────────────────────────────────────────────────────
-const Avatar = ({ initials, color, size = 38 }: { initials: string; color: string; size?: number }) => (
-  <View style={[styles.avatar, { backgroundColor: color + '33', width: size, height: size, borderRadius: size / 2, borderColor: color }]}>
-    <Text style={[styles.avatarText, { color, fontSize: moderateScale(size * 0.35) }]}>{initials}</Text>
+const Avatar = ({
+  initials,
+  color,
+  size = 38,
+}: {
+  initials: string;
+  color: string;
+  size?: number;
+}) => (
+  <View
+    style={[
+      styles.avatar,
+      {
+        backgroundColor: color + "33",
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderColor: color,
+      },
+    ]}
+  >
+    <Text
+      style={[
+        styles.avatarText,
+        { color, fontSize: moderateScale(size * 0.35) },
+      ]}
+    >
+      {initials}
+    </Text>
   </View>
 );
 // ─── Clips Tab ────────────────────────────────────────────────────────────────
@@ -59,11 +85,25 @@ const ClipsTab = ({
   if (clips.length === 0) {
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="film-outline" size={moderateScale(36)} color={TEXT_MUTED} />
+        <Ionicons
+          name="film-outline"
+          size={moderateScale(36)}
+          color={TEXT_MUTED}
+        />
         <Text style={styles.emptyTitle}>No clips yet</Text>
-        <Text style={styles.emptySubtitle}>Upload your first clip to get started</Text>
-        <TouchableOpacity style={styles.emptyBtn} onPress={onUpload} activeOpacity={0.8}>
-          <Ionicons name="cloud-upload-outline" size={moderateScale(16)} color="#000" />
+        <Text style={styles.emptySubtitle}>
+          Upload your first clip to get started
+        </Text>
+        <TouchableOpacity
+          style={styles.emptyBtn}
+          onPress={onUpload}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="cloud-upload-outline"
+            size={moderateScale(16)}
+            color="#000"
+          />
           <Text style={styles.emptyBtnText}>Upload clip</Text>
         </TouchableOpacity>
       </View>
@@ -72,20 +112,44 @@ const ClipsTab = ({
   return (
     <View>
       {clips.map((clip) => (
-        <TouchableOpacity key={clip.id} style={styles.clipRow} activeOpacity={0.7}>
+        <TouchableOpacity
+          key={clip.id}
+          style={styles.clipRow}
+          activeOpacity={0.7}
+        >
           <View style={styles.clipThumb}>
             <Ionicons name="play" size={moderateScale(18)} color={YELLOW} />
           </View>
           <View style={styles.clipInfo}>
             <Text style={styles.clipTitle}>{clip.title}</Text>
-            <Text style={styles.clipMeta}>{clip.duration} · {clip.resolution}</Text>
+            <Text style={styles.clipMeta}>
+              {clip.duration} · {clip.resolution}
+            </Text>
           </View>
-          <Text style={styles.clipDate}>{new Date(clip.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
-          <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={TEXT_MUTED} />
+          <Text style={styles.clipDate}>
+            {new Date(clip.uploadedAt).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </Text>
+          <Ionicons
+            name="ellipsis-vertical"
+            size={moderateScale(16)}
+            color={TEXT_MUTED}
+          />
         </TouchableOpacity>
       ))}
-      <TouchableOpacity style={styles.uploadBtn} onPress={onUpload} activeOpacity={0.8}>
-        <Ionicons name="cloud-upload-outline" size={moderateScale(18)} color={TEXT_MUTED} />
+      <TouchableOpacity
+        style={styles.uploadBtn}
+        onPress={onUpload}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name="cloud-upload-outline"
+          size={moderateScale(18)}
+          color={TEXT_MUTED}
+        />
         <Text style={styles.uploadBtnText}>Upload new clip</Text>
       </TouchableOpacity>
     </View>
@@ -105,31 +169,50 @@ const MembersTab = ({
 }) => {
   const { changeRole, removeMember } = useMember();
   const handleMemberAction = (member: Member) => {
-    Alert.alert(member.name, 'What would you like to do?', [
+    Alert.alert(member.name, "What would you like to do?", [
       {
-        text: 'Change role',
+        text: "Change role",
         onPress: () => {
-          Alert.alert('Change role', `Set role for ${member.name}`, [
-            { text: 'Editor',  onPress: () => changeRole(projectId, member.id, 'Editor')  },
-            { text: 'Viewer',  onPress: () => changeRole(projectId, member.id, 'Viewer')  },
-            { text: 'Cancel',  style: 'cancel' },
+          Alert.alert("Change role", `Set role for ${member.name}`, [
+            {
+              text: "Editor",
+              onPress: () => changeRole(projectId, member.id, "Editor"),
+            },
+            {
+              text: "Viewer",
+              onPress: () => changeRole(projectId, member.id, "Viewer"),
+            },
+            { text: "Cancel", style: "cancel" },
           ]);
         },
       },
       {
-        text: 'Remove member',
-        style: 'destructive',
+        text: "Remove member",
+        style: "destructive",
         onPress: () => {
-          Alert.alert('Remove member', `Remove ${member.name} from this project?`, [
-            { text: 'Remove', style: 'destructive', onPress: () => removeMember(projectId, member.id) },
-            { text: 'Cancel', style: 'cancel' },
-          ]);
+          Alert.alert(
+            "Remove member",
+            `Remove ${member.name} from this project?`,
+            [
+              {
+                text: "Remove",
+                style: "destructive",
+                onPress: () => removeMember(projectId, member.id),
+              },
+              { text: "Cancel", style: "cancel" },
+            ],
+          );
         },
       },
-      { text: 'Cancel', style: 'cancel' },
+      { text: "Cancel", style: "cancel" },
     ]);
   };
-  if (isLoading) return <View style={styles.centered}><ActivityIndicator color={YELLOW} /></View>;
+  if (isLoading)
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={YELLOW} />
+      </View>
+    );
   return (
     <View>
       {members.map((member) => (
@@ -140,17 +223,36 @@ const MembersTab = ({
           </View>
           <View style={styles.memberInfo}>
             <Text style={styles.memberName}>{member.name}</Text>
-            <Text style={[styles.memberRole, { color: ROLE_COLORS[member.role] }]}>{member.role}</Text>
+            <Text
+              style={[styles.memberRole, { color: ROLE_COLORS[member.role] }]}
+            >
+              {member.role}
+            </Text>
           </View>
-          {member.role !== 'Owner' && (
-            <TouchableOpacity style={styles.memberAction} onPress={() => handleMemberAction(member)}>
-              <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={TEXT_MUTED} />
+          {member.role !== "Owner" && (
+            <TouchableOpacity
+              style={styles.memberAction}
+              onPress={() => handleMemberAction(member)}
+            >
+              <Ionicons
+                name="ellipsis-vertical"
+                size={moderateScale(16)}
+                color={TEXT_MUTED}
+              />
             </TouchableOpacity>
           )}
         </View>
       ))}
-      <TouchableOpacity style={styles.inviteBtn} onPress={onInvite} activeOpacity={0.8}>
-        <Ionicons name="person-add-outline" size={moderateScale(16)} color={YELLOW} />
+      <TouchableOpacity
+        style={styles.inviteBtn}
+        onPress={onInvite}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name="person-add-outline"
+          size={moderateScale(16)}
+          color={YELLOW}
+        />
         <Text style={styles.inviteBtnText}>Invite member</Text>
       </TouchableOpacity>
     </View>
@@ -164,11 +266,20 @@ const CommentsTab = ({
   comments: Comment[];
   isLoading: boolean;
 }) => {
-  if (isLoading) return <View style={styles.centered}><ActivityIndicator color={YELLOW} /></View>;
+  if (isLoading)
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={YELLOW} />
+      </View>
+    );
   if (comments.length === 0) {
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="chatbubble-outline" size={moderateScale(36)} color={TEXT_MUTED} />
+        <Ionicons
+          name="chatbubble-outline"
+          size={moderateScale(36)}
+          color={TEXT_MUTED}
+        />
         <Text style={styles.emptyTitle}>No comments yet</Text>
         <Text style={styles.emptySubtitle}>Comments will appear here</Text>
       </View>
@@ -185,7 +296,11 @@ const CommentsTab = ({
               <Text style={styles.commentTimestamp}>{comment.timestamp}</Text>
             </View>
             <View style={styles.commentClipTag}>
-              <Ionicons name="attach" size={moderateScale(10)} color={TEXT_MUTED} />
+              <Ionicons
+                name="attach"
+                size={moderateScale(10)}
+                color={TEXT_MUTED}
+              />
               <Text style={styles.commentClipText}> {comment.clipId}</Text>
             </View>
             <Text style={styles.commentText}>{comment.text}</Text>
@@ -203,57 +318,69 @@ const SettingsTab = ({
   projectId: string;
   projectName: string;
 }) => {
-  const navigation                          = useNavigation<any>();
+  const navigation = useNavigation<any>();
   const { renameProject, updateStatus, deleteProject } = useProject();
-  const [notifications, setNotifications]  = useState(true);
-  const [autoSave, setAutoSave]            = useState(true);
-  const [publicAccess, setPublicAccess]    = useState(false);
-  const [watermark, setWatermark]          = useState(false);
+  const [notifications, setNotifications] = useState(true);
+  const [autoSave, setAutoSave] = useState(true);
+  const [publicAccess, setPublicAccess] = useState(false);
+  const [watermark, setWatermark] = useState(false);
   const handleRename = () => {
     Alert.prompt(
-      'Rename project',
-      'Enter a new project name',
+      "Rename project",
+      "Enter a new project name",
       (newName) => {
         if (newName && newName.trim().length >= 3) {
           renameProject(projectId, newName.trim());
         } else {
-          Alert.alert('Invalid name', 'Name must be at least 3 characters.');
+          Alert.alert("Invalid name", "Name must be at least 3 characters.");
         }
       },
-      'plain-text',
-      projectName
+      "plain-text",
+      projectName,
     );
   };
   const handleArchive = () => {
-    Alert.alert('Archive project', 'Hide this project without deleting it?', [
+    Alert.alert("Archive project", "Hide this project without deleting it?", [
       {
-        text: 'Archive',
-        style: 'destructive',
+        text: "Archive",
+        style: "destructive",
         onPress: () => {
-          updateStatus(projectId, 'Archived');
-          navigation.navigate('dashboard');
+          updateStatus(projectId, "Archived");
+          navigation.navigate("dashboard");
         },
       },
-      { text: 'Cancel', style: 'cancel' },
+      { text: "Cancel", style: "cancel" },
     ]);
   };
   const handleDelete = () => {
-    Alert.alert('Delete project', 'This will permanently remove the project. This cannot be undone.', [
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteProject(projectId);
-          navigation.navigate('dashboard');
+    Alert.alert(
+      "Delete project",
+      "This will permanently remove the project. This cannot be undone.",
+      [
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deleteProject(projectId);
+            navigation.navigate("projects");
+          },
         },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
   };
-  const SettingToggle = ({ icon, label, sub, value, onChange }: {
+  const SettingToggle = ({
+    icon,
+    label,
+    sub,
+    value,
+    onChange,
+  }: {
     icon: keyof typeof Ionicons.glyphMap;
-    label: string; sub: string;
-    value: boolean; onChange: (v: boolean) => void;
+    label: string;
+    sub: string;
+    value: boolean;
+    onChange: (v: boolean) => void;
   }) => (
     <View style={styles.settingRow}>
       <View style={styles.settingIconBox}>
@@ -263,51 +390,144 @@ const SettingsTab = ({
         <Text style={styles.settingLabel}>{label}</Text>
         <Text style={styles.settingSub}>{sub}</Text>
       </View>
-      <Switch value={value} onValueChange={onChange} trackColor={{ false: '#333', true: '#F5C51880' }} thumbColor={value ? YELLOW : '#666'} />
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: "#333", true: "#F5C51880" }}
+        thumbColor={value ? YELLOW : "#666"}
+      />
     </View>
   );
-  const SettingAction = ({ icon, label, sub, danger, onPress }: {
+  const SettingAction = ({
+    icon,
+    label,
+    sub,
+    danger,
+    onPress,
+  }: {
     icon: keyof typeof Ionicons.glyphMap;
-    label: string; sub: string;
-    danger?: boolean; onPress?: () => void;
+    label: string;
+    sub: string;
+    danger?: boolean;
+    onPress?: () => void;
   }) => (
-    <TouchableOpacity style={styles.settingRow} activeOpacity={0.7} onPress={onPress}>
-      <View style={[styles.settingIconBox, danger && { backgroundColor: '#FF444420' }]}>
-        <Ionicons name={icon} size={moderateScale(18)} color={danger ? '#FF4444' : YELLOW} />
+    <TouchableOpacity
+      style={styles.settingRow}
+      activeOpacity={0.7}
+      onPress={onPress}
+    >
+      <View
+        style={[
+          styles.settingIconBox,
+          danger && { backgroundColor: "#FF444420" },
+        ]}
+      >
+        <Ionicons
+          name={icon}
+          size={moderateScale(18)}
+          color={danger ? "#FF4444" : YELLOW}
+        />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.settingLabel, danger && { color: '#FF4444' }]}>{label}</Text>
+        <Text style={[styles.settingLabel, danger && { color: "#FF4444" }]}>
+          {label}
+        </Text>
         <Text style={styles.settingSub}>{sub}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={moderateScale(16)} color={danger ? '#FF4444' : TEXT_MUTED} />
+      <Ionicons
+        name="chevron-forward"
+        size={moderateScale(16)}
+        color={danger ? "#FF4444" : TEXT_MUTED}
+      />
     </TouchableOpacity>
   );
   return (
     <View>
       <Text style={styles.settingSection}>PROJECT</Text>
-      <SettingAction icon="pencil-outline"  label="Rename project"    sub="Change the project display name"   onPress={handleRename} />
-      <SettingAction icon="image-outline"   label="Project thumbnail" sub="Update the cover image"            />
-      <SettingAction icon="settings-outline" label="Export settings"  sub="Resolution, format, frame rate"    />
+      <SettingAction
+        icon="pencil-outline"
+        label="Rename project"
+        sub="Change the project display name"
+        onPress={handleRename}
+      />
+      <SettingAction
+        icon="image-outline"
+        label="Project thumbnail"
+        sub="Update the cover image"
+      />
+      <SettingAction
+        icon="settings-outline"
+        label="Export settings"
+        sub="Resolution, format, frame rate"
+      />
       <Text style={styles.settingSection}>COLLABORATION</Text>
-      <SettingToggle icon="notifications-outline" label="Notifications" sub="Get alerts for comments and edits" value={notifications} onChange={setNotifications} />
-      <SettingToggle icon="save-outline"          label="Auto-save"     sub="Save changes every 30 seconds"    value={autoSave}       onChange={setAutoSave}       />
-      <SettingToggle icon="globe-outline"         label="Public access" sub="Anyone with the link can view"    value={publicAccess}   onChange={setPublicAccess}   />
-      <SettingToggle icon="water-outline"         label="Watermark"     sub="Add studio watermark on export"   value={watermark}      onChange={setWatermark}      />
+      <SettingToggle
+        icon="notifications-outline"
+        label="Notifications"
+        sub="Get alerts for comments and edits"
+        value={notifications}
+        onChange={setNotifications}
+      />
+      <SettingToggle
+        icon="save-outline"
+        label="Auto-save"
+        sub="Save changes every 30 seconds"
+        value={autoSave}
+        onChange={setAutoSave}
+      />
+      <SettingToggle
+        icon="globe-outline"
+        label="Public access"
+        sub="Anyone with the link can view"
+        value={publicAccess}
+        onChange={setPublicAccess}
+      />
+      <SettingToggle
+        icon="water-outline"
+        label="Watermark"
+        sub="Add studio watermark on export"
+        value={watermark}
+        onChange={setWatermark}
+      />
       <Text style={styles.settingSection}>DANGER ZONE</Text>
-      <SettingAction icon="swap-horizontal-outline" label="Transfer ownership" sub="Hand over project to another member" />
-      <SettingAction icon="archive-outline"         label="Archive project"    sub="Hide project without deleting"       danger onPress={handleArchive} />
-      <SettingAction icon="trash-outline"           label="Delete project"     sub="Permanently remove this project"     danger onPress={handleDelete}  />
+      <SettingAction
+        icon="swap-horizontal-outline"
+        label="Transfer ownership"
+        sub="Hand over project to another member"
+      />
+      <SettingAction
+        icon="archive-outline"
+        label="Archive project"
+        sub="Hide project without deleting"
+        danger
+        onPress={handleArchive}
+      />
+      <SettingAction
+        icon="trash-outline"
+        label="Delete project"
+        sub="Permanently remove this project"
+        danger
+        onPress={handleDelete}
+      />
     </View>
   );
 };
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProjectDetailScreen() {
-  const navigation                                  = useNavigation<any>();
-  const { currentProject }                          = useProject();
-  const { fetchClips, getClipsForProject, isLoading: clipsLoading }     = useClip();
-  const { fetchMembers, getMembersForProject, isLoading: membersLoading } = useMember();
-  const { fetchComments, getCommentsForProject, isLoading: commentsLoading } = useComment();
-  const [activeTab, setActiveTab]                   = useState<Tab>('Clips');
+  const navigation = useNavigation<any>();
+  const { currentProject } = useProject();
+  const { fetchClips, getClipsForProject, isLoading: clipsLoading } = useClip();
+  const {
+    fetchMembers,
+    getMembersForProject,
+    isLoading: membersLoading,
+  } = useMember();
+  const {
+    fetchComments,
+    getCommentsForProject,
+    isLoading: commentsLoading,
+  } = useComment();
+  const [activeTab, setActiveTab] = useState<Tab>("Clips");
   useEffect(() => {
     if (!currentProject) return;
     fetchClips(currentProject.id);
@@ -316,56 +536,73 @@ export default function ProjectDetailScreen() {
   }, [currentProject?.id]);
   if (!currentProject) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.centered}>
           <ActivityIndicator color={YELLOW} />
         </View>
       </SafeAreaView>
     );
   }
-  const projectClips    = getClipsForProject(currentProject.id);
-  const projectMembers  = getMembersForProject(currentProject.id);
+  const projectClips = getClipsForProject(currentProject.id);
+  const projectMembers = getMembersForProject(currentProject.id);
   const projectComments = getCommentsForProject(currentProject.id);
   const stats = [
-    { label: 'Videos',   value: projectClips.length,    icon: 'videocam-outline'   as keyof typeof Ionicons.glyphMap },
-    { label: 'Members',  value: projectMembers.length,  icon: 'people-outline'     as keyof typeof Ionicons.glyphMap },
-    { label: 'Comments', value: projectComments.length, icon: 'chatbubble-outline' as keyof typeof Ionicons.glyphMap },
-    { label: 'Versions', value: 0,                      icon: 'git-branch-outline' as keyof typeof Ionicons.glyphMap },
+    {
+      label: "Videos",
+      value: projectClips.length,
+      icon: "videocam-outline" as keyof typeof Ionicons.glyphMap,
+    },
+    {
+      label: "Members",
+      value: projectMembers.length,
+      icon: "people-outline" as keyof typeof Ionicons.glyphMap,
+    },
+    {
+      label: "Comments",
+      value: projectComments.length,
+      icon: "chatbubble-outline" as keyof typeof Ionicons.glyphMap,
+    },
+    {
+      label: "Versions",
+      value: 0,
+      icon: "git-branch-outline" as keyof typeof Ionicons.glyphMap,
+    },
   ];
-  const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap }[] = [
-    { key: 'Clips',    icon: 'film-outline',       iconActive: 'film'        },
-    { key: 'Members',  icon: 'people-outline',     iconActive: 'people'      },
-    { key: 'Comments', icon: 'chatbubble-outline', iconActive: 'chatbubble'  },
-    { key: 'Settings', icon: 'settings-outline',   iconActive: 'settings'    },
+  const TABS: {
+    key: Tab;
+    icon: keyof typeof Ionicons.glyphMap;
+    iconActive: keyof typeof Ionicons.glyphMap;
+  }[] = [
+    { key: "Clips", icon: "film-outline", iconActive: "film" },
+    { key: "Members", icon: "people-outline", iconActive: "people" },
+    { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble" },
+    { key: "Settings", icon: "settings-outline", iconActive: "settings" },
   ];
-  const isActive = currentProject.status === 'Active';
+  const isActive = currentProject.status === "Active";
   const renderTab = () => {
     switch (activeTab) {
-      case 'Clips':
+      case "Clips":
         return (
           <ClipsTab
             clips={projectClips}
             isLoading={clipsLoading}
-            onUpload={() => navigation.navigate('uploadvideo')}
+            onUpload={() => navigation.navigate("uploadvideo")}
           />
         );
-      case 'Members':
+      case "Members":
         return (
           <MembersTab
             members={projectMembers}
             isLoading={membersLoading}
             projectId={currentProject.id}
-            onInvite={() => navigation.navigate('invitemember')}
+            onInvite={() => navigation.navigate("invitemember")}
           />
         );
-      case 'Comments':
+      case "Comments":
         return (
-          <CommentsTab
-            comments={projectComments}
-            isLoading={commentsLoading}
-          />
+          <CommentsTab comments={projectComments} isLoading={commentsLoading} />
         );
-      case 'Settings':
+      case "Settings":
         return (
           <SettingsTab
             projectId={currentProject.id}
@@ -375,29 +612,49 @@ export default function ProjectDetailScreen() {
     }
   };
 
-
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.headerBtn}>
-          <Ionicons name="arrow-back" size={moderateScale(20)} color={TEXT_PRIMARY} />
+          <Ionicons
+            name="arrow-back"
+            size={moderateScale(20)}
+            color={TEXT_PRIMARY}
+          />
         </Pressable>
         <TouchableOpacity style={styles.headerBtn}>
-          <Ionicons name="ellipsis-horizontal" size={moderateScale(20)} color={TEXT_PRIMARY} />
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={moderateScale(20)}
+            color={TEXT_PRIMARY}
+          />
         </TouchableOpacity>
       </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+      >
         {/* Thumbnail */}
         <View style={styles.thumbnail}>
-          <Ionicons name="film" size={moderateScale(52)} color={TEXT_MUTED} style={{ opacity: 0.4 }} />
+          <Ionicons
+            name="film"
+            size={moderateScale(52)}
+            color={TEXT_MUTED}
+            style={{ opacity: 0.4 }}
+          />
         </View>
         {/* Title + Badge */}
         <View style={styles.titleRow}>
           <Text style={styles.projectTitle}>{currentProject.name}</Text>
           <View style={[styles.activeBadge, !isActive && styles.draftBadge]}>
             {isActive && <View style={styles.activeDot} />}
-            <Text style={[styles.activeBadgeText, !isActive && { color: TEXT_MUTED }]}>
+            <Text
+              style={[
+                styles.activeBadgeText,
+                !isActive && { color: TEXT_MUTED },
+              ]}
+            >
               {currentProject.status}
             </Text>
           </View>
@@ -407,7 +664,12 @@ export default function ProjectDetailScreen() {
           {stats.map((stat, i) => (
             <React.Fragment key={stat.label}>
               <View style={styles.statItem}>
-                <Ionicons name={stat.icon} size={moderateScale(14)} color={YELLOW} style={{ marginBottom: verticalScale(2) }} />
+                <Ionicons
+                  name={stat.icon}
+                  size={moderateScale(14)}
+                  color={YELLOW}
+                  style={{ marginBottom: verticalScale(2) }}
+                />
                 <Text style={styles.statValue}>{stat.value}</Text>
                 <Text style={styles.statLabel}>{stat.label}</Text>
               </View>
@@ -420,13 +682,21 @@ export default function ProjectDetailScreen() {
           <TouchableOpacity
             style={styles.primaryBtn}
             activeOpacity={0.85}
-            onPress={() => navigation.navigate('uploadscreen')}
+            onPress={() => navigation.navigate("uploadscreen")}
           >
-            <Ionicons name="create-outline" size={moderateScale(16)} color="#111" />
+            <Ionicons
+              name="create-outline"
+              size={moderateScale(16)}
+              color="#111"
+            />
             <Text style={styles.primaryBtnText}>Open editor</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondaryBtn} activeOpacity={0.85}>
-            <Ionicons name="share-social-outline" size={moderateScale(16)} color={TEXT_PRIMARY} />
+            <Ionicons
+              name="share-social-outline"
+              size={moderateScale(16)}
+              color={TEXT_PRIMARY}
+            />
             <Text style={styles.secondaryBtnText}>Share</Text>
           </TouchableOpacity>
         </View>
@@ -435,14 +705,21 @@ export default function ProjectDetailScreen() {
           {TABS.map((tab) => {
             const active = activeTab === tab.key;
             return (
-              <TouchableOpacity key={tab.key} style={styles.tabItem} onPress={() => setActiveTab(tab.key)} activeOpacity={0.7}>
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.tabItem}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.7}
+              >
                 <Ionicons
                   name={active ? tab.iconActive : tab.icon}
                   size={moderateScale(16)}
                   color={active ? YELLOW : TEXT_MUTED}
                   style={{ marginBottom: verticalScale(4) }}
                 />
-                <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.key}</Text>
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                  {tab.key}
+                </Text>
                 {active && <View style={styles.tabUnderline} />}
               </TouchableOpacity>
             );
@@ -455,9 +732,6 @@ export default function ProjectDetailScreen() {
   );
 }
 
-
-
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: {
@@ -469,9 +743,9 @@ const styles = StyleSheet.create({
   },
   // Header
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: scale(16),
     paddingVertical: verticalScale(10),
   },
@@ -480,8 +754,8 @@ const styles = StyleSheet.create({
     height: scale(38),
     borderRadius: scale(19),
     backgroundColor: CARD,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   // Thumbnail
   thumbnail: {
@@ -489,54 +763,54 @@ const styles = StyleSheet.create({
     height: verticalScale(180),
     backgroundColor: CARD,
     borderRadius: moderateScale(12),
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: verticalScale(16),
   },
 
-    centered:{ 
-      flex: 1, 
-      justifyContent: 'center',
-       alignItems: 'center',
-    },
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   // Title
   titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: scale(16),
     marginBottom: verticalScale(16),
   },
   projectTitle: {
     color: TEXT_PRIMARY,
     fontSize: moderateScale(20),
-    fontWeight: '700',
+    fontWeight: "700",
   },
   activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A3D1A',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1A3D1A",
     borderRadius: moderateScale(20),
     paddingHorizontal: scale(10),
     paddingVertical: verticalScale(4),
     borderWidth: 1,
-    borderColor: '#4CAF50',
+    borderColor: "#4CAF50",
     gap: scale(5),
   },
   activeDot: {
     width: scale(6),
     height: scale(6),
     borderRadius: scale(3),
-    backgroundColor: '#4CAF50',
+    backgroundColor: "#4CAF50",
   },
   activeBadgeText: {
-    color: '#4CAF50',
+    color: "#4CAF50",
     fontSize: moderateScale(12),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Stats
   statsRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginHorizontal: scale(16),
     backgroundColor: CARD,
     borderRadius: moderateScale(12),
@@ -545,12 +819,12 @@ const styles = StyleSheet.create({
   },
   statItem: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
   statValue: {
     color: TEXT_PRIMARY,
     fontSize: moderateScale(18),
-    fontWeight: '700',
+    fontWeight: "700",
   },
   statLabel: {
     color: TEXT_MUTED,
@@ -564,46 +838,46 @@ const styles = StyleSheet.create({
   },
   // CTA
   ctaRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: scale(16),
     gap: scale(10),
     marginBottom: verticalScale(25),
   },
   primaryBtn: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: YELLOW,
     borderRadius: moderateScale(12),
     paddingVertical: verticalScale(10),
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: scale(6),
   },
   primaryBtnText: {
-    color: '#111',
-    fontWeight: '700',
+    color: "#111",
+    fontWeight: "700",
     fontSize: moderateScale(14),
   },
   secondaryBtn: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: CARD,
     borderRadius: moderateScale(12),
     paddingVertical: verticalScale(10),
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: scale(6),
     borderWidth: 1,
     borderColor: BORDER,
   },
   secondaryBtnText: {
     color: TEXT_PRIMARY,
-    fontWeight: '600',
+    fontWeight: "600",
     fontSize: moderateScale(14),
   },
   // Tab Bar
   tabBar: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: scale(16),
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
@@ -611,21 +885,21 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
     paddingBottom: verticalScale(10),
     paddingTop: verticalScale(6),
   },
   tabText: {
     color: TEXT_MUTED,
     fontSize: moderateScale(11),
-    fontWeight: '500',
+    fontWeight: "500",
   },
   tabTextActive: {
     color: YELLOW,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   tabUnderline: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: scale(6),
     right: scale(6),
@@ -639,8 +913,8 @@ const styles = StyleSheet.create({
   },
   // Clips
   clipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: CARD,
     borderRadius: moderateScale(12),
     padding: scale(12),
@@ -650,10 +924,10 @@ const styles = StyleSheet.create({
   clipThumb: {
     width: scale(44),
     height: scale(44),
-    backgroundColor: '#2A2A2A',
+    backgroundColor: "#2A2A2A",
     borderRadius: moderateScale(8),
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   clipInfo: {
     flex: 1,
@@ -661,7 +935,7 @@ const styles = StyleSheet.create({
   clipTitle: {
     color: TEXT_PRIMARY,
     fontSize: moderateScale(14),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   clipMeta: {
     color: TEXT_MUTED,
@@ -673,27 +947,27 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(11),
   },
   uploadBtn: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderWidth: 1,
     borderColor: BORDER,
-    borderStyle: 'dashed',
+    borderStyle: "dashed",
     borderRadius: moderateScale(12),
     paddingVertical: verticalScale(16),
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: scale(8),
     marginTop: verticalScale(4),
-    backgroundColor: '#1A1A1A',
+    backgroundColor: "#1A1A1A",
   },
   uploadBtnText: {
     color: TEXT_MUTED,
     fontSize: moderateScale(14),
-    fontWeight: '500',
+    fontWeight: "500",
   },
   // Members
   memberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: CARD,
     borderRadius: moderateScale(12),
     padding: scale(12),
@@ -701,21 +975,21 @@ const styles = StyleSheet.create({
     gap: scale(12),
   },
   avatar: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1.5,
   },
   avatarText: {
-    fontWeight: '700',
+    fontWeight: "700",
   },
   onlineDot: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     right: 0,
     width: scale(10),
     height: scale(10),
     borderRadius: scale(5),
-    backgroundColor: '#4CAF50',
+    backgroundColor: "#4CAF50",
     borderWidth: 1.5,
     borderColor: CARD,
   },
@@ -725,12 +999,12 @@ const styles = StyleSheet.create({
   memberName: {
     color: TEXT_PRIMARY,
     fontSize: moderateScale(14),
-    fontWeight: '600',
+    fontWeight: "600",
   },
-   memberRole: {
+  memberRole: {
     fontSize: moderateScale(12),
     marginTop: verticalScale(2),
-    fontWeight: '500',
+    fontWeight: "500",
   },
   memberAction: {
     padding: scale(8),
@@ -742,26 +1016,25 @@ const styles = StyleSheet.create({
   },
   inviteBtn: {
     borderWidth: 1,
-    borderColor: YELLOW + '60',
+    borderColor: YELLOW + "60",
     borderRadius: moderateScale(12),
     paddingVertical: verticalScale(8),
-    alignItems: 'center',
+    alignItems: "center",
     // flexDirection:'row',
-    alignSelf:'center',
-    width:'100%',
+    alignSelf: "center",
+    width: "100%",
     marginTop: verticalScale(40),
-    backgroundColor: YELLOW + '10',
-    marginBottom:scale(20),
+    backgroundColor: YELLOW + "10",
+    marginBottom: scale(20),
   },
   inviteBtnText: {
     color: YELLOW,
     fontSize: moderateScale(14),
-    fontWeight: '600',
-   
+    fontWeight: "600",
   },
   // Comments
   commentRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: CARD,
     borderRadius: moderateScale(12),
     padding: scale(12),
@@ -772,25 +1045,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   commentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: verticalScale(4),
   },
   commentAuthor: {
     color: TEXT_PRIMARY,
     fontSize: moderateScale(13),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   commentTimestamp: {
     color: TEXT_MUTED,
     fontSize: moderateScale(11),
   },
   commentClipTag: {
-    backgroundColor: '#2A2A2A',
+    backgroundColor: "#2A2A2A",
     borderRadius: moderateScale(6),
     paddingHorizontal: scale(8),
     paddingVertical: verticalScale(2),
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     marginBottom: verticalScale(6),
   },
   commentClipText: {
@@ -798,7 +1071,7 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(11),
   },
   commentText: {
-    color: '#CCCCCC',
+    color: "#CCCCCC",
     fontSize: moderateScale(13),
     lineHeight: moderateScale(19),
   },
@@ -806,14 +1079,14 @@ const styles = StyleSheet.create({
   settingSection: {
     color: TEXT_MUTED,
     fontSize: moderateScale(11),
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: 1.2,
     marginTop: verticalScale(16),
     marginBottom: verticalScale(8),
   },
   settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: CARD,
     borderRadius: moderateScale(12),
     padding: scale(14),
@@ -823,67 +1096,57 @@ const styles = StyleSheet.create({
   settingLabel: {
     color: TEXT_PRIMARY,
     fontSize: moderateScale(14),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   settingSub: {
-    color:TEXT_MUTED,
-    fontSize:moderateScale(12),
-    marginTop:verticalScale(2),
-  },
-  settingsActionText:{
- color:TEXT_MUTED,
-    fontSize:moderateScale(12),
-   fontWeight:'500'
-  },
-
-//empty state//
- emptyState:        
-  { alignItems: 'center',
-     paddingVertical: verticalScale(40) 
-    },
-  emptyTitle: { 
-    color: TEXT_PRIMARY,
-     fontSize: moderateScale(15), 
-     fontWeight: '600',
-      marginTop: verticalScale(12) 
-    },
-  emptySubtitle: { 
     color: TEXT_MUTED,
-     fontSize: moderateScale(12), 
-     marginTop: verticalScale(4), 
-     marginBottom: verticalScale(16)
-     },
-  emptyBtn:{ 
-    flexDirection: 'row',
-     alignItems: 'center',
-      backgroundColor: YELLOW,
-       borderRadius: scale(10),
-        paddingVertical: verticalScale(10),
-         paddingHorizontal: scale(20)
-         },
-  emptyBtnText:{ 
-    color: '#000', 
-    fontWeight: '700', 
+    fontSize: moderateScale(12),
+    marginTop: verticalScale(2),
+  },
+  settingsActionText: {
+    color: TEXT_MUTED,
+    fontSize: moderateScale(12),
+    fontWeight: "500",
+  },
+
+  //empty state//
+  emptyState: { alignItems: "center", paddingVertical: verticalScale(40) },
+  emptyTitle: {
+    color: TEXT_PRIMARY,
+    fontSize: moderateScale(15),
+    fontWeight: "600",
+    marginTop: verticalScale(12),
+  },
+  emptySubtitle: {
+    color: TEXT_MUTED,
+    fontSize: moderateScale(12),
+    marginTop: verticalScale(4),
+    marginBottom: verticalScale(16),
+  },
+  emptyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: YELLOW,
+    borderRadius: scale(10),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(20),
+  },
+  emptyBtnText: {
+    color: "#000",
+    fontWeight: "700",
     fontSize: moderateScale(13),
-     marginLeft: scale(6) 
-    },
+    marginLeft: scale(6),
+  },
 
-     settingIconBox:     {
-       width: scale(36), 
-       height: scale(36), 
-       borderRadius: scale(8), 
-      backgroundColor: '#2A2000',
-       justifyContent: 'center',
-       alignItems:'center',
-     },
-    draftBadge:{ 
-        backgroundColor: '#2A2A2A'
-
-       },
-
-
-
-
-
-
-})
+  settingIconBox: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(8),
+    backgroundColor: "#2A2000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  draftBadge: {
+    backgroundColor: "#2A2A2A",
+  },
+});
