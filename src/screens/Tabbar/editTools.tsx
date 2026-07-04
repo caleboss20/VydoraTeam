@@ -52,6 +52,16 @@ const tools: Tool[] = [
     action: 'delete',
   },
 ];
+
+
+// function ToolbarIcon({ name, active }: { name: keyof typeof Ionicons.glyphMap; active?: boolean }) {
+//   return (
+//     <TouchableOpacity style={[styles.toolbarIconButton, active && styles.toolbarIconButtonActive]} hitSlop={8}>
+//       <Ionicons name={name} size={scale(20)} color={active ? COLORS.purple : COLORS.textPrimary} />
+//     </TouchableOpacity>
+//   );
+// }
+
 export default function BottomToolbar() {
   const navigation = useNavigation<any>();
   const handlePress = (tool: Tool) => {
@@ -84,21 +94,27 @@ export default function BottomToolbar() {
           >
             <Ionicons
               name={tool.icon}
-              size={24}
+              size={22}
               color="#FFFFFF"
             />
-            <Text style={styles.label}>
+            {/* <Text style={styles.label}>
               {tool.label}
-            </Text>
+            </Text> */}
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      
     </View>
+
+
+
   );
 }
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0E0E10',
+    // backgroundColor: '#0E0E10',
+  
     borderTopWidth: 1,
     borderTopColor: '#2A2A2E',
     paddingVertical: s(10),
@@ -106,12 +122,15 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: s(10),
     alignItems: 'center',
+    paddingBottom:s(20),
+    justifyContent:'center',
   },
   tool: {
-    width: s(72),
+    width: s(55),
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: s(4),
+    paddingTop:s(20),
+    // marginHorizontal: s(4),
   },
   label: {
     color: '#FFFFFF',
