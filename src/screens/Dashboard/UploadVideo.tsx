@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 20,
+    paddingTop: s(20),
     paddingBottom: 40,
   },
   dropZone: {
@@ -440,6 +440,7 @@ const styles = StyleSheet.create({
   importRow: {
     flexDirection: 'row',
     gap: s(10),
+    marginTop:s(10),
   },
   importTile: {
     flex: 1,
@@ -464,6 +465,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     gap: s(12),
+    marginTop:s(30),
   },
   fileIconWrap: {
     width: s(36),
@@ -611,6 +613,7 @@ const styles = StyleSheet.create({
      sourceRow: {
        flexDirection: 'row', 
        justifyContent: 'space-between',
+        marginTop:s(25),
      },
        sourceLabel: { 
         color: COLORS.textMuted, 
