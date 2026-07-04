@@ -34,5 +34,5 @@ export default function App() {
         </ProjectProvider>
       </AuthProvider>
     </SafeAreaProvider>
-  );
+  )
 }
