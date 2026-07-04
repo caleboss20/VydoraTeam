@@ -41,7 +41,7 @@ function MainStackNavigator(){
                  <Stack.Screen name="passwordsuccess" component={PasswordSuccess} />
              <Stack.Screen name="onboarding" component={Onboarding} />
 
-              <Stack.Screen name="editorscreen" component={Bottomtabbar} />
+              <Stack.Screen name="editorscreen" component={EditorScreen} />
                <Stack.Screen name="newproject" component={NewProjectScreen} />
                 <Stack.Screen name="projectdetail" component={ProjectDetailScreen} />
                 <Stack.Screen name="projects" component={Dashboardtabbar} />
