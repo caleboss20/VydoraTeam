@@ -1,4 +1,4 @@
-// ── types─ User ────────────────────────────────────────────────────────────────────
+// ─── User ────────────────────────────────────────────────────────────────────
 export interface User {
   id: string;
   name: string;
@@ -16,12 +16,12 @@ export interface Project {
   ownerId: string;
   thumbnailUrl?: string;
   createdAt: string;
-  updatedAt:string;
-  description:string;
-  visibility:'Private'|'Team'|'Public';
-  members:Pick<Member, 'id'|'initials'|'color'|'online'>[];
+  updatedAt: string;
+  description: string;
+  visibility: 'Private' | 'Team' | 'Public';
+  members: Pick<Member, 'id' | 'initials' | 'color' | 'online'>[];
 }
-// ─── Clip ────────────────────────────────────────────────────────────────────
+// ─── Clip (collaboration/project-detail clip metadata) ────────────────────────
 export interface Clip {
   id: string;
   projectId: string;
@@ -67,20 +67,16 @@ export interface Notification {
   createdAt: string;
   projectId?: string;
 }
-
-//video project//
-
-export type TextOverlay={
-    id: string;
-    text:string;
-    clipId:string;
-    startMs:number;
-    durationMs:number;
-    color?:string;
-    isAiGenerated?:boolean; //poers the sparkles icon eg:emotion//
-}
-
-
+// ─── Video Project (editor domain) ────────────────────────────────────────────
+export type TextOverlay = {
+  id: string;
+  text: string;
+  clipId: string;
+  startMs: number;
+  durationMs: number;
+  color?: string;
+  isAiGenerated?: boolean; // powers the sparkles icon e.g. "Emotions"
+};
 export type VideoClip = {
   id: string;
   uri: string;
@@ -89,10 +85,8 @@ export type VideoClip = {
   height?: number;
   thumbnailUri?: string; // generated via expo-video-thumbnails
   order: number;
-  textOverlays?:TextOverlay[];
+  textOverlays?: TextOverlay[];
 };
-
-
 export type VideoProject = {
   id: string;
   title: string;
@@ -101,24 +95,19 @@ export type VideoProject = {
   clips: VideoClip[];
   coverThumbnailUri?: string;
   totalDurationMs: number;
-  uri:string;
-  durationMs:number;
 };
-
-
-// ─── export ────────────────────────────────
-export type ExportStatus='Ready'|'Processing'|'Failed';
-
-export interface Export{
-     id: string;
-     projectId: string;
-     projectName:string;
-     title: string;
-     resolution:string;
-     format:string;
-     sizeMb:number;
-     status:ExportStatus;
-     isFinal?:boolean;
-     errorMessage?:string;
-     createdAt:string
+// ─── Export ────────────────────────────────────────────────────────────────
+export type ExportStatus = 'Ready' | 'Processing' | 'Failed';
+export interface Export {
+  id: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  resolution: string;
+  format: string;
+  sizeMb: number;
+  status: ExportStatus;
+  isFinal?: boolean;
+  errorMessage?: string;
+  createdAt: string;
 }
