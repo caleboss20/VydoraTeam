@@ -73,7 +73,7 @@ const QUICK_ACTIONS: QuickAction[] = [
     icon: "person-add-outline",
     navigate: "invitemember",
   },
-  { id: "4", label: "Browse", icon: "film-outline", navigate: "browse" },
+  { id: "4", label: "Export", icon: "film-outline", navigate: "export" },
 ];
 // ─── Sub-components ───────────────────────────────────────────────────────────
 type AvatarProps = { initials: string; color: string; size?: number };
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: s(10),
     paddingTop: vs(6),
     paddingBottom: vs(36),
-    marginTop:s(8),
+    marginTop:s(35),
   },
 
   // Welcome card
@@ -475,13 +475,6 @@ flexDirection:'column',
      fontSize: ms(12), 
      marginTop: vs(4) 
     },
-
-
-
-
-
-
-
 
 
   headerCard: {
