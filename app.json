@@ -35,7 +35,8 @@
           "cameraPermission": "Vydora needs access to your camera to record videos.",
           "microphonePermission": "Vydora needs access to your microphone to record video audio."
         }
-      ]
+      ],
+      "expo-audio"
     ]
   }
 }

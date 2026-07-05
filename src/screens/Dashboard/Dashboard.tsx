@@ -274,7 +274,14 @@ const DashboardScreen: React.FC = () => {
               activeOpacity={0.85}
             >
               <View style={styles.thumbnailBox}>
-                <Ionicons name="play" size={ms(22)} color={C.textPrimary} />
+
+               {
+                continueProject.thumbnailUrl?
+                <Image source={{uri:continueProject.thumbnailUrl}} style={styles.thumbnailImage} />
+                 :
+                 <Ionicons name="play" size={ms(22)} color={C.textPrimary} />
+               }
+             
               </View>
               <View style={styles.continueInfo}>
                 <Text style={styles.continueTitle}>{continueProject.name}</Text>
@@ -336,11 +343,18 @@ const DashboardScreen: React.FC = () => {
               onPress={() => handleProjectPress(project)}
             >
               <View style={styles.projectIconBox}>
-                <Ionicons
+                
+               {project.thumbnailUrl?
+               <Image source={{uri: project.thumbnailUrl}} style={styles.thumbnailImage} />
+               
+               :
+               <Ionicons
                   name="film-outline"
                   size={ms(20)}
                   color={C.textSecondary}
                 />
+               }
+
               </View>
               <View style={styles.projectInfo}>
                 <Text style={styles.projectTitle}>{project.name}</Text>
@@ -579,6 +593,12 @@ flexDirection:'column',
     alignItems: "center",
     justifyContent: "center",
   },
+  thumbnailImage:{
+  width:'100%',
+  height:'100%',
+  borderRadius:8,
+    },
+
   continueInfo: {
     flex: 1,
     gap: vs(3),

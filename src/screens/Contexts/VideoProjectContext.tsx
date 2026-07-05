@@ -18,6 +18,7 @@ import { CONFIG } from '../config';
 interface VideoProjectContextType {
   currentVideoProject: VideoProject | null;
   setCurrentVideoProject: (project: VideoProject | null) => void;
+  updateClipTrim: (clipId: string, trimStartMs: number, trimEndMs: number) => void; // ADDED
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const VideoProjectContext = createContext<VideoProjectContextType | undefined>(undefined);
@@ -50,8 +51,27 @@ export function VideoProjectProvider({ children }: { children: ReactNode }) {
       );
     }
   };
+
+// ADDED: updates trim points for one clip and persists the whole project//
+const updateClipTrim = (clipId: string, trimStartMs: number, trimEndMs: number) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? { ...c, trimStartMs, trimEndMs } : c
+    );
+    const updated = { ...prev, clips: updatedClips, updatedAt: new Date().toISOString() };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist trim update', e));
+    return updated;
+  });
+};
+
+
+
   return (
-    <VideoProjectContext.Provider value={{ currentVideoProject, setCurrentVideoProject }}>
+    <VideoProjectContext.Provider value={{ currentVideoProject, setCurrentVideoProject, updateClipTrim }}>
       {children}
     </VideoProjectContext.Provider>
   );

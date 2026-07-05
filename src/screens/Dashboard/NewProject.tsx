@@ -10,12 +10,14 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image, // ADDED: to render picked thumbnail
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { ms, s, vs } from 'react-native-size-matters'
 import { useNavigation } from '@react-navigation/native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useProject } from '../Contexts/projectContext' 
+import { useProject } from '../Contexts/projectContext'
+import * as ImagePicker from 'expo-image-picker' // ADDED
 // ─── Palette ────────────────────────────────────────────────────────────────
 const C = {
   bg: '#111111',
@@ -57,6 +59,7 @@ const NewProjectScreen: React.FC = () => {
   const [creating, setCreating]       = useState<boolean>(false)
   const [nameError, setNameError]     = useState<string>('')
   const [descError, setDescError]     = useState<string>('')
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null) // ADDED
   // ── Validation ──
   const validate = (): boolean => {
     let valid = true
@@ -80,12 +83,26 @@ const NewProjectScreen: React.FC = () => {
     }
     return valid
   }
+  //  opens image picker, sets thumbnailUrl on success ──
+  const pickCoverImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') return
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.7,
+    })
+    if (!result.canceled) {
+      setThumbnailUrl(result.assets[0].uri)
+    }
+  }
   // ── Submit ──
   const handleCreate = async () => {
     if (!validate()) return
     try {
       setCreating(true)
-      await createProject(projectName.trim(), description.trim(), visibility)
+      await createProject(projectName.trim(), description.trim(), visibility, thumbnailUrl ?? undefined) // CHANGED: added thumbnailUrl arg
       await new Promise(res=>setTimeout(res,2000))
       // currentProject is set inside context after createProject
       navigation.navigate('projectdetail')
@@ -133,11 +150,19 @@ const NewProjectScreen: React.FC = () => {
               </View>
             ) : null}
             {/* ── Cover Image ── */}
-            <TouchableOpacity style={styles.coverBox} activeOpacity={0.8}>
-              <View style={styles.coverIconCircle}>
-                <Ionicons name="image-outline" size={ms(26)} color={C.accent} />
-              </View>
-              <Text style={styles.coverLabel}>Add cover image</Text>
+            {/* CHANGED: onPress + conditional rendering added */}
+            <TouchableOpacity style={styles.coverBox} activeOpacity={0.8} onPress={pickCoverImage} disabled={creating}>
+              {thumbnailUrl ? (
+                // ADDED: shows picked image
+                <Image source={{ uri: thumbnailUrl }} style={styles.coverImage} />
+              ) : (
+                <>
+                  <View style={styles.coverIconCircle}>
+                    <Ionicons name="image-outline" size={ms(26)} color={C.accent} />
+                  </View>
+                  <Text style={styles.coverLabel}>Add cover image</Text>
+                </>
+              )}
             </TouchableOpacity>
             {/* ── Project Name ── */}
             <Text style={styles.fieldLabel}>PROJECT NAME</Text>
@@ -244,9 +269,7 @@ const NewProjectScreen: React.FC = () => {
   )
 }
 export default NewProjectScreen
-
-
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
@@ -279,6 +302,11 @@ const styles = StyleSheet.create({
     color: C.accent,
     fontSize: ms(15),
     fontWeight: '700',
+  },
+  coverImage:{
+  width:'100%',
+  height:'100%',
+  borderRadius:12,
   },
   divider: {
     height: 1,
