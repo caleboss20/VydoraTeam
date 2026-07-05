@@ -77,16 +77,22 @@ export type TextOverlay = {
   color?: string;
   isAiGenerated?: boolean; // powers the sparkles icon e.g. "Emotions"
 };
+
+
+
 export type VideoClip = {
   id: string;
   uri: string;
   durationMs: number;
   width?: number;
   height?: number;
-  thumbnailUri?: string; // generated via expo-video-thumbnails
+  thumbnailUri?: string;
   order: number;
   textOverlays?: TextOverlay[];
+  trimStartMs?: number; // ADDED: defaults to 0 if unset
+  trimEndMs?: number;   // ADDED: defaults to durationMs if unset
 };
+
 export type VideoProject = {
   id: string;
   title: string;
