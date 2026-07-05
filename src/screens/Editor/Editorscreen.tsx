@@ -16,12 +16,10 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEventListener } from 'expo';
 import { useNavigation } from '@react-navigation/native';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  runOnJS,
-} from 'react-native-reanimated';
+import { PanResponder } from 'react-native'; 
+
+
+
 import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { VideoClip, TextOverlay } from '../types';
 import BottomToolbar from '../Tabbar/editTools';
@@ -52,6 +50,7 @@ const formatTime = (ms: number) => {
 // Each clip gets one of these on its left edge and one on its right edge.
 // Dragging updates a shared value live (smooth, native-thread), and only
 // calls back into JS (to persist via updateClipTrim) once the drag ends.
+
 function TrimHandle({
   side,
   clip,
@@ -64,37 +63,44 @@ function TrimHandle({
   const clipDurationPx = (clip.durationMs / 1000) * PX_PER_SECOND;
   const trimStartMs = clip.trimStartMs ?? 0;
   const trimEndMs = clip.trimEndMs ?? clip.durationMs;
-  const startPx = useSharedValue((trimStartMs / 1000) * PX_PER_SECOND);
-  const endPx = useSharedValue((trimEndMs / 1000) * PX_PER_SECOND);
-  const offset = side === 'left' ? startPx : endPx;
-  const pan = Gesture.Pan()
-    .onChange((e) => {
-      if (side === 'left') {
-        const next = offset.value + e.changeX;
-        // clamp: can't go below 0, can't cross the right handle
-        offset.value = Math.max(0, Math.min(next, endPx.value - HANDLE_WIDTH));
-      } else {
-        const next = offset.value + e.changeX;
-        // clamp: can't exceed clip duration, can't cross the left handle
-        offset.value = Math.min(clipDurationPx, Math.max(next, startPx.value + HANDLE_WIDTH));
-      }
+  const [startPx, setStartPx] = useState((trimStartMs / 1000) * PX_PER_SECOND);
+  const [endPx, setEndPx] = useState((trimEndMs / 1000) * PX_PER_SECOND);
+  const dragStartRef = useRef(0);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        dragStartRef.current = side === 'left' ? startPx : endPx;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (side === 'left') {
+          const next = dragStartRef.current + gestureState.dx;
+          setStartPx(Math.max(0, Math.min(next, endPx - HANDLE_WIDTH)));
+        } else {
+          const next = dragStartRef.current + gestureState.dx;
+          setEndPx(Math.min(clipDurationPx, Math.max(next, startPx + HANDLE_WIDTH)));
+        }
+      },
+      onPanResponderRelease: () => {
+        const newStartMs = Math.round((startPx / PX_PER_SECOND) * 1000);
+        const newEndMs = Math.round((endPx / PX_PER_SECOND) * 1000);
+        onTrimEnd(clip.id, newStartMs, newEndMs);
+      },
     })
-    .onEnd(() => {
-      const newStartMs = Math.round((startPx.value / PX_PER_SECOND) * 1000);
-      const newEndMs = Math.round((endPx.value / PX_PER_SECOND) * 1000);
-      runOnJS(onTrimEnd)(clip.id, newStartMs, newEndMs);
-    });
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: side === 'left' ? startPx.value : endPx.value - HANDLE_WIDTH }],
-  }));
+  ).current;
+  const offset = side === 'left' ? startPx : endPx - HANDLE_WIDTH;
   return (
-    <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.trimHandle, animatedStyle]}>
-        <View style={styles.trimHandleBar} />
-      </Animated.View>
-    </GestureDetector>
+    <View
+      style={[styles.trimHandle, { transform: [{ translateX: offset }] }]}
+      {...panResponder.panHandlers}
+    >
+      <View style={styles.trimHandleBar} />
+    </View>
   );
 }
+
+
+
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
   const { currentVideoProject, updateClipTrim } = useVideoProject();
