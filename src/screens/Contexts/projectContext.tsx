@@ -18,9 +18,10 @@ interface ProjectContextType {
   error: string | null;
   renameProject: (projectId: string, newName: string) => Promise<void>;
   fetchProjects: () => Promise<void>;
-  createProject: (name: string, description: string, visibility: 'Private' | 'Team' | 'Public') => Promise<void>;
+  createProject: (name: string, description: string, visibility: 'Private' | 'Team' | 'Public', thumbnailUrl?: string) => Promise<void>;
   setCurrentProject: (project: Project) => void;
   updateStatus: (projectId: string, status: ProjectStatus) => Promise<void>;
+  updateThumbnail: (projectId: string, thumbnailUrl: string) => Promise<void>; // ADDED
   deleteProject: (projectId: string) => Promise<void>;
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
@@ -73,12 +74,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const createProject = async (
     name: string,
     description: string,
-    visibility: 'Private' | 'Team' | 'Public'
+    visibility: 'Private' | 'Team' | 'Public',
+    thumbnailUrl?: string
   ) => {
     try {
       setIsLoading(true);
       setError(null);
-      const newProject = await projectService.createProject(name, description, visibility, token!);
+      const newProject = await projectService.createProject(name, description, visibility, token!, thumbnailUrl);
       const updatedList = [newProject, ...projects];
       setProjects(updatedList);
       setCurrentProject(newProject);
@@ -113,6 +115,20 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setError(e.message);
     }
   };
+  // ADDED: persists a new thumbnail for an existing project through the same
+  // service -> AsyncStorage path as renameProject/updateStatus
+  const updateThumbnail = async (projectId: string, thumbnailUrl: string) => {
+    try {
+      setError(null);
+      const updated = await projectService.updateThumbnail(projectId, thumbnailUrl, token!);
+      const updatedList = projects.map(p => p.id === projectId ? updated : p);
+      setProjects(updatedList);
+      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.PROJECTS, JSON.stringify(updatedList));
+      if (currentProject?.id === projectId) setCurrentProject(updated);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
   const deleteProject = async (projectId: string) => {
     try {
       setError(null);
@@ -139,6 +155,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       createProject,
       setCurrentProject,
       updateStatus,
+      updateThumbnail,
       deleteProject,
     }}>
       {children}
