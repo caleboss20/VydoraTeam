@@ -9,12 +9,14 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  Image
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { moderateScale, verticalScale, scale } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { useProject } from "../Contexts/projectContext";
+import * as ImagePicker from 'expo-image-picker'
 import { useClip } from "../Contexts/clipContext";
 import { useMember } from "../Contexts/memberContext";
 import { useComment } from "../Contexts/commentContext";
@@ -65,7 +67,10 @@ const Avatar = ({
     </Text>
   </View>
 );
-// ─── Clips Tab ────────────────────────────────────────────────────────────────
+
+
+// ─── Clips Tab ────────────────────────────────────────//
+
 const ClipsTab = ({
   clips,
   isLoading,
@@ -324,6 +329,7 @@ const SettingsTab = ({
   const [autoSave, setAutoSave] = useState(true);
   const [publicAccess, setPublicAccess] = useState(false);
   const [watermark, setWatermark] = useState(false);
+   
   const handleRename = () => {
     Alert.prompt(
       "Rename project",
@@ -352,6 +358,8 @@ const SettingsTab = ({
       { text: "Cancel", style: "cancel" },
     ]);
   };
+
+   
   const handleDelete = () => {
     Alert.alert(
       "Delete project",
@@ -369,6 +377,7 @@ const SettingsTab = ({
       ],
     );
   };
+ 
   const SettingToggle = ({
     icon,
     label,
@@ -512,10 +521,30 @@ const SettingsTab = ({
     </View>
   );
 };
+
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProjectDetailScreen() {
+  
   const navigation = useNavigation<any>();
-  const { currentProject } = useProject();
+  //  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+  const { currentProject ,updateThumbnail} = useProject();
+  //  opens image picker, sets thumbnailUrl on success ──
+   
+const pickCoverImage = async () => {
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+  if (status !== 'granted') return
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    aspect: [16, 9],
+    quality: 0.7,
+  })
+  if (!result.canceled) {
+    await updateThumbnail(currentProject.id, result.assets[0].uri) // CHANGED
+  }
+}
+
   const { fetchClips, getClipsForProject, isLoading: clipsLoading } = useClip();
   const {
     fetchMembers,
@@ -568,6 +597,7 @@ export default function ProjectDetailScreen() {
       icon: "git-branch-outline" as keyof typeof Ionicons.glyphMap,
     },
   ];
+
   const TABS: {
     key: Tab;
     icon: keyof typeof Ionicons.glyphMap;
@@ -578,6 +608,7 @@ export default function ProjectDetailScreen() {
     { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble" },
     { key: "Settings", icon: "settings-outline", iconActive: "settings" },
   ];
+
   const isActive = currentProject.status === "Active";
   const renderTab = () => {
     switch (activeTab) {
@@ -612,6 +643,8 @@ export default function ProjectDetailScreen() {
     }
   };
 
+  
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
@@ -636,14 +669,21 @@ export default function ProjectDetailScreen() {
         contentContainerStyle={styles.scroll}
       >
         {/* Thumbnail */}
-        <View style={styles.thumbnail}>
-          <Ionicons
-            name="film"
-            size={moderateScale(52)}
-            color={TEXT_MUTED}
-            style={{ opacity: 0.4 }}
-          />
-        </View>
+      <Pressable style={styles.thumbnail} onPress={pickCoverImage}>
+        {currentProject.thumbnailUrl ? ( // CHANGED: read from currentProject, not local state
+    <Image source={{ uri: currentProject.thumbnailUrl }} style={styles.coverImage} />
+        ) : (
+    <Ionicons
+      name="film"
+      size={moderateScale(52)}
+      color={TEXT_MUTED}
+      style={{ opacity: 0.4 }}
+    />
+  )}
+</Pressable>
+
+
+
         {/* Title + Badge */}
         <View style={styles.titleRow}>
           <Text style={styles.projectTitle}>{currentProject.name}</Text>
@@ -767,7 +807,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: verticalScale(16),
   },
-
+  coverImage:{
+  width:'100%',
+  height:'100%',
+  borderRadius:12,
+  },
   centered: {
     flex: 1,
     justifyContent: "center",
