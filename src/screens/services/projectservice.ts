@@ -80,7 +80,8 @@ export const projectService = {
     name: string,
     description: string,
     visibility: 'Private' | 'Team' | 'Public',
-    token: string
+    token: string,
+    thumbnailUrl?: string
   ): Promise<Project> => {
     if (CONFIG.USE_MOCK) {
       await ensureHydrated();
@@ -91,6 +92,7 @@ export const projectService = {
         visibility,
         status: 'Active',
         ownerId: 'u1',
+        thumbnailUrl,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         members: [],
@@ -105,7 +107,7 @@ export const projectService = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ name, description, visibility }),
+      body: JSON.stringify({ name, description, visibility, thumbnailUrl }),
     });
     if (!res.ok) throw new Error('Failed to create project');
     return res.json();
@@ -154,6 +156,31 @@ export const projectService = {
       body: JSON.stringify({ status }),
     });
     if (!res.ok) throw new Error('Failed to update project');
+    return res.json();
+  },
+  // ADDED: update just the thumbnail on an existing project
+  updateThumbnail: async (
+    projectId: string,
+    thumbnailUrl: string,
+    token: string
+  ): Promise<Project> => {
+    if (CONFIG.USE_MOCK) {
+      await ensureHydrated();
+      const idx = MOCK_PROJECTS.findIndex(p => p.id === projectId);
+      if (idx === -1) throw new Error('Project not found');
+      MOCK_PROJECTS[idx] = { ...MOCK_PROJECTS[idx], thumbnailUrl, updatedAt: new Date().toISOString() };
+      await persist();
+      return MOCK_PROJECTS[idx];
+    }
+    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}/thumbnail`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ thumbnailUrl }),
+    });
+    if (!res.ok) throw new Error('Failed to update thumbnail');
     return res.json();
   },
   // delete project — only Owner can do this
