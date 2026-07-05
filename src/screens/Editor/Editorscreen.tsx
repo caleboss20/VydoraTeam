@@ -13,9 +13,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEvent, useEventListener } from 'expo';
+import { useEventListener } from 'expo';
 import { useNavigation } from '@react-navigation/native';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  runOnJS,
+} from 'react-native-reanimated';
 import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { VideoClip, TextOverlay } from '../types';
 import BottomToolbar from '../Tabbar/editTools';
@@ -34,6 +40,7 @@ const COLORS = {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // How many horizontal pixels represent 1 second of footage on the timeline
 const PX_PER_SECOND = scale(50);
+const HANDLE_WIDTH = scale(14);
 // ─── Format Time Helper (ms -> MM:SS) ──────────────────────────────
 const formatTime = (ms: number) => {
   const totalSeconds = Math.floor(ms / 1000);
@@ -41,9 +48,56 @@ const formatTime = (ms: number) => {
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
+// ─── Trim Handle sub-component ─────────────────────────────────────
+// Each clip gets one of these on its left edge and one on its right edge.
+// Dragging updates a shared value live (smooth, native-thread), and only
+// calls back into JS (to persist via updateClipTrim) once the drag ends.
+function TrimHandle({
+  side,
+  clip,
+  onTrimEnd,
+}: {
+  side: 'left' | 'right';
+  clip: VideoClip;
+  onTrimEnd: (clipId: string, trimStartMs: number, trimEndMs: number) => void;
+}) {
+  const clipDurationPx = (clip.durationMs / 1000) * PX_PER_SECOND;
+  const trimStartMs = clip.trimStartMs ?? 0;
+  const trimEndMs = clip.trimEndMs ?? clip.durationMs;
+  const startPx = useSharedValue((trimStartMs / 1000) * PX_PER_SECOND);
+  const endPx = useSharedValue((trimEndMs / 1000) * PX_PER_SECOND);
+  const offset = side === 'left' ? startPx : endPx;
+  const pan = Gesture.Pan()
+    .onChange((e) => {
+      if (side === 'left') {
+        const next = offset.value + e.changeX;
+        // clamp: can't go below 0, can't cross the right handle
+        offset.value = Math.max(0, Math.min(next, endPx.value - HANDLE_WIDTH));
+      } else {
+        const next = offset.value + e.changeX;
+        // clamp: can't exceed clip duration, can't cross the left handle
+        offset.value = Math.min(clipDurationPx, Math.max(next, startPx.value + HANDLE_WIDTH));
+      }
+    })
+    .onEnd(() => {
+      const newStartMs = Math.round((startPx.value / PX_PER_SECOND) * 1000);
+      const newEndMs = Math.round((endPx.value / PX_PER_SECOND) * 1000);
+      runOnJS(onTrimEnd)(clip.id, newStartMs, newEndMs);
+    });
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: side === 'left' ? startPx.value : endPx.value - HANDLE_WIDTH }],
+  }));
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={[styles.trimHandle, animatedStyle]}>
+        <View style={styles.trimHandleBar} />
+      </Animated.View>
+    </GestureDetector>
+  );
+}
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
-  const { currentVideoProject } = useVideoProject();
+  const { currentVideoProject, updateClipTrim } = useVideoProject();
   const project = currentVideoProject;
   const projectId = project?.id;
   const clips: VideoClip[] = project?.clips ?? [];
@@ -54,21 +108,42 @@ export default function EditorScreen() {
   const player = useVideoPlayer(primaryClip?.uri ?? null, (p: any) => {
     p.loop = false;
   });
-  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
-  // NOTE: TimeUpdateEventPayload in the currently installed expo-video version
-  // requires currentLiveTimestamp, currentOffsetFromLive, and bufferedPosition
-  // in addition to currentTime, so seeding useEvent's initial value with just
-  // { currentTime: player.currentTime } fails type-checking (ts 2345).
-  // useEventListener avoids that problem since it only takes a callback,
-  // so we track currentTime in local state instead.
+  // CHANGED: isPlaying is no longer read from useEvent's playingChange (which
+  // was going stale after the first play/pause cycle). Instead we listen to
+  // the same kind of reliable event-listener pattern already used for
+  // timeUpdate below, and we also resync directly from player.playing the
+  // moment the button is tapped, so togglePlayback never acts on stale state.
+  const [isPlaying, setIsPlaying] = useState(player.playing ?? false);
+  useEventListener(player, 'playingChange', (payload) => {
+    setIsPlaying(payload.isPlaying);
+  });
   const [currentTime, setCurrentTime] = useState(player.currentTime ?? 0);
   useEventListener(player, 'timeUpdate', (payload) => {
     setCurrentTime(payload.currentTime);
+    // ADDED: respect trim end — auto-pause once playback passes this clip's trimEndMs
+    if (primaryClip) {
+      const trimEndMs = primaryClip.trimEndMs ?? primaryClip.durationMs;
+      if (payload.currentTime * 1000 >= trimEndMs) {
+        player.pause();
+      }
+    }
   });
   const togglePlayback = () => {
-    if (isPlaying) {
+    // CHANGED: read the live player property directly rather than trusting
+    // possibly-stale isPlaying state, so this always does the right thing
+    const currentlyPlaying = player.playing;
+    if (currentlyPlaying) {
       player.pause();
     } else {
+      // ADDED: respect trim start — if we're before/after the trimmed range, seek back to trimStart first
+      if (primaryClip) {
+        const trimStartMs = primaryClip.trimStartMs ?? 0;
+        const trimEndMs = primaryClip.trimEndMs ?? primaryClip.durationMs;
+        const posMs = player.currentTime * 1000;
+        if (posMs < trimStartMs || posMs >= trimEndMs) {
+          player.currentTime = trimStartMs / 1000;
+        }
+      }
       player.play();
     }
   };
@@ -92,7 +167,6 @@ export default function EditorScreen() {
           } catch (e) {
             console.log('Thumbnail failed for clip', clip.id, 'at', s, e);
           }
-          // progressive fill-in so the strip populates as frames finish generating
           setClipThumbnails((prev) => ({ ...prev, [clip.id]: [...uris] }));
         }
       }
@@ -102,19 +176,16 @@ export default function EditorScreen() {
       cancelled = true;
     };
   }, [clips, projectId]);
-  const totalDurationMs = project?.totalDurationMs ?? 124000; // default 1:24
+  const totalDurationMs = project?.totalDurationMs ?? 124000;
   const currentPositionMs = (currentTime ?? 0) * 1000;
   const totalSeconds = Math.max(1, Math.ceil(totalDurationMs / 1000));
-  // Dynamic ruler marks — labeled tick every 5s, scales with actual duration
   const rulerMarks = useMemo(() => {
     const marks: number[] = [];
     for (let s = 0; s <= totalSeconds; s += 5) marks.push(s);
     return marks;
   }, [totalSeconds]);
-  // ── Fixed playhead / scrollable filmstrip sync ──
   const timelineScrollRef = useRef<ScrollView>(null);
   const isScrubbingRef = useRef(false);
-  // Keep the strip in sync with playback, unless the user is actively dragging it
   useEffect(() => {
     if (isPlaying && !isScrubbingRef.current) {
       const x = (currentPositionMs / 1000) * PX_PER_SECOND;
@@ -127,11 +198,19 @@ export default function EditorScreen() {
     const timeSec = Math.max(0, x / PX_PER_SECOND);
     player.currentTime = timeSec;
   };
-  if (!project) {
+  // ADDED: called when a trim handle drag ends — persists via context
+  const handleTrimEnd = (clipId: string, trimStartMs: number, trimEndMs: number) => {
+    updateClipTrim(clipId, trimStartMs, trimEndMs);
+  };
+  if (!project || clips.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>No project loaded.</Text>
+          <Ionicons name="film-outline" size={scale(40)} color={COLORS.textMuted} />
+          <Text style={styles.emptyStateText}>No clips yet</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('uploadvideo')}>
+            <Text style={{ color: COLORS.purple, marginTop: verticalScale(8) }}>Upload a clip</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -139,7 +218,6 @@ export default function EditorScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-      {/* ── Outer Header row ── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerBtn}>
           <Ionicons name="share-outline" size={scale(22)} color={COLORS.textPrimary} />
@@ -151,7 +229,6 @@ export default function EditorScreen() {
           <Ionicons name="ellipsis-vertical" size={scale(22)} color={COLORS.textPrimary} />
         </TouchableOpacity>
       </View>
-      {/* ── Portrait Video Preview Frame (Curved 9:16 Canvas) ── */}
       <View style={styles.previewWrapper}>
         <View style={styles.previewContainer}>
           {primaryClip ? (
@@ -194,25 +271,28 @@ export default function EditorScreen() {
           </View>
         </View>
       </View>
-      {/* ── Text overlay chip row (static, NOT part of the scrolling timeline) ── */}
       <View style={[styles.trackRow, { marginHorizontal: scale(16) }]}>
-        <View style={styles.activeTextChipContainer}>
-          <View style={styles.chipHandleLeft} />
-          <TouchableOpacity style={styles.activeTextChip}>
-            <Ionicons name="text" size={scale(12)} color={COLORS.purple} />
-            <Text style={styles.activeTextChipText}>Lighthouse</Text>
+        {allOverlays.length > 0 ? (
+          allOverlays.map((overlay) => (
+            <View key={overlay.id} style={styles.activeTextChipContainer}>
+              <View style={styles.chipHandleLeft} />
+              <TouchableOpacity style={styles.activeTextChip}>
+                <Ionicons name="text" size={scale(12)} color={COLORS.purple} />
+                <Text style={styles.activeTextChipText}>{overlay.text}</Text>
+              </TouchableOpacity>
+              <View style={styles.chipHandleRight} />
+            </View>
+          ))
+        ) : (
+          <TouchableOpacity style={styles.aiTextChip}>
+            <View style={styles.aiSparkleIcon}>
+              <Ionicons name="sparkles" size={scale(10)} color="#A399F7" />
+            </View>
+            <Ionicons name="text" size={scale(12)} color={COLORS.textSecondary} />
+            <Text style={styles.aiTextChipText}>Add text</Text>
           </TouchableOpacity>
-          <View style={styles.chipHandleRight} />
-        </View>
-        <TouchableOpacity style={styles.aiTextChip}>
-          <View style={styles.aiSparkleIcon}>
-            <Ionicons name="sparkles" size={scale(10)} color="#A399F7" />
-          </View>
-          <Ionicons name="text" size={scale(12)} color={COLORS.textSecondary} />
-          <Text style={styles.aiTextChipText}>Emotions</Text>
-        </TouchableOpacity>
+        )}
       </View>
-      {/* ── Multi-Track Interactive Timeline (ruler + filmstrip + waveform, synced scroll, fixed playhead) ── */}
       <View style={styles.timelineContainer}>
         <View style={styles.playheadLine} pointerEvents="none" />
         <ScrollView
@@ -230,7 +310,6 @@ export default function EditorScreen() {
           }}
         >
           <View>
-            {/* Ruler */}
             <View style={[styles.rulerContainer, { width: totalSeconds * PX_PER_SECOND, marginHorizontal: 0 }]}>
               <View style={styles.rulerLine} />
               {rulerMarks.map((s) => (
@@ -240,7 +319,6 @@ export default function EditorScreen() {
                 </View>
               ))}
             </View>
-            {/* Filmstrip — seamless per-second thumbnails, addClipButton stays pinned before the scroll area */}
             <View style={styles.trackRow}>
               {clips.length > 0 ? (
                 clips.map((clip, index) => {
@@ -248,7 +326,8 @@ export default function EditorScreen() {
                   const clipSeconds = Math.max(1, Math.ceil(clip.durationMs / 1000));
                   return (
                     <React.Fragment key={clip.id}>
-                      <View style={{ flexDirection: 'row' }}>
+                      {/* ADDED: wrapper so trim handles can be absolutely positioned over this clip's strip */}
+                      <View style={{ flexDirection: 'row', position: 'relative' }}>
                         {frames.length > 0 ? (
                           frames.map((uri, i) => (
                             <Image
@@ -266,6 +345,9 @@ export default function EditorScreen() {
                             />
                           </View>
                         )}
+                        {/* ADDED: draggable trim handles, left and right edge of this clip */}
+                        <TrimHandle side="left" clip={clip} onTrimEnd={handleTrimEnd} />
+                        <TrimHandle side="right" clip={clip} onTrimEnd={handleTrimEnd} />
                       </View>
                       {index < clips.length - 1 && (
                         <View style={styles.transitionBtn}>
@@ -284,7 +366,6 @@ export default function EditorScreen() {
                 </View>
               )}
             </View>
-            {/* Waveform */}
             <View style={styles.waveformContainer}>
               <View style={[styles.waveformTrack, { width: totalSeconds * PX_PER_SECOND }]}>
                 {Array.from({ length: totalSeconds * 4 }).map((_, i) => {
@@ -303,8 +384,14 @@ export default function EditorScreen() {
 }
 
 
+
+
+
+
 // ─── Perfect Styles Replicating the Design ──────────────────────────────
 const styles = StyleSheet.create({
+
+
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -681,4 +768,20 @@ activeTextChip: {
   toolbarIconButtonActive: {
     backgroundColor: 'rgba(108, 92, 231, 0.1)',
   },
+  trimHandle: { // ADDED
+  position: 'absolute',
+  top: 0,
+  bottom: 0,
+  width: HANDLE_WIDTH,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: 'rgba(108, 92, 231, 0.9)',
+  zIndex: 10,
+},
+trimHandleBar: { // ADDED
+  width: scale(3),
+  height: '50%',
+  borderRadius: 2,
+  backgroundColor: '#FFFFFF',
+},
 });
