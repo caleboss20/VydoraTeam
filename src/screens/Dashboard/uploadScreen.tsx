@@ -14,9 +14,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { VideoProject, VideoClip } from '../types';
+
+
 const CONFIG = {
   USE_MOCK: false,
 };
+
+
 const COLORS = {
   background: '#212121',
   surface: '#2A2A2A',
@@ -43,9 +47,11 @@ export default function VideoUploadScreen() {
       navigation.replace('editorscreen');
     }
   }, [currentVideoProject]);
+
 const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
   const durationMs = (asset.duration ?? 0) * 1000;
   const now = new Date().toISOString();
+
   const clip: VideoClip = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     uri: asset.uri,
@@ -54,7 +60,10 @@ const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
     height: asset.height,
     thumbnailUri: undefined,
     order: 0,
+    trimStartMs:0,
+    trimEndMs:durationMs,
   };
+
   const project: VideoProject = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: 'Untitled Project',
@@ -67,6 +76,7 @@ const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
   setCurrentVideoProject(project);
   navigation.navigate('editorscreen');
 };
+
   const requestPermissionAndPick = async () => {
     try {
       setIsPicking(true);
@@ -102,7 +112,7 @@ const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
       }
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        quality: 1,
+        quality: 1
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         await startProjectFromAsset(result.assets[0]);
@@ -159,6 +169,8 @@ const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
 // -----------------------------------------------------------------------------
 // STYLES
 // -----------------------------------------------------------------------------
+
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -241,3 +253,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
