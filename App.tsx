@@ -10,6 +10,7 @@ import { CommentProvider } from "./src/screens/Contexts/commentContext";
 import { NotificationProvider } from "./src/screens/Contexts/notificatinContext";
 import { ExportProvider } from "./src/screens/Contexts/exportContext";
 import { VideoProjectProvider } from "./src/screens/Contexts/VideoProjectContext";
+import { VersionHistoryProvider } from "./src/screens/Contexts/VersionHistoryContext";
 
 export default function App() {
   return (
@@ -18,21 +19,23 @@ export default function App() {
         <ProjectProvider>
           <VideoProjectProvider>
             <ClipProvider>
-              <ExportProvider>
-                <MemberProvider>
-                  <CommentProvider>
-                    <NotificationProvider>
-                      <NavigationContainer>
-                        <MainStackNavigator />
-                      </NavigationContainer>
-                    </NotificationProvider>
-                  </CommentProvider>
-                </MemberProvider>
-              </ExportProvider>
+              <VersionHistoryProvider>
+                <ExportProvider>
+                  <MemberProvider>
+                    <CommentProvider>
+                      <NotificationProvider>
+                        <NavigationContainer>
+                          <MainStackNavigator />
+                        </NavigationContainer>
+                      </NotificationProvider>
+                    </CommentProvider>
+                  </MemberProvider>
+                </ExportProvider>
+              </VersionHistoryProvider>
             </ClipProvider>
           </VideoProjectProvider>
         </ProjectProvider>
       </AuthProvider>
     </SafeAreaProvider>
-  )
+  );
 }

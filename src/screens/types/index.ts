@@ -117,3 +117,36 @@ export interface Export {
   errorMessage?: string;
   createdAt: string;
 }
+
+
+
+
+// ─── Version (version history domain) ────────────────────────────────────────
+export interface ProjectVersion {
+  id: string;
+  versionNumber: number;
+  projectId: string;
+  author: Pick<Member, 'id' | 'name' | 'initials' | 'color'>;
+  createdAt: string;
+  isCurrent: boolean;
+  isRestored: boolean;
+  changeSummary?: string;
+}
+export interface VersionHistoryState {
+  versions: ProjectVersion[];
+  loading: boolean;
+  error: string | null;
+  restoringVersionId: string | null;
+}
+export interface VersionListItem extends ProjectVersion {
+  relativeTime: string;
+}
+export interface VersionRowProps {
+  version: VersionListItem;
+  isLast: boolean;
+  isRestoring: boolean;
+  onRestore: (versionId: string) => void;
+}
+export type VersionHistoryScreenParams = {
+  projectId: string;
+};

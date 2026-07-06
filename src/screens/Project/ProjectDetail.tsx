@@ -580,21 +580,25 @@ const pickCoverImage = async () => {
       label: "Videos",
       value: projectClips.length,
       icon: "videocam-outline" as keyof typeof Ionicons.glyphMap,
+       navigation:"videos"
     },
     {
       label: "Members",
       value: projectMembers.length,
       icon: "people-outline" as keyof typeof Ionicons.glyphMap,
+      navigation:"members",
     },
     {
       label: "Comments",
       value: projectComments.length,
       icon: "chatbubble-outline" as keyof typeof Ionicons.glyphMap,
+       navigation:"comments"
     },
     {
       label: "Versions",
       value: 0,
       icon: "git-branch-outline" as keyof typeof Ionicons.glyphMap,
+       navigation:"versionhistory"
     },
   ];
 
@@ -602,11 +606,12 @@ const pickCoverImage = async () => {
     key: Tab;
     icon: keyof typeof Ionicons.glyphMap;
     iconActive: keyof typeof Ionicons.glyphMap;
+    navigation:string;
   }[] = [
-    { key: "Clips", icon: "film-outline", iconActive: "film" },
-    { key: "Members", icon: "people-outline", iconActive: "people" },
-    { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble" },
-    { key: "Settings", icon: "settings-outline", iconActive: "settings" },
+    { key: "Clips", icon: "film-outline", iconActive: "film" , navigation:"videos"},
+    { key: "Members", icon: "people-outline", iconActive: "people" , navigation:"members"},
+    { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble" , navigation:"comments"},
+    { key: "Settings", icon: "settings-outline", iconActive: "settings" , navigation:"settings"},
   ];
 
   const isActive = currentProject.status === "Active";
@@ -701,9 +706,14 @@ const pickCoverImage = async () => {
         </View>
         {/* Stats Row */}
         <View style={styles.statsRow}>
+         
           {stats.map((stat, i) => (
             <React.Fragment key={stat.label}>
-              <View style={styles.statItem}>
+              <Pressable
+                 style={styles.statItem}
+                 onPress={() => navigation.navigate(stat.navigation) }
+                 
+                 >
                 <Ionicons
                   name={stat.icon}
                   size={moderateScale(14)}
@@ -712,10 +722,12 @@ const pickCoverImage = async () => {
                 />
                 <Text style={styles.statValue}>{stat.value}</Text>
                 <Text style={styles.statLabel}>{stat.label}</Text>
-              </View>
+              </Pressable>
               {i < stats.length - 1 && <View style={styles.statDivider} />}
             </React.Fragment>
           ))}
+
+
         </View>
         {/* CTA Buttons */}
         <View style={styles.ctaRow}>
@@ -741,6 +753,8 @@ const pickCoverImage = async () => {
           </TouchableOpacity>
         </View>
         {/* Tabs */}
+
+
         <View style={styles.tabBar}>
           {TABS.map((tab) => {
             const active = activeTab === tab.key;
@@ -765,6 +779,7 @@ const pickCoverImage = async () => {
             );
           })}
         </View>
+
         {/* Tab Content */}
         <View style={styles.tabContent}>{renderTab()}</View>
       </ScrollView>

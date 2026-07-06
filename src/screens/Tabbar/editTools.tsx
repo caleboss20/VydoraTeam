@@ -61,20 +61,33 @@ const tools: Tool[] = [
 //   );
 // }
 
-export default function BottomToolbar() {
-  const navigation = useNavigation<any>();
+interface BottomToolbarProps {
+  onSplit?: () => void;
+  onDuplicate?: () => void;
+  onDelete?: () => void;
+  onToolPress?: (toolLabel: string) => void;
+}
+
+export default function BottomToolbar({ onSplit, onDuplicate, onDelete, onToolPress }: BottomToolbarProps) {
   const handlePress = (tool: Tool) => {
-    if (tool.screen) {
-      navigation.navigate(tool.screen);
-      return;
-    }
     if (tool.action === "duplicate") {
-      console.log("Duplicate clip");
+      if (onDuplicate) onDuplicate();
       return;
     }
     if (tool.action === "delete") {
-      console.log("Delete clip");
+      if (onDelete) onDelete();
       return;
+    }
+    if (tool.label === "Split") {
+      if (onSplit) onSplit();
+      return;
+    }
+    if (onToolPress) {
+      onToolPress(tool.label);
+      return;
+    }
+    if (tool.screen) {
+      console.log(`Tool ${tool.label} pressed, but screen is disabled`);
     }
   };
   return (
