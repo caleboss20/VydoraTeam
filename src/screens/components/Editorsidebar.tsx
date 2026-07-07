@@ -21,7 +21,7 @@ const COLORS = {
   background: '#0B0D13',
   surface: '#151821',
   border: '#222633',
-  purple: '#6C5CE7',
+  yellow: '#c39a07',
   gold: '#F5C518',
   textPrimary: '#FFFFFF',
   textSecondary: '#8F9BB3',
@@ -109,7 +109,7 @@ export default function CollaborationSidebar({
   if (!visible) return null;
   const onlineCount = members.filter((m) => m.online).length;
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View style={[StyleSheet.absoluteFill,{zIndex:999,elevation:999}]} pointerEvents="box-none">
       {/* Backdrop */}
       <TouchableOpacity
         style={styles.backdrop}
@@ -125,7 +125,7 @@ export default function CollaborationSidebar({
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTitleRow}>
-            <Ionicons name="chatbubble-outline" size={scale(18)} color={COLORS.purple} />
+            <Ionicons name="chatbubble-outline" size={scale(18)} color={COLORS.yellow} />
             <Text style={styles.headerTitle}>Collaboration Desk</Text>
           </View>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: { color: COLORS.textMuted, fontSize: moderateScale(11), fontWeight: '700', letterSpacing: 0.5 },
   onlineBadge: {
-    backgroundColor: COLORS.purple,
+    backgroundColor: COLORS.yellow,
     borderRadius: scale(10),
     paddingHorizontal: scale(8),
     paddingVertical: verticalScale(2),
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
     borderRadius: scale(14),
     backgroundColor: COLORS.surface,
   },
-  tabBtnActive: { backgroundColor: COLORS.purple },
+  tabBtnActive: { backgroundColor: COLORS.yellow },
   tabText: { color: COLORS.textSecondary, fontSize: moderateScale(12), fontWeight: '600' },
   tabTextActive: { color: COLORS.textPrimary },
   body: { flex: 1, paddingHorizontal: scale(16), paddingTop: verticalScale(10) },
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(13),
   },
   sendBtn: {
-    backgroundColor: COLORS.purple,
+    backgroundColor: COLORS.yellow,
     width: scale(34),
     height: scale(34),
     borderRadius: scale(17),
