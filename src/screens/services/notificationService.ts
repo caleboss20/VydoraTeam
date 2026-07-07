@@ -41,7 +41,7 @@ let MOCK_NOTIFICATIONS: Notification[] = [
   },
 ];
 // ─── Service ─────────────────────────────────────────────────────────────────
-export const notificationService = {
+ export const notificationService = {
   // get all notifications for current user
   getNotifications: async (token: string): Promise<Notification[]> => {
     if (CONFIG.USE_MOCK) return MOCK_NOTIFICATIONS;
@@ -99,4 +99,5 @@ export const notificationService = {
     });
     if (!res.ok) throw new Error('Failed to clear notifications');
   },
-};
+ };
+

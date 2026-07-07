@@ -22,6 +22,7 @@ interface VideoProjectContextType {
   deleteClip: (clipId: string) => void;
   duplicateClip: (clipId: string) => void;
   splitClip: (clipId: string, splitTimeMs: number) => void;
+  updateClipVolume: (clipId: string, volume: number) => void;
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const VideoProjectContext = createContext<VideoProjectContextType | undefined>(undefined);
@@ -190,6 +191,26 @@ const splitClip = (clipId: string, splitTimeMs: number) => {
   });
 };
 
+//to update the volume of video//
+const updateClipVolume = (clipId: string, volume: number) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? { ...c, volume } : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist volume update', e));
+    return updated;
+  });
+};
+
 
 
   return (
@@ -200,7 +221,8 @@ const splitClip = (clipId: string, splitTimeMs: number) => {
         updateClipTrim,
         deleteClip,
         duplicateClip,
-        splitClip
+        splitClip,
+        updateClipVolume, // ADDED
       }}
     >
       {children}
