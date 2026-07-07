@@ -285,6 +285,15 @@ const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
     }
   }, [activeClip?.uri, currentLoadedUri]);
 
+ //for the real time video audio volume//
+ useEffect(()=>{
+  if(activeClip){
+    player.volume=activeClip.volume ?? 1;
+
+  }
+ },[activeClip?.volume,player.volume]);
+
+
   // Handle active clip playback endpoint
   useEventListener(player, 'timeUpdate', (payload) => {
     if (!activeClip) return;
