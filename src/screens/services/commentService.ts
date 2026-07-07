@@ -1,12 +1,12 @@
-//Comment service//
 import { CONFIG } from '../config';
 import { Comment } from '../types';
 // ─── Mock Data ───────────────────────────────────────────────────────────────
-let MOCK_COMMENTS: Comment[] = [
+// Base comment "template" — projectId/clipId get stamped in dynamically per
+// request, so mocks work regardless of what project/clip IDs are generated
+// at runtime (mirrors the membersServvice.ts fix).
+const MOCK_COMMENT_TEMPLATE: Omit<Comment, 'projectId' | 'clipId'>[] = [
   {
     id: '1',
-    projectId: '1',
-    clipId: '1',
     authorId: '2',
     author: 'Jesse Sarfo',
     initials: 'JS',
@@ -16,8 +16,6 @@ let MOCK_COMMENTS: Comment[] = [
   },
   {
     id: '2',
-    projectId: '1',
-    clipId: '2',
     authorId: '3',
     author: 'Ama Owusu',
     initials: 'AO',
@@ -27,8 +25,6 @@ let MOCK_COMMENTS: Comment[] = [
   },
   {
     id: '3',
-    projectId: '1',
-    clipId: '3',
     authorId: '4',
     author: 'Kofi Mensah',
     initials: 'KM',
@@ -38,8 +34,6 @@ let MOCK_COMMENTS: Comment[] = [
   },
   {
     id: '4',
-    projectId: '1',
-    clipId: '1',
     authorId: '1',
     author: 'Caleb Dwamena',
     initials: 'CD',
@@ -48,12 +42,27 @@ let MOCK_COMMENTS: Comment[] = [
     timestamp: '2d ago',
   },
 ];
+// Keeps a per-project copy so added/deleted comments persist correctly
+// across calls instead of resetting on every getComments() call.
+let MOCK_COMMENTS_BY_PROJECT: { [projectId: string]: Comment[] } = {};
+function getOrCreateMockComments(projectId: string, clipIds: string[]): Comment[] {
+  if (!MOCK_COMMENTS_BY_PROJECT[projectId]) {
+    // Spread the 4 template comments across whatever clip IDs exist so far —
+    // falls back to a synthetic clip id if none provided yet.
+    const fallbackClipIds = clipIds.length > 0 ? clipIds : ['clip-1', 'clip-2', 'clip-3', 'clip-1'];
+    MOCK_COMMENTS_BY_PROJECT[projectId] = MOCK_COMMENT_TEMPLATE.map((c, i) => ({
+      ...c,
+      projectId,
+      clipId: fallbackClipIds[i % fallbackClipIds.length],
+    }));
+  }
+  return MOCK_COMMENTS_BY_PROJECT[projectId];
+}
 // ─── Service ─────────────────────────────────────────────────────────────────
 export const commentService = {
-  // get all comments for a project
   getComments: async (projectId: string, token: string): Promise<Comment[]> => {
     if (CONFIG.USE_MOCK) {
-      return MOCK_COMMENTS.filter(c => c.projectId === projectId);
+      return getOrCreateMockComments(projectId, []);
     }
     const res = await fetch(
       `${CONFIG.API_BASE}/projects/${projectId}/comments`,
@@ -62,16 +71,14 @@ export const commentService = {
     if (!res.ok) throw new Error('Failed to fetch comments');
     return res.json();
   },
-  // get comments for a specific clip
   getCommentsByClip: async (
     projectId: string,
     clipId: string,
     token: string
   ): Promise<Comment[]> => {
     if (CONFIG.USE_MOCK) {
-      return MOCK_COMMENTS.filter(
-        c => c.projectId === projectId && c.clipId === clipId
-      );
+      const list = getOrCreateMockComments(projectId, [clipId]);
+      return list.filter((c) => c.clipId === clipId);
     }
     const res = await fetch(
       `${CONFIG.API_BASE}/projects/${projectId}/clips/${clipId}/comments`,
@@ -80,7 +87,6 @@ export const commentService = {
     if (!res.ok) throw new Error('Failed to fetch clip comments');
     return res.json();
   },
-  // add a comment to a clip
   addComment: async (
     projectId: string,
     clipId: string,
@@ -88,7 +94,7 @@ export const commentService = {
     token: string
   ): Promise<Comment> => {
     if (CONFIG.USE_MOCK) {
-      return {
+      const newComment: Comment = {
         id: Date.now().toString(),
         projectId,
         clipId,
@@ -99,6 +105,9 @@ export const commentService = {
         text,
         timestamp: 'Just now',
       };
+      const list = getOrCreateMockComments(projectId, [clipId]);
+      list.unshift(newComment);
+      return newComment;
     }
     const res = await fetch(
       `${CONFIG.API_BASE}/projects/${projectId}/clips/${clipId}/comments`,
@@ -114,13 +123,18 @@ export const commentService = {
     if (!res.ok) throw new Error('Failed to add comment');
     return res.json();
   },
-  // delete a comment
   deleteComment: async (
     projectId: string,
     commentId: string,
     token: string
   ): Promise<void> => {
-    if (CONFIG.USE_MOCK) return;
+    if (CONFIG.USE_MOCK) {
+      const list = MOCK_COMMENTS_BY_PROJECT[projectId];
+      if (list) {
+        MOCK_COMMENTS_BY_PROJECT[projectId] = list.filter((c) => c.id !== commentId);
+      }
+      return;
+    }
     const res = await fetch(
       `${CONFIG.API_BASE}/projects/${projectId}/comments/${commentId}`,
       {
