@@ -25,6 +25,7 @@ import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { VideoClip, TextOverlay } from '../types';
 import BottomToolbar from '../Tabbar/editTools';
 import { useComment } from '../Contexts/commentContext';
+import EditToolPanel from './EditToolPanel';
 
 const COLORS = {
   background: '#0B0D13',
@@ -225,6 +226,10 @@ export default function EditorScreen() {
   const project = currentVideoProject;
   const projectId = project?.id;
   const {fetchComments}=useComment();
+
+  //for the video volume//
+  const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
+  const { updateClipVolume } = useVideoProject();
 
   useEffect(() => {
     if(projectId) {
@@ -489,9 +494,13 @@ const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
     Alert.alert("Clip Deleted", "The clip has been removed.");
   };
 
-  const handleToolPress = (toolLabel: string) => {
-    Alert.alert(`${toolLabel} Feature`, `${toolLabel} editing is coming soon in the collaborative editor!`);
-  };
+const handleToolPress = (toolLabel: string) => {
+  setActiveToolLabel(toolLabel);
+};
+
+const closeToolPanel = () => setActiveToolLabel(null);
+
+
 
   if (!project || clips.length === 0) {
     return (
@@ -733,6 +742,14 @@ const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
         onDelete={handleDelete}
         onToolPress={handleToolPress}
       />
+
+      <EditToolPanel
+      visible={!!activeToolLabel}
+      toolLabel={activeToolLabel}
+      onClose={closeToolPanel}
+      volume={activeClip?.volume ?? 1}
+      onVolumeChange={(v) => activeClip && updateClipVolume(activeClip.id, v)}
+/>
     </SafeAreaView>
   );
 }
@@ -1076,9 +1093,9 @@ const styles = StyleSheet.create({
   alignItems: 'center',
 },
 stackedAvatar: {
-  width: scale(26),
-  height: scale(26),
-  borderRadius: scale(13),
+  width: scale(33),
+  height: scale(33),
+  borderRadius: scale(33),
   alignItems: 'center',
   justifyContent: 'center',
   borderWidth: 1.5,
