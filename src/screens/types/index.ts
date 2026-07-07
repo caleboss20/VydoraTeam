@@ -92,6 +92,7 @@ export type VideoClip = {
   trimStartMs?: number; // ADDED: defaults to 0 if unset
   trimEndMs?: number;   // ADDED: defaults to durationMs if unset
   volume?:number;
+  speed?:number;
 };
 
 export type VideoProject = {

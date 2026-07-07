@@ -23,6 +23,7 @@ interface VideoProjectContextType {
   duplicateClip: (clipId: string) => void;
   splitClip: (clipId: string, splitTimeMs: number) => void;
   updateClipVolume: (clipId: string, volume: number) => void;
+  updateClipSpeed: (clipId: string, speed: number) => void;
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const VideoProjectContext = createContext<VideoProjectContextType | undefined>(undefined);
@@ -211,6 +212,27 @@ const updateClipVolume = (clipId: string, volume: number) => {
   });
 };
 
+//to update the speed of video//
+const updateClipSpeed = (clipId: string, speed: number) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? { ...c, speed } : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist speed update', e));
+    return updated;
+  });
+};
+
+
 
 
   return (
@@ -223,6 +245,7 @@ const updateClipVolume = (clipId: string, volume: number) => {
         duplicateClip,
         splitClip,
         updateClipVolume, // ADDED
+        updateClipSpeed, // ADDED
       }}
     >
       {children}

@@ -32,8 +32,8 @@ const COLORS = {
   surface: '#151821',
   // border: '#222633',
   border:'#F5C518',
-  purple: '#F5C518',
-  purpleBg: 'rgba(108, 92, 231, 0.15)',
+  yellow: '#F5C518',
+  yellowBg: 'rgba(245, 197, 24, 0.15)',
   tealAccent: '#10B981',
   textPrimary: '#FFFFFF',
   textSecondary: '#8F9BB3',
@@ -223,13 +223,13 @@ function ClipTrimmer({
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
   const { currentVideoProject, updateClipTrim, deleteClip, duplicateClip, splitClip } = useVideoProject();
+  const {updateClipSpeed,updateClipVolume}=useVideoProject();
   const project = currentVideoProject;
   const projectId = project?.id;
   const {fetchComments}=useComment();
 
   //for the video volume//
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
-  const { updateClipVolume } = useVideoProject();
 
   useEffect(() => {
     if(projectId) {
@@ -285,6 +285,7 @@ const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
     }
   }, [activeClip?.uri, currentLoadedUri]);
 
+
  //for the real time video audio volume//
  useEffect(()=>{
   if(activeClip){
@@ -292,6 +293,13 @@ const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
   }
  },[activeClip?.volume,player.volume]);
+
+ //for the real time video speed//
+useEffect(() => {
+  if (activeClip) {
+    player.playbackRate = activeClip.speed ?? 1;
+  }
+}, [activeClip?.speed, player]);
 
 
   // Handle active clip playback endpoint
@@ -752,13 +760,17 @@ const closeToolPanel = () => setActiveToolLabel(null);
         onToolPress={handleToolPress}
       />
 
-      <EditToolPanel
-      visible={!!activeToolLabel}
-      toolLabel={activeToolLabel}
-      onClose={closeToolPanel}
-      volume={activeClip?.volume ?? 1}
-      onVolumeChange={(v) => activeClip && updateClipVolume(activeClip.id, v)}
+   <EditToolPanel
+  visible={!!activeToolLabel}
+  toolLabel={activeToolLabel}
+  onClose={closeToolPanel}
+  volume={activeClip?.volume ?? 1}
+  onVolumeChange={(v) => activeClip && updateClipVolume(activeClip.id, v)}
+ speed={activeClip?.speed ?? 1}
+  onSpeedChange={(s) => activeClip && updateClipSpeed(activeClip.id, s)}
 />
+
+
     </SafeAreaView>
   );
 }
