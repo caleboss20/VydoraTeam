@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef,  } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Alert,
   PanResponder,
 } from 'react-native';
+import { useMember } from '../Contexts/memberContext'; 
+import CollaborationSidebar from '../components/Editorsidebar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
@@ -22,12 +24,14 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { VideoClip, TextOverlay } from '../types';
 import BottomToolbar from '../Tabbar/editTools';
+import { useComment } from '../Contexts/commentContext';
 
 const COLORS = {
   background: '#0B0D13',
   surface: '#151821',
-  border: '#222633',
-  purple: '#6C5CE7',
+  // border: '#222633',
+  border:'#F5C518',
+  purple: '#F5C518',
   purpleBg: 'rgba(108, 92, 231, 0.15)',
   tealAccent: '#10B981',
   textPrimary: '#FFFFFF',
@@ -220,9 +224,31 @@ export default function EditorScreen() {
   const { currentVideoProject, updateClipTrim, deleteClip, duplicateClip, splitClip } = useVideoProject();
   const project = currentVideoProject;
   const projectId = project?.id;
+  const {fetchComments}=useComment();
+
+  useEffect(() => {
+    if(projectId) {
+      fetchMembers(projectId);
+    }
+  }, [projectId]);
+
+
+  useEffect(() => {
+    if(projectId) {
+      fetchComments(projectId);
+    }
+  }, [projectId]);
+
   const clips: VideoClip[] = project?.clips ?? [];
 
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  //for the sidebar//
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+const { getMembersForProject,fetchMembers } = useMember();
+const onlineMembers = projectId ? getMembersForProject(projectId).filter(m => m.online) : [];
+console.log('projectId:', projectId, 'onlineMembers:', onlineMembers);
+
+  
+const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0];
 
   useEffect(() => {
@@ -486,17 +512,44 @@ export default function EditorScreen() {
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn}>
-          <Ionicons name="share-outline" size={scale(22)} color={COLORS.textPrimary} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.headerBtn}>
-          <Text style={styles.videoTitle}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.navigate('projects')}>
-          <Ionicons name="checkmark" size={scale(22)} color={COLORS.textPrimary} />
-        </TouchableOpacity>
-      </View>
+    <View style={styles.header}>
+  <TouchableOpacity style={styles.headerBtn}>
+    <Ionicons name="share-outline" size={scale(22)} color={COLORS.textPrimary} />
+  </TouchableOpacity>
+  <TouchableOpacity style={styles.headerBtn}>
+    <Text style={styles.videoTitle}>Edit</Text>
+  </TouchableOpacity>
+  <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(10) }}>
+    {/* Stacked avatars — replaces the checkmark */}
+    <TouchableOpacity
+      style={styles.avatarStack}
+      onPress={() => setSidebarVisible(true)}
+    >
+      {onlineMembers.slice(0, 3).map((m, i) => (
+        <View
+          key={m.id}
+          style={[
+            styles.stackedAvatar,
+            { backgroundColor: m.color, marginLeft: i === 0 ? 0 : -scale(10) },
+          ]}
+        >
+          <Text style={styles.stackedAvatarText}>{m.initials}</Text>
+        </View>
+      ))}
+    </TouchableOpacity>
+    {/* Hamburger opens the sidebar */}
+    {/* <TouchableOpacity style={styles.headerBtn} onPress={() => setSidebarVisible(true)}>
+      <Ionicons name="menu" size={scale(22)} color={COLORS.textPrimary} />
+    </TouchableOpacity> */}
+  </View>
+</View>
+<CollaborationSidebar
+  visible={sidebarVisible}
+  onClose={() => setSidebarVisible(false)}
+  projectId={projectId ?? ''}
+  clipId={activeClip?.id}
+/>
+
 
       {/* Video Preview */}
       <View style={styles.previewWrapper}>
@@ -618,7 +671,7 @@ export default function EditorScreen() {
               {visibleOverlays.length === 0 && (
                 <TouchableOpacity style={[styles.aiTextChip, { position: 'absolute', left: 0 }]}>
                   <View style={styles.aiSparkleIcon}>
-                    <Ionicons name="sparkles" size={scale(10)} color="#A399F7" />
+                    <Ionicons name="sparkles" size={scale(10)} color="#e9f799" />
                   </View>
                   <Ionicons name="text" size={scale(12)} color={COLORS.textSecondary} />
                   <Text style={styles.aiTextChipText}>Add text</Text>
@@ -909,7 +962,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -scale(3),
     left: -scale(3),
-    backgroundColor: '#3E3498',
+    backgroundColor: '#F5C518',
     borderRadius: scale(8),
     padding: scale(2),
   },
@@ -975,7 +1028,7 @@ const styles = StyleSheet.create({
     width: HANDLE_WIDTH,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(108, 92, 231, 0.9)',
+    backgroundColor: '#F5C518',
     zIndex: 10,
   },
   trimHandleBar: {
@@ -1012,9 +1065,28 @@ const styles = StyleSheet.create({
     width: scale(26),
     height: scale(26),
     borderRadius: scale(13),
-    backgroundColor: '#3E3498',
+    backgroundColor:' #F5C518',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 30,
   },
+//for the top avatar//
+  avatarStack: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+stackedAvatar: {
+  width: scale(26),
+  height: scale(26),
+  borderRadius: scale(13),
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderWidth: 1.5,
+  borderColor: COLORS.background,
+},
+stackedAvatarText: {
+  color: '#FFF',
+  fontSize: moderateScale(9),
+  fontWeight: '700',
+},
 });
