@@ -685,6 +685,8 @@ export default function EditorScreen() {
 }
 
 // ─── Perfect Styles Replicating the Design ──────────────────────────────
+
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -954,6 +956,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.05)',
     paddingHorizontal: scale(10),
     justifyContent: 'center',
+    marginTop:scale(20),
   },
   waveformTrack: {
     flexDirection: 'row',
