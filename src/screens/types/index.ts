@@ -68,6 +68,8 @@ export interface Notification {
   projectId?: string;
 }
 // ─── Video Project (editor domain) ────────────────────────────────────────────
+export type TextAnimationType = 'fade' | 'slideUp' | 'slideDown' | 'zoom' | 'none'|'typewriter'|'pop'|'bounce'|'spin'|'flip'|'wave'|'glitch'|'sparkle'|'pulse'|'shake'|'jiggle'|'float'|'swing'|'rubberBand'|'tada'|'flash'|'hinge';
+
 export type TextOverlay = {
   id: string;
   text: string;
@@ -76,6 +78,21 @@ export type TextOverlay = {
   durationMs: number;
   color?: string;
   isAiGenerated?: boolean; // powers the sparkles icon e.g. "Emotions"
+  x?:number;
+  y?:number;
+  fontSize?:number;
+  fontWeight?:'normal'|'bold';
+  align?:'left'|'center'|'right';
+  backgroundColor?:string;
+  backgroundOpacity?:number;
+  backgroundRadius?:number;
+  strokeColor?:string|undefined;
+  strokeWidth?:number;
+  animationIn?:TextAnimationType;
+  animationOut?:TextAnimationType;
+
+
+
 };
 
 

@@ -6,8 +6,18 @@ import React, {
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { VideoProject } from '../types';
+import { VideoProject,TextOverlay  } from '../types';
 import { CONFIG } from '../config';
+
+import {
+  createTextOverlay,
+  addOverlayToClip,
+  updateOverlayInClip,
+  removeOverlayFromClip,
+} from '../services/textOverlayservice';
+
+
+
 // ─── Context Type ─────────────────────────────────────────────────────────────
 // Deliberately minimal: this context's only job is to hold whatever video
 // was just picked/uploaded so EditorScreen can read it. It is NOT a full
@@ -24,6 +34,11 @@ interface VideoProjectContextType {
   splitClip: (clipId: string, splitTimeMs: number) => void;
   updateClipVolume: (clipId: string, volume: number) => void;
   updateClipSpeed: (clipId: string, speed: number) => void;
+
+  addTextOverlay: (clipId: string, text: string, startMs: number, durationMs?: number) => string;
+  updateTextOverlay: (clipId: string, overlayId: string, changes: Partial<TextOverlay>) => void;
+  removeTextOverlay: (clipId: string, overlayId: string) => void;
+
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const VideoProjectContext = createContext<VideoProjectContextType | undefined>(undefined);
@@ -233,6 +248,73 @@ const updateClipSpeed = (clipId: string, speed: number) => {
 };
 
 
+const addTextOverlay = (
+  clipId: string,
+  text: string,
+  startMs: number,
+  durationMs: number = 3000
+): string => {
+  const overlay = createTextOverlay(clipId, text, startMs, durationMs);
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? addOverlayToClip(c, overlay) : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist text overlay add', e));
+    return updated;
+  });
+  return overlay.id;
+};
+const updateTextOverlay = (
+  clipId: string,
+  overlayId: string,
+  changes: Partial<TextOverlay>
+) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? updateOverlayInClip(c, overlayId, changes) : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist text overlay update', e));
+    return updated;
+  });
+};
+const removeTextOverlay = (clipId: string, overlayId: string) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? removeOverlayFromClip(c, overlayId) : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist text overlay remove', e));
+    return updated;
+  });
+};
+
+
 
 
   return (
@@ -246,6 +328,9 @@ const updateClipSpeed = (clipId: string, speed: number) => {
         splitClip,
         updateClipVolume, // ADDED
         updateClipSpeed, // ADDED
+        addTextOverlay,      // ADD
+        updateTextOverlay,   // ADD
+        removeTextOverlay, 
       }}
     >
       {children}

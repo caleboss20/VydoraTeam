@@ -223,13 +223,17 @@ function ClipTrimmer({
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
   const { currentVideoProject, updateClipTrim, deleteClip, duplicateClip, splitClip } = useVideoProject();
-  const {updateClipSpeed,updateClipVolume}=useVideoProject();
+  const {updateClipSpeed,updateClipVolume,addTextOverlay,updateTextOverlay,removeTextOverlay}=useVideoProject();
   const project = currentVideoProject;
   const projectId = project?.id;
   const {fetchComments}=useComment();
 
+
   //for the video volume//
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
+
+  //for the selectedoverlay//
+    const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
 
   useEffect(() => {
     if(projectId) {
@@ -255,6 +259,7 @@ console.log('projectId:', projectId, 'onlineMembers:', onlineMembers);
   
 const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0];
+    const activeOverlay=activeClip?.textOverlays?.find(o=>o.id===selectedOverlayId)??null;
 
   useEffect(() => {
     if (activeClip && selectedClipId !== activeClip.id) {
@@ -491,6 +496,17 @@ useEffect(() => {
     return list;
   }, [clips, clipTimelineSegments]);
 
+  //get the visible overlays for the active clip at the current time//
+const activeVisibleOverlays = useMemo(() => {
+  if (!activeClip) return [];
+  const localTimeMs = currentTime * 1000;
+  return (activeClip.textOverlays ?? []).filter(
+    (o) => localTimeMs >= o.startMs && localTimeMs <= o.startMs + o.durationMs
+  );
+}, [activeClip, currentTime]);
+
+
+
   // Toolbar Actions
   const handleSplit = () => {
     if (!activeClip) return;
@@ -511,11 +527,15 @@ useEffect(() => {
     Alert.alert("Clip Deleted", "The clip has been removed.");
   };
 
-const handleToolPress = (toolLabel: string) => {
+const handleToolPress = (toolLabel: string,overlayId: string | null=null) => {
   setActiveToolLabel(toolLabel);
+  setSelectedOverlayId(overlayId??null);
 };
 
-const closeToolPanel = () => setActiveToolLabel(null);
+const closeToolPanel = () => {
+  setActiveToolLabel(null)
+   setSelectedOverlayId(null)
+};
 
 
 
@@ -526,7 +546,7 @@ const closeToolPanel = () => setActiveToolLabel(null);
           <Ionicons name="film-outline" size={scale(40)} color={COLORS.textMuted} />
           <Text style={styles.emptyStateText}>No clips yet</Text>
           <TouchableOpacity onPress={() => navigation.navigate('uploadvideo')}>
-            <Text style={{ color: COLORS.purple, marginTop: verticalScale(8) }}>Upload a clip</Text>
+            <Text style={{ color: COLORS.yellow, marginTop: verticalScale(8) }}>Upload a clip</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -587,7 +607,9 @@ const closeToolPanel = () => setActiveToolLabel(null);
               contentFit="cover"
               nativeControls={false}
             />
-          ) : (
+          ) : 
+          
+          (
             <View style={[styles.videoView, styles.videoPlaceholder]}>
               <Image
                 source={{ uri: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&auto=format&fit=crop&q=80' }}
@@ -597,6 +619,47 @@ const closeToolPanel = () => setActiveToolLabel(null);
               <View style={styles.tealScrim} />
             </View>
           )}
+
+{/** active visible overlays */}
+  {activeVisibleOverlays.map((o) => (
+  <View
+    key={o.id}
+    style={[
+      styles.overlayTextWrapper,
+      {
+        left: `${(o.x ?? 0.5) * 100}%`,
+        top: `${(o.y ?? 0.5) * 100}%`,
+      },
+    ]}
+    pointerEvents="none"
+  >
+    <Text
+      style={{
+        color: o.color ?? '#FFFFFF',
+        fontSize: scale(o.fontSize ?? 24),
+        fontWeight: o.fontWeight === 'bold' ? '700' : '400',
+        textAlign: o.align ?? 'center',
+        backgroundColor: o.backgroundColor
+          ? `${o.backgroundColor}${Math.round((o.backgroundOpacity ?? 0.6) * 255)
+              .toString(16)
+              .padStart(2, '0')}`
+          : 'transparent',
+        borderRadius: scale(o.backgroundRadius ?? 0),
+        paddingHorizontal: scale(8),
+        paddingVertical: verticalScale(4),
+        overflow: 'hidden',
+      }}
+    >
+      {o.text}
+    </Text>
+  </View>
+))}
+
+
+
+
+
+          
           <View style={styles.videoTopBar} />
           <View style={styles.timestampOverlay}>
             <Text style={styles.timestampText}>
@@ -674,8 +737,8 @@ const closeToolPanel = () => setActiveToolLabel(null);
                         styles.activeTextChip,
                         {
                           width: '100%',
-                          backgroundColor: isActive ? COLORS.purpleBg : '#1E2230',
-                          borderColor: isActive ? COLORS.purple : 'transparent',
+                          backgroundColor: isActive ? COLORS.yellowBg : '#1E2230',
+                          borderColor: isActive ? COLORS.yellow : 'transparent',
                         },
                       ]}
                       activeOpacity={0.8}
@@ -685,7 +748,7 @@ const closeToolPanel = () => setActiveToolLabel(null);
                           <Ionicons name="sparkles" size={scale(10)} color="#A399F7" />
                         </View>
                       )}
-                      <Ionicons name="text" size={scale(12)} color={isActive ? COLORS.purple : COLORS.textSecondary} />
+                      <Ionicons name="text" size={scale(12)} color={isActive ? COLORS.yellow : COLORS.textSecondary} />
                       <Text style={[styles.activeTextChipText, { color: isActive ? '#FFFFFF' : COLORS.textSecondary }]} numberOfLines={1}>
                         {overlay.text}
                       </Text>
@@ -760,16 +823,42 @@ const closeToolPanel = () => setActiveToolLabel(null);
         onToolPress={handleToolPress}
       />
 
-   <EditToolPanel
-  visible={!!activeToolLabel}
+
+     {/* //for the edit tool panel  */}
+<EditToolPanel
+  visible={activeToolLabel !== null}
   toolLabel={activeToolLabel}
   onClose={closeToolPanel}
   volume={activeClip?.volume ?? 1}
   onVolumeChange={(v) => activeClip && updateClipVolume(activeClip.id, v)}
- speed={activeClip?.speed ?? 1}
+  speed={activeClip?.speed ?? 1}
   onSpeedChange={(s) => activeClip && updateClipSpeed(activeClip.id, s)}
+  textValue={activeOverlay?.text ?? ''}
+  onTextChange={(text) =>
+    activeClip && selectedOverlayId && updateTextOverlay(activeClip.id, selectedOverlayId, { text })
+  }
+  textColor={activeOverlay?.color ?? '#FFFFFF'}
+  onTextColorChange={(color) =>
+    activeClip && selectedOverlayId && updateTextOverlay(activeClip.id, selectedOverlayId, { color })
+  }
+  fontSize={activeOverlay?.fontSize ?? 24}
+  onFontSizeChange={(fontSize) =>
+    activeClip && selectedOverlayId && updateTextOverlay(activeClip.id, selectedOverlayId, { fontSize })
+  }
+  onAddText={(text) => {
+    if (!activeClip) return;
+    addTextOverlay(activeClip.id, text, currentTime * 1000);
+  }}
+  isEditingExistingOverlay={!!selectedOverlayId}
+  onDeleteOverlay={() => {
+    if (activeClip && selectedOverlayId) {
+      removeTextOverlay(activeClip.id, selectedOverlayId);
+      setSelectedOverlayId(null);
+    }
+  }}
 />
 
+   
 
     </SafeAreaView>
   );
@@ -955,9 +1044,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: scale(4),
-    backgroundColor: COLORS.purpleBg,
+    backgroundColor: COLORS.yellowBg,
     borderWidth: 2,
-    borderColor: COLORS.purple,
+    borderColor: COLORS.yellow,
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(4),
     borderRadius: scale(14),
@@ -973,7 +1062,7 @@ const styles = StyleSheet.create({
     left: -scale(3),
     width: scale(6),
     height: verticalScale(12),
-    backgroundColor: COLORS.purple,
+    backgroundColor: COLORS.yellow,
     borderRadius: scale(3),
     zIndex: 10,
   },
@@ -982,7 +1071,7 @@ const styles = StyleSheet.create({
     right: -scale(3),
     width: scale(6),
     height: verticalScale(12),
-    backgroundColor: COLORS.purple,
+    backgroundColor: COLORS.yellow,
     borderRadius: scale(3),
     zIndex: 10,
   },
@@ -1088,7 +1177,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderTopWidth: 2,
     borderBottomWidth: 2,
-    borderColor: COLORS.purple,
+    borderColor: COLORS.yellow,
     zIndex: 5,
   },
   leftTrimHandle: {
@@ -1126,5 +1215,11 @@ stackedAvatarText: {
   color: '#FFF',
   fontSize: moderateScale(9),
   fontWeight: '700',
+},
+
+overlayTextWrapper: {
+  position: 'absolute',
+  transform: [{ translateX: -scale(60) }, { translateY: -verticalScale(15) }],
+  maxWidth: '80%',
 },
 });

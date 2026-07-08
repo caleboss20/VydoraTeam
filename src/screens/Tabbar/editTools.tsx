@@ -12,34 +12,37 @@ import { s } from "react-native-size-matters";
 type Tool = {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  screen?: string;
   action?: "duplicate" | "delete";
 };
 const tools: Tool[] = [
   {
     icon: "cut-outline",
     label: "Split",
-    screen: "SplitScreen",
+   
   },
   {
     icon: "flame-outline",
     label: "Effects",
-    screen: "EffectsScreen",
+  
+  },{
+    icon: "text-outline",
+    label: "Text",
+    
   },
   {
     icon: "volume-high-outline",
     label: "Audio",
-    screen: "AudioScreen",
+    
   },
   {
     icon: "crop-outline",
     label: "Crop",
-    screen: "CropScreen",
+  
   },
   {
     icon: "speedometer-outline",
     label: "Speed",
-    screen: "SpeedScreen",
+  
   },
   {
     icon: "copy-outline",
@@ -86,9 +89,9 @@ export default function BottomToolbar({ onSplit, onDuplicate, onDelete, onToolPr
       onToolPress(tool.label);
       return;
     }
-    if (tool.screen) {
-      console.log(`Tool ${tool.label} pressed, but screen is disabled`);
-    }
+    // if (tool.screen) {
+    //   console.log(`Tool ${tool.label} pressed, but screen is disabled`);
+    // }
   };
   return (
     <View style={styles.container}>
