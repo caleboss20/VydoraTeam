@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef,  } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -10,37 +10,39 @@ import {
   StatusBar,
   Alert,
   PanResponder,
-} from 'react-native';
-import { useMember } from '../Contexts/memberContext'; 
-import CollaborationSidebar from '../components/Editorsidebar';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEventListener } from 'expo';
-import { useNavigation } from '@react-navigation/native';
-import * as VideoThumbnails from 'expo-video-thumbnails';
+} from "react-native";
+import { useMember } from "../Contexts/memberContext";
+import CollaborationSidebar from "../components/Editorsidebar";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { scale, verticalScale, moderateScale } from "react-native-size-matters";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { useEventListener } from "expo";
+import { useNavigation } from "@react-navigation/native";
+import * as VideoThumbnails from "expo-video-thumbnails";
 
-import { useVideoProject } from '../Contexts/VideoProjectContext';
-import { VideoClip, TextOverlay } from '../types';
-import BottomToolbar from '../Tabbar/editTools';
-import { useComment } from '../Contexts/commentContext';
-import EditToolPanel from './EditToolPanel';
+import { useVideoProject } from "../Contexts/VideoProjectContext";
+import { VideoClip, TextOverlay } from "../types";
+import BottomToolbar from "../Tabbar/editTools";
+import { useComment } from "../Contexts/commentContext";
+import EditToolPanel from "./EditToolPanel";
+import { FILTER_LIST, getFilterById } from "../services/FilterService";
+import FilterToolPanel from "./FilterPanelTool";
 
 const COLORS = {
-  background: '#0B0D13',
-  surface: '#151821',
+  background: "#0B0D13",
+  surface: "#151821",
   // border: '#222633',
-  border:'#F5C518',
-  yellow: '#F5C518',
-  yellowBg: 'rgba(245, 197, 24, 0.15)',
-  tealAccent: '#10B981',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#8F9BB3',
-  textMuted: '#4F5E7B',
+  border: "#F5C518",
+  yellow: "#F5C518",
+  yellowBg: "rgba(245, 197, 24, 0.15)",
+  tealAccent: "#10B981",
+  textPrimary: "#FFFFFF",
+  textSecondary: "#8F9BB3",
+  textMuted: "#4F5E7B",
 };
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const PX_PER_SECOND = scale(50);
 const HANDLE_WIDTH = scale(14);
 
@@ -48,7 +50,7 @@ const formatTime = (ms: number) => {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
 // Unified Clip Trimmer Component
@@ -87,16 +89,20 @@ function ClipTrimmer({
 
   const dragStartRef = useRef(0);
 
-  const createPanResponder = (side: 'left' | 'right') => {
+  const createPanResponder = (side: "left" | "right") => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         const { startPx: sPx, endPx: ePx } = stateRef.current;
-        dragStartRef.current = side === 'left' ? sPx : ePx;
+        dragStartRef.current = side === "left" ? sPx : ePx;
       },
       onPanResponderMove: (_, gestureState) => {
-        const { startPx: sPx, endPx: ePx, clipDurationPx: cDur } = stateRef.current;
-        if (side === 'left') {
+        const {
+          startPx: sPx,
+          endPx: ePx,
+          clipDurationPx: cDur,
+        } = stateRef.current;
+        if (side === "left") {
           const next = dragStartRef.current + gestureState.dx;
           setStartPx(Math.max(0, Math.min(next, ePx - HANDLE_WIDTH)));
         } else {
@@ -105,7 +111,12 @@ function ClipTrimmer({
         }
       },
       onPanResponderRelease: () => {
-        const { startPx: sPx, endPx: ePx, clip: currentClip, onTrimEnd: callback } = stateRef.current;
+        const {
+          startPx: sPx,
+          endPx: ePx,
+          clip: currentClip,
+          onTrimEnd: callback,
+        } = stateRef.current;
         const newStartMs = Math.round((sPx / PX_PER_SECOND) * 1000);
         const newEndMs = Math.round((ePx / PX_PER_SECOND) * 1000);
         callback(currentClip.id, newStartMs, newEndMs);
@@ -113,8 +124,8 @@ function ClipTrimmer({
     });
   };
 
-  const leftPanResponder = useRef(createPanResponder('left')).current;
-  const rightPanResponder = useRef(createPanResponder('right')).current;
+  const leftPanResponder = useRef(createPanResponder("left")).current;
+  const rightPanResponder = useRef(createPanResponder("right")).current;
 
   const clipSeconds = Math.max(1, Math.ceil(clip.durationMs / 1000));
 
@@ -123,21 +134,36 @@ function ClipTrimmer({
       <TouchableOpacity
         onPress={onPress}
         activeOpacity={0.8}
-        style={{ flexDirection: 'row', position: 'relative', height: verticalScale(46) }}
+        style={{
+          flexDirection: "row",
+          position: "relative",
+          height: verticalScale(46),
+        }}
       >
         {thumbnails.length > 0 ? (
           thumbnails.map((uri, i) => (
             <Image
               key={i}
               source={{ uri }}
-              style={{ width: PX_PER_SECOND, height: verticalScale(46), opacity: 0.6 }}
+              style={{
+                width: PX_PER_SECOND,
+                height: verticalScale(46),
+                opacity: 0.6,
+              }}
               resizeMode="cover"
             />
           ))
         ) : (
-          <View style={[styles.clipPlaceholder, { width: PX_PER_SECOND * clipSeconds }]}>
+          <View
+            style={[
+              styles.clipPlaceholder,
+              { width: PX_PER_SECOND * clipSeconds },
+            ]}
+          >
             <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300' }}
+              source={{
+                uri: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300",
+              }}
               style={styles.clipPlaceholderImg}
             />
           </View>
@@ -147,7 +173,13 @@ function ClipTrimmer({
   }
 
   return (
-    <View style={{ flexDirection: 'row', position: 'relative', height: verticalScale(46) }}>
+    <View
+      style={{
+        flexDirection: "row",
+        position: "relative",
+        height: verticalScale(46),
+      }}
+    >
       {/* Filmstrip */}
       {thumbnails.length > 0 ? (
         thumbnails.map((uri, i) => (
@@ -159,9 +191,16 @@ function ClipTrimmer({
           />
         ))
       ) : (
-        <View style={[styles.clipPlaceholder, { width: PX_PER_SECOND * clipSeconds }]}>
+        <View
+          style={[
+            styles.clipPlaceholder,
+            { width: PX_PER_SECOND * clipSeconds },
+          ]}
+        >
           <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300' }}
+            source={{
+              uri: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300",
+            }}
             style={styles.clipPlaceholderImg}
           />
         </View>
@@ -203,7 +242,11 @@ function ClipTrimmer({
 
       {/* Left Trim Handle */}
       <View
-        style={[styles.trimHandle, styles.leftTrimHandle, { transform: [{ translateX: startPx }] }]}
+        style={[
+          styles.trimHandle,
+          styles.leftTrimHandle,
+          { transform: [{ translateX: startPx }] },
+        ]}
         {...leftPanResponder.panHandlers}
       >
         <View style={styles.trimHandleBar} />
@@ -211,7 +254,11 @@ function ClipTrimmer({
 
       {/* Right Trim Handle */}
       <View
-        style={[styles.trimHandle, styles.rightTrimHandle, { transform: [{ translateX: endPx - HANDLE_WIDTH }] }]}
+        style={[
+          styles.trimHandle,
+          styles.rightTrimHandle,
+          { transform: [{ translateX: endPx - HANDLE_WIDTH }] },
+        ]}
         {...rightPanResponder.panHandlers}
       >
         <View style={styles.trimHandleBar} />
@@ -222,28 +269,41 @@ function ClipTrimmer({
 
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
-  const { currentVideoProject, updateClipTrim, deleteClip, duplicateClip, splitClip } = useVideoProject();
-  const {updateClipSpeed,updateClipVolume,addTextOverlay,updateTextOverlay,removeTextOverlay}=useVideoProject();
+  const {
+    currentVideoProject,
+    updateClipTrim,
+    deleteClip,
+    duplicateClip,
+    splitClip,
+  } = useVideoProject();
+  const {
+    updateClipSpeed,
+    updateClipVolume,
+    addTextOverlay,
+    updateTextOverlay,
+    removeTextOverlay,
+    updateClipFilter,
+  } = useVideoProject();
   const project = currentVideoProject;
   const projectId = project?.id;
-  const {fetchComments}=useComment();
-
+  const { fetchComments } = useComment();
 
   //for the video volume//
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
 
   //for the selectedoverlay//
-    const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
-    if(projectId) {
+    if (projectId) {
       fetchMembers(projectId);
     }
   }, [projectId]);
 
-
   useEffect(() => {
-    if(projectId) {
+    if (projectId) {
       fetchComments(projectId);
     }
   }, [projectId]);
@@ -252,14 +312,16 @@ export default function EditorScreen() {
 
   //for the sidebar//
   const [sidebarVisible, setSidebarVisible] = useState(false);
-const { getMembersForProject,fetchMembers } = useMember();
-const onlineMembers = projectId ? getMembersForProject(projectId).filter(m => m.online) : [];
-console.log('projectId:', projectId, 'onlineMembers:', onlineMembers);
+  const { getMembersForProject, fetchMembers } = useMember();
+  const onlineMembers = projectId
+    ? getMembersForProject(projectId).filter((m) => m.online)
+    : [];
+  console.log("projectId:", projectId, "onlineMembers:", onlineMembers);
 
-  
-const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0];
-    const activeOverlay=activeClip?.textOverlays?.find(o=>o.id===selectedOverlayId)??null;
+  const activeOverlay =
+    activeClip?.textOverlays?.find((o) => o.id === selectedOverlayId) ?? null;
 
   useEffect(() => {
     if (activeClip && selectedClipId !== activeClip.id) {
@@ -272,7 +334,7 @@ const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   });
 
   const [isPlaying, setIsPlaying] = useState(player.playing ?? false);
-  useEventListener(player, 'playingChange', (payload) => {
+  useEventListener(player, "playingChange", (payload) => {
     setIsPlaying(payload.isPlaying);
   });
 
@@ -290,25 +352,22 @@ const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
     }
   }, [activeClip?.uri, currentLoadedUri]);
 
+  //for the real time video audio volume//
+  useEffect(() => {
+    if (activeClip) {
+      player.volume = activeClip.volume ?? 1;
+    }
+  }, [activeClip?.volume, player.volume]);
 
- //for the real time video audio volume//
- useEffect(()=>{
-  if(activeClip){
-    player.volume=activeClip.volume ?? 1;
-
-  }
- },[activeClip?.volume,player.volume]);
-
- //for the real time video speed//
-useEffect(() => {
-  if (activeClip) {
-    player.playbackRate = activeClip.speed ?? 1;
-  }
-}, [activeClip?.speed, player]);
-
+  //for the real time video speed//
+  useEffect(() => {
+    if (activeClip) {
+      player.playbackRate = activeClip.speed ?? 1;
+    }
+  }, [activeClip?.speed, player]);
 
   // Handle active clip playback endpoint
-  useEventListener(player, 'timeUpdate', (payload) => {
+  useEventListener(player, "timeUpdate", (payload) => {
     if (!activeClip) return;
     const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
     const curTimeMs = payload.currentTime * 1000;
@@ -350,7 +409,9 @@ useEffect(() => {
   };
 
   // Generate Thumbnails
-  const [clipThumbnails, setClipThumbnails] = useState<Record<string, string[]>>({});
+  const [clipThumbnails, setClipThumbnails] = useState<
+    Record<string, string[]>
+  >({});
   useEffect(() => {
     let cancelled = false;
     const generateAll = async () => {
@@ -366,7 +427,7 @@ useEffect(() => {
             });
             uris.push(uri);
           } catch (e) {
-            console.log('Thumbnail failed for clip', clip.id, 'at', s, e);
+            console.log("Thumbnail failed for clip", clip.id, "at", s, e);
           }
           setClipThumbnails((prev) => ({ ...prev, [clip.id]: [...uris] }));
         }
@@ -403,14 +464,19 @@ useEffect(() => {
 
   const getTimelinePositionMs = (playerTimeSec: number) => {
     if (!activeClip) return 0;
-    const activeSegment = clipTimelineSegments.find((s) => s.clip.id === activeClip.id);
+    const activeSegment = clipTimelineSegments.find(
+      (s) => s.clip.id === activeClip.id,
+    );
     if (!activeSegment) return 0;
     const start = activeClip.trimStartMs ?? 0;
-    const relativeOffsetMs = (playerTimeSec * 1000) - start;
+    const relativeOffsetMs = playerTimeSec * 1000 - start;
     return Math.max(0, activeSegment.timelineStartMs + relativeOffsetMs);
   };
 
-  const totalDurationMs = clipTimelineSegments.reduce((acc, s) => acc + s.trimmedDurationMs, 0);
+  const totalDurationMs = clipTimelineSegments.reduce(
+    (acc, s) => acc + s.trimmedDurationMs,
+    0,
+  );
   const currentPositionMs = getTimelinePositionMs(currentTime);
   const totalSeconds = Math.max(1, Math.ceil(totalDurationMs / 1000));
 
@@ -435,14 +501,18 @@ useEffect(() => {
     const x = e.nativeEvent.contentOffset.x;
     const timelineTimeMs = (x / PX_PER_SECOND) * 1000;
 
-    const activeSegment = clipTimelineSegments.find(
-      (s) => timelineTimeMs >= s.timelineStartMs && timelineTimeMs <= s.timelineEndMs
-    ) || clipTimelineSegments[0];
+    const activeSegment =
+      clipTimelineSegments.find(
+        (s) =>
+          timelineTimeMs >= s.timelineStartMs &&
+          timelineTimeMs <= s.timelineEndMs,
+      ) || clipTimelineSegments[0];
 
     if (activeSegment) {
       const relativeOffsetMs = timelineTimeMs - activeSegment.timelineStartMs;
       const targetClip = activeSegment.clip;
-      const targetPlayerTimeSec = ((targetClip.trimStartMs ?? 0) + relativeOffsetMs) / 1000;
+      const targetPlayerTimeSec =
+        ((targetClip.trimStartMs ?? 0) + relativeOffsetMs) / 1000;
 
       if (targetClip.id !== activeClip.id) {
         setSelectedClipId(targetClip.id);
@@ -453,7 +523,11 @@ useEffect(() => {
     }
   };
 
-  const handleTrimEnd = (clipId: string, trimStartMs: number, trimEndMs: number) => {
+  const handleTrimEnd = (
+    clipId: string,
+    trimStartMs: number,
+    trimEndMs: number,
+  ) => {
     updateClipTrim(clipId, trimStartMs, trimEndMs);
   };
 
@@ -497,22 +571,24 @@ useEffect(() => {
   }, [clips, clipTimelineSegments]);
 
   //get the visible overlays for the active clip at the current time//
-const activeVisibleOverlays = useMemo(() => {
-  if (!activeClip) return [];
-  const localTimeMs = currentTime * 1000;
-  return (activeClip.textOverlays ?? []).filter(
-    (o) => localTimeMs >= o.startMs && localTimeMs <= o.startMs + o.durationMs
-  );
-}, [activeClip, currentTime]);
-
-
+  const activeVisibleOverlays = useMemo(() => {
+    if (!activeClip) return [];
+    const localTimeMs = currentTime * 1000;
+    return (activeClip.textOverlays ?? []).filter(
+      (o) =>
+        localTimeMs >= o.startMs && localTimeMs <= o.startMs + o.durationMs,
+    );
+  }, [activeClip, currentTime]);
 
   // Toolbar Actions
   const handleSplit = () => {
     if (!activeClip) return;
     const splitTimeMs = currentTime * 1000;
     splitClip(activeClip.id, splitTimeMs);
-    Alert.alert("Clip Split", "The clip has been split at the playhead position.");
+    Alert.alert(
+      "Clip Split",
+      "The clip has been split at the playhead position.",
+    );
   };
 
   const handleDuplicate = () => {
@@ -527,26 +603,33 @@ const activeVisibleOverlays = useMemo(() => {
     Alert.alert("Clip Deleted", "The clip has been removed.");
   };
 
-const handleToolPress = (toolLabel: string,overlayId: string | null=null) => {
-  setActiveToolLabel(toolLabel);
-  setSelectedOverlayId(overlayId??null);
-};
+  const handleToolPress = (
+    toolLabel: string,
+    overlayId: string | null = null,
+  ) => {
+    setActiveToolLabel(toolLabel);
+    setSelectedOverlayId(overlayId ?? null);
+  };
 
-const closeToolPanel = () => {
-  setActiveToolLabel(null)
-   setSelectedOverlayId(null)
-};
-
-
+  const closeToolPanel = () => {
+    setActiveToolLabel(null);
+    setSelectedOverlayId(null);
+  };
 
   if (!project || clips.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyState}>
-          <Ionicons name="film-outline" size={scale(40)} color={COLORS.textMuted} />
+          <Ionicons
+            name="film-outline"
+            size={scale(40)}
+            color={COLORS.textMuted}
+          />
           <Text style={styles.emptyStateText}>No clips yet</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('uploadvideo')}>
-            <Text style={{ color: COLORS.yellow, marginTop: verticalScale(8) }}>Upload a clip</Text>
+          <TouchableOpacity onPress={() => navigation.navigate("uploadvideo")}>
+            <Text style={{ color: COLORS.yellow, marginTop: verticalScale(8) }}>
+              Upload a clip
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -554,48 +637,56 @@ const closeToolPanel = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-      
+
       {/* Header */}
-    <View style={styles.header}>
-  <TouchableOpacity style={styles.headerBtn}>
-    <Ionicons name="share-outline" size={scale(22)} color={COLORS.textPrimary} />
-  </TouchableOpacity>
-  <TouchableOpacity style={styles.headerBtn}>
-    <Text style={styles.videoTitle}>Edit</Text>
-  </TouchableOpacity>
-  <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(10) }}>
-    {/* Stacked avatars — replaces the checkmark */}
-    <TouchableOpacity
-      style={styles.avatarStack}
-      onPress={() => setSidebarVisible(true)}
-    >
-      {onlineMembers.slice(0, 3).map((m, i) => (
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.headerBtn}>
+          <Ionicons
+            name="share-outline"
+            size={scale(22)}
+            color={COLORS.textPrimary}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.headerBtn}>
+          <Text style={styles.videoTitle}>Edit</Text>
+        </TouchableOpacity>
         <View
-          key={m.id}
-          style={[
-            styles.stackedAvatar,
-            { backgroundColor: m.color, marginLeft: i === 0 ? 0 : -scale(10) },
-          ]}
+          style={{ flexDirection: "row", alignItems: "center", gap: scale(10) }}
         >
-          <Text style={styles.stackedAvatarText}>{m.initials}</Text>
-        </View>
-      ))}
-    </TouchableOpacity>
-    {/* Hamburger opens the sidebar */}
-    {/* <TouchableOpacity style={styles.headerBtn} onPress={() => setSidebarVisible(true)}>
+          {/* Stacked avatars — replaces the checkmark */}
+          <TouchableOpacity
+            style={styles.avatarStack}
+            onPress={() => setSidebarVisible(true)}
+          >
+            {onlineMembers.slice(0, 3).map((m, i) => (
+              <View
+                key={m.id}
+                style={[
+                  styles.stackedAvatar,
+                  {
+                    backgroundColor: m.color,
+                    marginLeft: i === 0 ? 0 : -scale(10),
+                  },
+                ]}
+              >
+                <Text style={styles.stackedAvatarText}>{m.initials}</Text>
+              </View>
+            ))}
+          </TouchableOpacity>
+          {/* Hamburger opens the sidebar */}
+          {/* <TouchableOpacity style={styles.headerBtn} onPress={() => setSidebarVisible(true)}>
       <Ionicons name="menu" size={scale(22)} color={COLORS.textPrimary} />
     </TouchableOpacity> */}
-  </View>
-</View>
-<CollaborationSidebar
-  visible={sidebarVisible}
-  onClose={() => setSidebarVisible(false)}
-  projectId={projectId ?? ''}
-  clipId={activeClip?.id}
-/>
-
+        </View>
+      </View>
+      <CollaborationSidebar
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+        projectId={projectId ?? ""}
+        clipId={activeClip?.id}
+      />
 
       {/* Video Preview */}
       <View style={styles.previewWrapper}>
@@ -607,12 +698,12 @@ const closeToolPanel = () => {
               contentFit="cover"
               nativeControls={false}
             />
-          ) : 
-          
-          (
+          ) : (
             <View style={[styles.videoView, styles.videoPlaceholder]}>
               <Image
-                source={{ uri: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&auto=format&fit=crop&q=80' }}
+                source={{
+                  uri: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&auto=format&fit=crop&q=80",
+                }}
                 style={styles.placeholderImg}
                 resizeMode="cover"
               />
@@ -620,65 +711,90 @@ const closeToolPanel = () => {
             </View>
           )}
 
-{/** active visible overlays */}
-  {activeVisibleOverlays.map((o) => (
-  <View
-    key={o.id}
-    style={[
-      styles.overlayTextWrapper,
-      {
-        left: `${(o.x ?? 0.5) * 100}%`,
-        top: `${(o.y ?? 0.5) * 100}%`,
-      },
-    ]}
-    pointerEvents="none"
-  >
-    <Text
-      style={{
-        color: o.color ?? '#FFFFFF',
-        fontSize: scale(o.fontSize ?? 24),
-        fontWeight: o.fontWeight === 'bold' ? '700' : '400',
-        textAlign: o.align ?? 'center',
-        backgroundColor: o.backgroundColor
-          ? `${o.backgroundColor}${Math.round((o.backgroundOpacity ?? 0.6) * 255)
-              .toString(16)
-              .padStart(2, '0')}`
-          : 'transparent',
-        borderRadius: scale(o.backgroundRadius ?? 0),
-        paddingHorizontal: scale(8),
-        paddingVertical: verticalScale(4),
-        overflow: 'hidden',
-      }}
-    >
-      {o.text}
-    </Text>
-  </View>
-))}
+          {activeClip && (
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFillObject,
+                {
+                  backgroundColor: getFilterById(activeClip.filterId).tintColor,
+                  opacity: getFilterById(activeClip.filterId).tintOpacity,
+                },
+              ]}
+            />
+          )}
 
+          {activeVisibleOverlays.map((o) => (
+            <TouchableOpacity
+              key={o.id}
+              activeOpacity={0.8}
+              onPress={() => handleToolPress("Text", o.id)}
+              style={[
+                styles.overlayTextWrapper,
+                {
+                  left: `${(o.x ?? 0.5) * 100}%`,
+                  top: `${(o.y ?? 0.5) * 100}%`,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: o.color ?? "#FFFFFF",
+                  fontSize: scale(o.fontSize ?? 24),
+                  fontWeight: o.fontWeight === "bold" ? "700" : "400",
+                  textAlign: o.align ?? "center",
+                  backgroundColor: o.backgroundColor
+                    ? `${o.backgroundColor}${Math.round(
+                        (o.backgroundOpacity ?? 0.6) * 255,
+                      )
+                        .toString(16)
+                        .padStart(2, "0")}`
+                    : "transparent",
+                  borderRadius: scale(o.backgroundRadius ?? 0),
+                  paddingHorizontal: scale(8),
+                  paddingVertical: verticalScale(4),
+                  overflow: "hidden",
+                }}
+              >
+                {o.text}
+              </Text>
+            </TouchableOpacity>
+          ))}
 
-
-
-
-          
           <View style={styles.videoTopBar} />
           <View style={styles.timestampOverlay}>
             <Text style={styles.timestampText}>
-              {formatTime(currentPositionMs)} <Text style={styles.timestampMuted}>{formatTime(totalDurationMs)}</Text>
+              {formatTime(currentPositionMs)}{" "}
+              <Text style={styles.timestampMuted}>
+                {formatTime(totalDurationMs)}
+              </Text>
             </Text>
           </View>
           <View style={styles.videoControlRow}>
             <TouchableOpacity style={styles.videoControlIcon} hitSlop={8}>
-              <Ionicons name="settings-outline" size={scale(20)} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.playButton} onPress={togglePlayback} hitSlop={8}>
               <Ionicons
-                name={isPlaying ? 'pause' : 'play'}
+                name="settings-outline"
+                size={scale(20)}
+                color={COLORS.textPrimary}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.playButton}
+              onPress={togglePlayback}
+              hitSlop={8}
+            >
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
                 size={scale(20)}
                 color={COLORS.textPrimary}
               />
             </TouchableOpacity>
             <TouchableOpacity style={styles.videoControlIcon} hitSlop={8}>
-              <Ionicons name="scan-outline" size={scale(20)} color={COLORS.textPrimary} />
+              <Ionicons
+                name="scan-outline"
+                size={scale(20)}
+                color={COLORS.textPrimary}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -688,14 +804,20 @@ const closeToolPanel = () => {
       <View style={styles.timelineContainer}>
         {/* Playhead Vertical Line */}
         <View style={styles.playheadLine} pointerEvents="none" />
-        
+
         <ScrollView
           ref={timelineScrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
-          onScrollBeginDrag={() => { isScrubbingRef.current = true; }}
-          onScrollEndDrag={() => { isScrubbingRef.current = false; }}
-          onMomentumScrollEnd={() => { isScrubbingRef.current = false; }}
+          onScrollBeginDrag={() => {
+            isScrubbingRef.current = true;
+          }}
+          onScrollEndDrag={() => {
+            isScrubbingRef.current = false;
+          }}
+          onMomentumScrollEnd={() => {
+            isScrubbingRef.current = false;
+          }}
           onScroll={handleTimelineScroll}
           scrollEventThrottle={16}
           contentContainerStyle={{
@@ -705,10 +827,21 @@ const closeToolPanel = () => {
         >
           <View>
             {/* 1. Ruler Track */}
-            <View style={[styles.rulerContainer, { width: totalSeconds * PX_PER_SECOND, marginHorizontal: 0 }]}>
+            <View
+              style={[
+                styles.rulerContainer,
+                { width: totalSeconds * PX_PER_SECOND, marginHorizontal: 0 },
+              ]}
+            >
               <View style={styles.rulerLine} />
               {rulerMarks.map((s) => (
-                <View key={s} style={[styles.rulerMarkContainer, { left: s * PX_PER_SECOND }]}>
+                <View
+                  key={s}
+                  style={[
+                    styles.rulerMarkContainer,
+                    { left: s * PX_PER_SECOND },
+                  ]}
+                >
                   <View style={styles.rulerTick} />
                   <Text style={styles.rulerMarkText}>{s}s</Text>
                 </View>
@@ -716,64 +849,48 @@ const closeToolPanel = () => {
             </View>
 
             {/* 2. Text Overlays Track */}
-            <View style={{ height: verticalScale(34), position: 'relative', width: totalSeconds * PX_PER_SECOND, marginBottom: verticalScale(6) }}>
-              {visibleOverlays.map(({ overlay, left, width }) => {
-                const isActive = activeClip && overlay.clipId === activeClip.id;
-                return (
-                  <View
-                    key={overlay.id}
-                    style={[
-                      styles.activeTextChipContainer,
-                      {
-                        position: 'absolute',
-                        left,
-                        width,
-                      },
-                    ]}
-                  >
-                    {isActive && <View style={styles.chipHandleLeft} />}
-                    <TouchableOpacity
-                      style={[
-                        styles.activeTextChip,
-                        {
-                          width: '100%',
-                          backgroundColor: isActive ? COLORS.yellowBg : '#1E2230',
-                          borderColor: isActive ? COLORS.yellow : 'transparent',
-                        },
-                      ]}
-                      activeOpacity={0.8}
-                    >
-                      {overlay.isAiGenerated && (
-                        <View style={styles.aiSparkleIcon}>
-                          <Ionicons name="sparkles" size={scale(10)} color="#A399F7" />
-                        </View>
-                      )}
-                      <Ionicons name="text" size={scale(12)} color={isActive ? COLORS.yellow : COLORS.textSecondary} />
-                      <Text style={[styles.activeTextChipText, { color: isActive ? '#FFFFFF' : COLORS.textSecondary }]} numberOfLines={1}>
-                        {overlay.text}
-                      </Text>
-                    </TouchableOpacity>
-                    {isActive && <View style={styles.chipHandleRight} />}
-                  </View>
-                );
-              })}
+            <View
+              style={{
+                height: verticalScale(34),
+                position: "relative",
+                width: totalSeconds * PX_PER_SECOND,
+                marginBottom: verticalScale(6),
+              }}
+            >
               {visibleOverlays.length === 0 && (
-                <TouchableOpacity style={[styles.aiTextChip, { position: 'absolute', left: 0 }]}>
+                <TouchableOpacity
+                  style={[styles.aiTextChip, { position: "absolute", left: 0 }]}
+                >
                   <View style={styles.aiSparkleIcon}>
-                    <Ionicons name="sparkles" size={scale(10)} color="#e9f799" />
+                    <Ionicons
+                      name="sparkles"
+                      size={scale(10)}
+                      color="#e9f799"
+                    />
                   </View>
-                  <Ionicons name="text" size={scale(12)} color={COLORS.textSecondary} />
+                  <Ionicons
+                    name="text"
+                    size={scale(12)}
+                    color={COLORS.textSecondary}
+                  />
                   <Text style={styles.aiTextChipText}>Add text</Text>
                 </TouchableOpacity>
               )}
             </View>
 
             {/* 3. Video Clips Track */}
-            <View style={[styles.trackRow, { position: 'relative' }]}>
+            <View style={[styles.trackRow, { position: "relative" }]}>
               {/* Add Media Track Button */}
               <TouchableOpacity
-                style={[styles.addClipTrackBtn, { position: 'absolute', left: -scale(34), top: verticalScale(10) }]}
-                onPress={() => navigation.navigate('uploadvideo')}
+                style={[
+                  styles.addClipTrackBtn,
+                  {
+                    position: "absolute",
+                    left: -scale(34),
+                    top: verticalScale(10),
+                  },
+                ]}
+                onPress={() => navigation.navigate("uploadvideo")}
               >
                 <Ionicons name="add" size={scale(16)} color="#FFFFFF" />
               </TouchableOpacity>
@@ -801,16 +918,29 @@ const closeToolPanel = () => {
             </View>
 
             {/* 4. Audio Waveform Track */}
-            <View style={[styles.waveformContainer, { marginTop: verticalScale(8) }]}>
-              <View style={[styles.waveformTrack, { width: totalSeconds * PX_PER_SECOND }]}>
+            <View
+              style={[
+                styles.waveformContainer,
+                { marginTop: verticalScale(8) },
+              ]}
+            >
+              <View
+                style={[
+                  styles.waveformTrack,
+                  { width: totalSeconds * PX_PER_SECOND },
+                ]}
+              >
                 {Array.from({ length: totalSeconds * 4 }).map((_, i) => {
-                  const heightFactor = Math.abs(Math.sin(i * 0.15)) * 0.7 + Math.abs(Math.cos(i * 0.4)) * 0.3;
+                  const heightFactor =
+                    Math.abs(Math.sin(i * 0.15)) * 0.7 +
+                    Math.abs(Math.cos(i * 0.4)) * 0.3;
                   const height = 4 + heightFactor * verticalScale(24);
-                  return <View key={i} style={[styles.waveformBar, { height }]} />;
+                  return (
+                    <View key={i} style={[styles.waveformBar, { height }]} />
+                  );
                 })}
               </View>
             </View>
-
           </View>
         </ScrollView>
       </View>
@@ -823,49 +953,66 @@ const closeToolPanel = () => {
         onToolPress={handleToolPress}
       />
 
-
-     {/* //for the edit tool panel  */}
-<EditToolPanel
-  visible={activeToolLabel !== null}
-  toolLabel={activeToolLabel}
-  onClose={closeToolPanel}
-  volume={activeClip?.volume ?? 1}
-  onVolumeChange={(v) => activeClip && updateClipVolume(activeClip.id, v)}
-  speed={activeClip?.speed ?? 1}
-  onSpeedChange={(s) => activeClip && updateClipSpeed(activeClip.id, s)}
-  textValue={activeOverlay?.text ?? ''}
-  onTextChange={(text) =>
-    activeClip && selectedOverlayId && updateTextOverlay(activeClip.id, selectedOverlayId, { text })
-  }
-  textColor={activeOverlay?.color ?? '#FFFFFF'}
-  onTextColorChange={(color) =>
-    activeClip && selectedOverlayId && updateTextOverlay(activeClip.id, selectedOverlayId, { color })
-  }
-  fontSize={activeOverlay?.fontSize ?? 24}
-  onFontSizeChange={(fontSize) =>
-    activeClip && selectedOverlayId && updateTextOverlay(activeClip.id, selectedOverlayId, { fontSize })
-  }
-  onAddText={(text) => {
-    if (!activeClip) return;
-    addTextOverlay(activeClip.id, text, currentTime * 1000);
-  }}
-  isEditingExistingOverlay={!!selectedOverlayId}
-  onDeleteOverlay={() => {
-    if (activeClip && selectedOverlayId) {
-      removeTextOverlay(activeClip.id, selectedOverlayId);
-      setSelectedOverlayId(null);
-    }
-  }}
-/>
-
-   
-
+      {/* //for the filter tool panel  */}
+      {activeToolLabel === "Filter" ? (
+        <FilterToolPanel
+          visible={true}
+          filters={FILTER_LIST}
+          selectedFilterId={activeClip?.filterId}
+          onSelectFilter={(filterId) =>
+            activeClip && updateClipFilter(activeClip.id, filterId)
+          }
+          onClose={closeToolPanel}
+          clipUri={activeClip?.uri ?? ""}
+        />
+      ) : (
+        /*for the edit tool panel  */
+        <EditToolPanel
+          visible={activeToolLabel !== null}
+          toolLabel={activeToolLabel}
+          onClose={closeToolPanel}
+          volume={activeClip?.volume ?? 1}
+          onVolumeChange={(v) =>
+            activeClip && updateClipVolume(activeClip.id, v)
+          }
+          speed={activeClip?.speed ?? 1}
+          onSpeedChange={(s) => activeClip && updateClipSpeed(activeClip.id, s)}
+          textValue={activeOverlay?.text ?? ""}
+          onTextChange={(text) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { text })
+          }
+          textColor={activeOverlay?.color ?? "#FFFFFF"}
+          onTextColorChange={(color) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { color })
+          }
+          fontSize={activeOverlay?.fontSize ?? 24}
+          onFontSizeChange={(fontSize) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { fontSize })
+          }
+          onAddText={(text) => {
+            if (!activeClip) return;
+            addTextOverlay(activeClip.id, text, currentTime * 1000);
+          }}
+          isEditingExistingOverlay={!!selectedOverlayId}
+          onDeleteOverlay={() => {
+            if (activeClip && selectedOverlayId) {
+              removeTextOverlay(activeClip.id, selectedOverlayId);
+              setSelectedOverlayId(null);
+            }
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 // ─── Perfect Styles Replicating the Design ──────────────────────────────
-
 
 const styles = StyleSheet.create({
   container: {
@@ -874,8 +1021,8 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: COLORS.background,
   },
   emptyStateText: {
@@ -883,9 +1030,9 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: scale(18),
     paddingVertical: verticalScale(8),
   },
@@ -900,38 +1047,38 @@ const styles = StyleSheet.create({
   previewContainer: {
     flex: 1,
     borderRadius: scale(28),
-    overflow: 'hidden',
-    backgroundColor: '#12252B',
-    position: 'relative',
+    overflow: "hidden",
+    backgroundColor: "#12252B",
+    position: "relative",
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: "rgba(255,255,255,0.05)",
   },
   videoView: {
     flex: 1,
   },
   videoPlaceholder: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
   },
   placeholderImg: {
-    width: '100%',
-    height: '100%',
-    position: 'absolute',
+    width: "100%",
+    height: "100%",
+    position: "absolute",
   },
   tealScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(19, 44, 53, 0.45)',
+    backgroundColor: "rgba(19, 44, 53, 0.45)",
   },
   videoTopBar: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: scale(16),
     paddingTop: verticalScale(14),
     zIndex: 10,
@@ -939,13 +1086,13 @@ const styles = StyleSheet.create({
   videoTitle: {
     color: COLORS.textPrimary,
     fontSize: moderateScale(15),
-    fontWeight: '700',
+    fontWeight: "700",
   },
   timestampOverlay: {
-    position: 'absolute',
+    position: "absolute",
     bottom: verticalScale(64),
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.65)",
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(4),
     borderRadius: scale(20),
@@ -954,21 +1101,21 @@ const styles = StyleSheet.create({
   timestampText: {
     color: COLORS.textPrimary,
     fontSize: moderateScale(11),
-    fontWeight: '600',
+    fontWeight: "600",
     letterSpacing: 0.5,
   },
   timestampMuted: {
-    color: 'rgba(255,255,255,0.45)',
-    fontWeight: '400',
+    color: "rgba(255,255,255,0.45)",
+    fontWeight: "400",
   },
   videoControlRow: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: scale(16),
     paddingBottom: verticalScale(14),
     zIndex: 10,
@@ -980,43 +1127,43 @@ const styles = StyleSheet.create({
     width: scale(44),
     height: scale(44),
     borderRadius: scale(22),
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: "rgba(255,255,255,0.15)",
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   timelineContainer: {
     height: verticalScale(210),
-    position: 'relative',
+    position: "relative",
     marginTop: verticalScale(8),
   },
   playheadLine: {
-    position: 'absolute',
-    left: '35%',
+    position: "absolute",
+    left: "35%",
     top: 0,
     bottom: 0,
     width: 2,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     zIndex: 100,
   },
   rulerContainer: {
     height: verticalScale(28),
-    position: 'relative',
+    position: "relative",
     marginBottom: verticalScale(6),
   },
   rulerLine: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
   rulerMarkContainer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
-    alignItems: 'center',
+    alignItems: "center",
   },
   rulerTick: {
     width: 1.5,
@@ -1027,22 +1174,22 @@ const styles = StyleSheet.create({
   rulerMarkText: {
     color: COLORS.textMuted,
     fontSize: moderateScale(9),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   trackRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     height: verticalScale(46),
   },
   activeTextChipContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    position: 'relative',
+    flexDirection: "row",
+    alignItems: "center",
+    position: "relative",
     height: verticalScale(28),
   },
   activeTextChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: scale(4),
     backgroundColor: COLORS.yellowBg,
     borderWidth: 2,
@@ -1050,15 +1197,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(4),
     borderRadius: scale(14),
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   activeTextChipText: {
     color: COLORS.textPrimary,
     fontSize: moderateScale(10),
-    fontWeight: '700',
+    fontWeight: "700",
   },
   chipHandleLeft: {
-    position: 'absolute',
+    position: "absolute",
     left: -scale(3),
     width: scale(6),
     height: verticalScale(12),
@@ -1067,7 +1214,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   chipHandleRight: {
-    position: 'absolute',
+    position: "absolute",
     right: -scale(3),
     width: scale(6),
     height: verticalScale(12),
@@ -1076,47 +1223,47 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   aiTextChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: scale(4),
-    backgroundColor: '#1E2230',
+    backgroundColor: "#1E2230",
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(6),
     borderRadius: scale(16),
-    position: 'relative',
+    position: "relative",
   },
   aiSparkleIcon: {
-    position: 'absolute',
+    position: "absolute",
     top: -scale(3),
     left: -scale(3),
-    backgroundColor: '#F5C518',
+    backgroundColor: "#F5C518",
     borderRadius: scale(8),
     padding: scale(2),
   },
   aiTextChipText: {
     color: COLORS.textSecondary,
     fontSize: moderateScale(11),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   clipPlaceholder: {
     flex: 1,
-    backgroundColor: '#181A22',
+    backgroundColor: "#181A22",
   },
   clipPlaceholderImg: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     opacity: 0.6,
   },
   transitionBtn: {
     width: scale(20),
     height: scale(20),
     borderRadius: scale(10),
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
     marginHorizontal: -scale(10),
     zIndex: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
@@ -1125,54 +1272,54 @@ const styles = StyleSheet.create({
   transitionInnerIcon: {
     width: scale(10),
     height: scale(4),
-    backgroundColor: '#151821',
+    backgroundColor: "#151821",
     borderRadius: scale(2),
   },
   waveformContainer: {
     height: verticalScale(36),
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: "rgba(255,255,255,0.03)",
     borderRadius: scale(12),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: "rgba(255,255,255,0.05)",
     paddingHorizontal: scale(10),
-    justifyContent: 'center',
-    marginTop:scale(20),
+    justifyContent: "center",
+    marginTop: scale(20),
   },
   waveformTrack: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: scale(2),
   },
   waveformBar: {
     width: 2.5,
-    backgroundColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: "rgba(255,255,255,0.35)",
     borderRadius: 1.5,
   },
   trimHandle: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     bottom: 0,
     width: HANDLE_WIDTH,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5C518',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F5C518",
     zIndex: 10,
   },
   trimHandleBar: {
     width: scale(3),
-    height: '50%',
+    height: "50%",
     borderRadius: 2,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   dimOverlay: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
     zIndex: 4,
   },
   activeBorderOutline: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     bottom: 0,
     borderTopWidth: 2,
@@ -1192,34 +1339,34 @@ const styles = StyleSheet.create({
     width: scale(26),
     height: scale(26),
     borderRadius: scale(13),
-    backgroundColor:' #F5C518',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: " #F5C518",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 30,
   },
-//for the top avatar//
+  //for the top avatar//
   avatarStack: {
-  flexDirection: 'row',
-  alignItems: 'center',
-},
-stackedAvatar: {
-  width: scale(33),
-  height: scale(33),
-  borderRadius: scale(33),
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderWidth: 1.5,
-  borderColor: COLORS.background,
-},
-stackedAvatarText: {
-  color: '#FFF',
-  fontSize: moderateScale(9),
-  fontWeight: '700',
-},
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  stackedAvatar: {
+    width: scale(33),
+    height: scale(33),
+    borderRadius: scale(33),
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: COLORS.background,
+  },
+  stackedAvatarText: {
+    color: "#FFF",
+    fontSize: moderateScale(9),
+    fontWeight: "700",
+  },
 
-overlayTextWrapper: {
-  position: 'absolute',
-  transform: [{ translateX: -scale(60) }, { translateY: -verticalScale(15) }],
-  maxWidth: '80%',
-},
+  overlayTextWrapper: {
+    position: "absolute",
+    transform: [{ translateX: -scale(60) }, { translateY: -verticalScale(15) }],
+    maxWidth: "80%",
+  },
 });

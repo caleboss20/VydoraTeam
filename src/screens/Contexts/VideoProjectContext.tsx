@@ -6,7 +6,7 @@ import React, {
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { VideoProject,TextOverlay  } from '../types';
+import { VideoProject,TextOverlay ,VideoClip } from '../types';
 import { CONFIG } from '../config';
 
 import {
@@ -34,7 +34,7 @@ interface VideoProjectContextType {
   splitClip: (clipId: string, splitTimeMs: number) => void;
   updateClipVolume: (clipId: string, volume: number) => void;
   updateClipSpeed: (clipId: string, speed: number) => void;
-
+  updateClipFilter: (clipId: string, filterId: string) => void;
   addTextOverlay: (clipId: string, text: string, startMs: number, durationMs?: number) => string;
   updateTextOverlay: (clipId: string, overlayId: string, changes: Partial<TextOverlay>) => void;
   removeTextOverlay: (clipId: string, overlayId: string) => void;
@@ -247,6 +247,26 @@ const updateClipSpeed = (clipId: string, speed: number) => {
   });
 };
 
+// to update the filter applied to a clip
+const updateClipFilter = (clipId: string, filterId: string) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? { ...c, filterId } : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist filter update', e));
+    return updated;
+  });
+};
+
 
 const addTextOverlay = (
   clipId: string,
@@ -331,6 +351,7 @@ const removeTextOverlay = (clipId: string, overlayId: string) => {
         addTextOverlay,      // ADD
         updateTextOverlay,   // ADD
         removeTextOverlay, 
+         updateClipFilter,
       }}
     >
       {children}

@@ -110,6 +110,7 @@ export type VideoClip = {
   trimEndMs?: number;   // ADDED: defaults to durationMs if unset
   volume?:number;
   speed?:number;
+  filterId?:string;
 };
 
 export type VideoProject = {
@@ -121,6 +122,19 @@ export type VideoProject = {
   coverThumbnailUri?: string;
   totalDurationMs: number;
 };
+
+export interface VideoFilter{
+id:string;
+name:string;
+thumbnailUri?:string;
+tintColor:string;
+tintOpacity:number;
+intensity?:number;
+}
+
+
+
+
 // ─── Export ────────────────────────────────────────────────────────────────
 export type ExportStatus = 'Ready' | 'Processing' | 'Failed';
 export interface Export {

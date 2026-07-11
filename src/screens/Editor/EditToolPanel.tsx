@@ -11,7 +11,7 @@ const COLORS = {
   textPrimary: '#FFFFFF',
   textSecondary: '#8F9BB3',
 };
-const SPEED_PRESETS = [0.5, 0.75, 0.9, 1, 1.5, 2];
+const SPEED_PRESETS = [0.5, 0.75, 0.9, 1,1.2, 1.5];
 const TEXT_COLORS = ['#FFFFFF', '#e7e55c', '#FF4D6D', '#4DA6FF', '#4DFF88', '#000000'];
 
 

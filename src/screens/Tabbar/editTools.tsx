@@ -22,7 +22,7 @@ const tools: Tool[] = [
   },
   {
     icon: "flame-outline",
-    label: "Effects",
+    label: "Filter",
   
   },{
     icon: "text-outline",
@@ -56,13 +56,7 @@ const tools: Tool[] = [
   },
 ];
 
-// function ToolbarIcon({ name, active }: { name: keyof typeof Ionicons.glyphMap; active?: boolean }) {
-//   return (
-//     <TouchableOpacity style={[styles.toolbarIconButton, active && styles.toolbarIconButtonActive]} hitSlop={8}>
-//       <Ionicons name={name} size={scale(20)} color={active ? COLORS.purple : COLORS.textPrimary} />
-//     </TouchableOpacity>
-//   );
-// }
+
 
 interface BottomToolbarProps {
   onSplit?: () => void;
