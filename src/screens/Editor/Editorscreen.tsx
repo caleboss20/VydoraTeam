@@ -28,6 +28,9 @@ import { useComment } from "../Contexts/commentContext";
 import EditToolPanel from "./EditToolPanel";
 import { FILTER_LIST, getFilterById } from "../services/FilterService";
 import FilterToolPanel from "./FilterPanelTool";
+import CropRatioPanel from "./cropRatioPanel"; 
+// import CropOverlay from "./cropOverlay";
+import { CROP_RATIO_PRESETS } from '../services/cropService';
 
 const COLORS = {
   background: "#0B0D13",
@@ -130,47 +133,55 @@ function ClipTrimmer({
   const clipSeconds = Math.max(1, Math.ceil(clip.durationMs / 1000));
 
   if (!isActive) {
-    return (
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.8}
-        style={{
-          flexDirection: "row",
-          position: "relative",
-          height: verticalScale(46),
-        }}
-      >
-        {thumbnails.length > 0 ? (
-          thumbnails.map((uri, i) => (
-            <Image
-              key={i}
-              source={{ uri }}
-              style={{
-                width: PX_PER_SECOND,
-                height: verticalScale(46),
-                opacity: 0.6,
-              }}
-              resizeMode="cover"
-            />
-          ))
-        ) : (
-          <View
-            style={[
-              styles.clipPlaceholder,
-              { width: PX_PER_SECOND * clipSeconds },
-            ]}
-          >
-            <Image
-              source={{
-                uri: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300",
-              }}
-              style={styles.clipPlaceholderImg}
-            />
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  }
+  const trimStart = clip.trimStartMs ?? 0;
+  const trimEnd = clip.trimEndMs ?? clip.durationMs;
+  const startFrame = Math.floor(trimStart / 1000);
+  const endFrame = Math.ceil(trimEnd / 1000);
+  const visibleThumbnails = thumbnails.slice(startFrame, endFrame);
+  const displayThumbs = visibleThumbnails.length > 0 ? visibleThumbnails : thumbnails;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={{
+        flexDirection: "row",
+        position: "relative",
+        height: verticalScale(46),
+      }}
+    >
+      {displayThumbs.length > 0 ? (
+        displayThumbs.map((uri, i) => (
+          <Image
+            key={i}
+            source={{ uri }}
+            style={{
+              width: PX_PER_SECOND,
+              height: verticalScale(46),
+              opacity: 0.6,
+            }}
+            resizeMode="cover"
+          />
+        ))
+      ) : (
+        <View
+          style={[
+            styles.clipPlaceholder,
+            { width: PX_PER_SECOND * Math.max(1, Math.ceil((trimEnd - trimStart) / 1000)) },
+          ]}
+        >
+          <Image
+            source={{
+              uri: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300",
+            }}
+            style={styles.clipPlaceholderImg}
+          />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 
   return (
     <View
@@ -240,17 +251,32 @@ function ClipTrimmer({
         pointerEvents="none"
       />
 
-      {/* Left Trim Handle */}
-      <View
-        style={[
-          styles.trimHandle,
-          styles.leftTrimHandle,
-          { transform: [{ translateX: startPx }] },
-        ]}
-        {...leftPanResponder.panHandlers}
-      >
-        <View style={styles.trimHandleBar} />
-      </View>
+     {/* Left Trim Handle */}
+<View
+  style={[
+    styles.trimHandle,
+    styles.leftTrimHandle,
+    { transform: [{ translateX: startPx }] },
+  ]}
+  hitSlop={{ left: scale(15), right: scale(15), top: 0, bottom: 0 }}
+  {...leftPanResponder.panHandlers}
+>
+  <View style={styles.trimHandleBar} />
+</View>
+
+{/* Right Trim Handle */}
+<View
+  style={[
+    styles.trimHandle,
+    styles.rightTrimHandle,
+    { transform: [{ translateX: endPx - HANDLE_WIDTH }] },
+  ]}
+  hitSlop={{ left: scale(15), right: scale(15), top: 0, bottom: 0 }}
+  {...rightPanResponder.panHandlers}
+>
+  <View style={styles.trimHandleBar} />
+</View>
+
 
       {/* Right Trim Handle */}
       <View
@@ -283,6 +309,7 @@ export default function EditorScreen() {
     updateTextOverlay,
     removeTextOverlay,
     updateClipFilter,
+    updateClipCrop,
   } = useVideoProject();
   const project = currentVideoProject;
   const projectId = project?.id;
@@ -310,7 +337,7 @@ export default function EditorScreen() {
 
   const clips: VideoClip[] = project?.clips ?? [];
 
-  //for the sidebar//
+  //--------------for the sidebar--------------//
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const { getMembersForProject, fetchMembers } = useMember();
   const onlineMembers = projectId
@@ -320,6 +347,13 @@ export default function EditorScreen() {
 
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0];
+ 
+ 
+  //--------for the video cropping state-------------//
+const [cropOverlayVisible, setCropOverlayVisible] = useState(false);
+const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original');
+
+
   const activeOverlay =
     activeClip?.textOverlays?.find((o) => o.id === selectedOverlayId) ?? null;
 
@@ -615,6 +649,26 @@ export default function EditorScreen() {
     setActiveToolLabel(null);
     setSelectedOverlayId(null);
   };
+
+const handleSelectCropRatio = (ratioId: string) => {
+  setPendingCropRatioId(ratioId);
+  setCropOverlayVisible(true);
+  closeToolPanel(); // hides CropRatioPanel/EditToolPanel since overlay takes over
+};
+const handleConfirmCrop = (cropData: {
+  cropRatioId: string;
+  cropOffsetX: number;
+  cropOffsetY: number;
+  cropZoom: number;
+}) => {
+  if (activeClip) {
+    updateClipCrop(activeClip.id, cropData);
+  }
+  setCropOverlayVisible(false);
+};
+
+
+
 
   if (!project || clips.length === 0) {
     return (
@@ -953,9 +1007,9 @@ export default function EditorScreen() {
         onToolPress={handleToolPress}
       />
 
-      {/* //for the filter tool panel  */}
-      {activeToolLabel === "Filter" ? (
-        <FilterToolPanel
+ {/* //for the filter tool panel  */}
+    {activeToolLabel === 'Filter' ? (
+  <FilterToolPanel
           visible={true}
           filters={FILTER_LIST}
           selectedFilterId={activeClip?.filterId}
@@ -965,8 +1019,16 @@ export default function EditorScreen() {
           onClose={closeToolPanel}
           clipUri={activeClip?.uri ?? ""}
         />
-      ) : (
-        /*for the edit tool panel  */
+) : activeToolLabel === 'Crop' ? (
+  <CropRatioPanel
+    visible={true}
+    presets={CROP_RATIO_PRESETS}
+    selectedRatioId={activeClip?.cropRatioId}
+    onSelectRatio={handleSelectCropRatio}
+    onClose={closeToolPanel}
+  />
+) : (
+  /*for the edit tool panel  */
         <EditToolPanel
           visible={activeToolLabel !== null}
           toolLabel={activeToolLabel}
@@ -1007,7 +1069,21 @@ export default function EditorScreen() {
             }
           }}
         />
-      )}
+)}
+
+{/* {activeClip && (
+  <CropOverlay
+    visible={cropOverlayVisible}
+    clipUri={activeClip.uri}
+    cropRatioId={pendingCropRatioId}
+    initialOffsetX={activeClip.cropOffsetX}
+    initialOffsetY={activeClip.cropOffsetY}
+    initialZoom={activeClip.cropZoom}
+    onConfirm={handleConfirmCrop}
+    onClose={() => setCropOverlayVisible(false)}
+  />
+)} */}
+
     </SafeAreaView>
   );
 }

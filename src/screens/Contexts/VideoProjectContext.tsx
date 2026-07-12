@@ -35,10 +35,19 @@ interface VideoProjectContextType {
   updateClipVolume: (clipId: string, volume: number) => void;
   updateClipSpeed: (clipId: string, speed: number) => void;
   updateClipFilter: (clipId: string, filterId: string) => void;
+
   addTextOverlay: (clipId: string, text: string, startMs: number, durationMs?: number) => string;
   updateTextOverlay: (clipId: string, overlayId: string, changes: Partial<TextOverlay>) => void;
   removeTextOverlay: (clipId: string, overlayId: string) => void;
-
+   updateClipCrop: (
+    clipId: string,
+    cropData: {
+      cropRatioId?: string;
+      cropOffsetX?: number;
+      cropOffsetY?: number;
+      cropZoom?: number;
+    }
+  ) => void;
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const VideoProjectContext = createContext<VideoProjectContextType | undefined>(undefined);
@@ -267,6 +276,36 @@ const updateClipFilter = (clipId: string, filterId: string) => {
   });
 };
 
+// to update the crop ratio/position/zoom applied to a clip.
+// Accepts a partial object so callers can update just the ratio (from the
+// picker panel) or just offset/zoom (from CropOverlay's drag/pinch gestures)
+// without needing to know or resend the other fields.
+const updateClipCrop = (
+  clipId: string,
+  cropData: {
+    cropRatioId?: string;
+    cropOffsetX?: number;
+    cropOffsetY?: number;
+    cropZoom?: number;
+  }
+) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? { ...c, ...cropData } : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist crop update', e));
+    return updated;
+  });
+};
 
 const addTextOverlay = (
   clipId: string,
@@ -352,6 +391,7 @@ const removeTextOverlay = (clipId: string, overlayId: string) => {
         updateTextOverlay,   // ADD
         removeTextOverlay, 
          updateClipFilter,
+        updateClipCrop,
       }}
     >
       {children}

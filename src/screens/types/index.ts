@@ -111,6 +111,10 @@ export type VideoClip = {
   volume?:number;
   speed?:number;
   filterId?:string;
+  cropRatioId?: string;   // references CropRatioPreset.id; undefined = uncropped/original
+  cropOffsetX?: number;   // 0 to 1, horizontal position of the crop box within the frame
+  cropOffsetY?: number;   // 0 to 1, vertical position of the crop box within the frame
+  cropZoom?: number;      // 1 = no zoom, >1 = zoomed in, used with offsets to pan around
 };
 
 export type VideoProject = {
@@ -132,7 +136,12 @@ tintOpacity:number;
 intensity?:number;
 }
 
-
+export interface CropRatioPreset {
+id:string;
+label:string;
+ratioLabel:string;
+ratioValue:number;
+}
 
 
 // ─── Export ────────────────────────────────────────────────────────────────
