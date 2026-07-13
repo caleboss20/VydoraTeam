@@ -10,13 +10,14 @@ import {
   StatusBar,
   Alert,
   PanResponder,
-} from "react-native";
+} from "react-native";  
 import { useMember } from "../Contexts/memberContext";
 import CollaborationSidebar from "../components/Editorsidebar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { useAudioPlayer } from "expo-audio"; // for background music playback,
 import { useEventListener } from "expo";
 import { useNavigation } from "@react-navigation/native";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -30,6 +31,7 @@ import { FILTER_LIST, getFilterById } from "../services/FilterService";
 import FilterToolPanel from "./FilterPanelTool";
 import CropRatioPanel from "./cropRatioPanel"; 
 // import CropOverlay from "./cropOverlay";
+import MusicToolPanel from "./MusicToolPanel"; // panel for picking/adjusting background music
 import { CROP_RATIO_PRESETS } from '../services/cropService';
 
 const COLORS = {
@@ -295,6 +297,7 @@ function ClipTrimmer({
 
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
+
   const {
     currentVideoProject,
     updateClipTrim,
@@ -302,6 +305,7 @@ export default function EditorScreen() {
     duplicateClip,
     splitClip,
   } = useVideoProject();
+
   const {
     updateClipSpeed,
     updateClipVolume,
@@ -310,7 +314,11 @@ export default function EditorScreen() {
     removeTextOverlay,
     updateClipFilter,
     updateClipCrop,
+    setBackgroundMusic,
+    updateBackgroundMusic,
+    removeBackgroundMusic,
   } = useVideoProject();
+
   const project = currentVideoProject;
   const projectId = project?.id;
   const { fetchComments } = useComment();
@@ -365,7 +373,27 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
 
   const player = useVideoPlayer(activeClip?.uri ?? null, (p: any) => {
     p.loop = false;
+    p.timeUpdateEventInterval = 0.25; // Update every 100ms
   });
+
+
+  // ── Background music setup ──
+// Pulls the saved music track (if any) from the project, and creates a
+// second, independent audio player for it. This runs in parallel to the
+// video's own player — they are kept in sync manually (see togglePlayback
+// and the timeUpdate listener below), since expo-video and expo-audio
+// don't share a clock automatically.
+const backgroundMusic = project?.backgroundMusic;
+const musicPlayer = useAudioPlayer(backgroundMusic?.uri ?? null);
+// Keep the music player's volume live-synced to whatever the user sets
+// in MusicToolPanel, without needing a manual "apply" step.
+useEffect(() => {
+  if (backgroundMusic) {
+    musicPlayer.volume = backgroundMusic.volume ?? 0.5;
+  }
+}, [backgroundMusic?.volume]);
+
+
 
   const [isPlaying, setIsPlaying] = useState(player.playing ?? false);
   useEventListener(player, "playingChange", (payload) => {
@@ -401,46 +429,68 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
   }, [activeClip?.speed, player]);
 
   // Handle active clip playback endpoint
-  useEventListener(player, "timeUpdate", (payload) => {
-    if (!activeClip) return;
-    const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
-    const curTimeMs = payload.currentTime * 1000;
-
-    if (curTimeMs >= trimEndMs) {
-      const activeIdx = clips.findIndex((c) => c.id === activeClip.id);
-      if (activeIdx !== -1 && activeIdx + 1 < clips.length) {
-        const nextClip = clips[activeIdx + 1];
-        setSelectedClipId(nextClip.id);
-        player.pause();
-        player.replace(nextClip.uri);
-        const nextStart = nextClip.trimStartMs ?? 0;
-        player.currentTime = nextStart / 1000;
-        player.play();
-      } else {
-        player.pause();
-        player.currentTime = trimEndMs / 1000;
-      }
-    } else {
-      setCurrentTime(payload.currentTime);
+useEventListener(player, "timeUpdate", (payload) => {
+  if (!activeClip) return;
+  const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
+  const curTimeMs = payload.currentTime * 1000;
+  // ── Background music sync — runs every tick, independent of clip end ──
+  if (backgroundMusic) {
+    const musicStart = backgroundMusic.startMs ?? 0;
+    const musicTrimStart = backgroundMusic.trimStartMs ?? 0;
+    const musicTrimEnd = backgroundMusic.trimEndMs ?? backgroundMusic.durationMs ?? 0;
+    const timelinePosMs = currentPositionMs;
+    const shouldBePlayingMusic =
+      timelinePosMs >= musicStart &&
+      timelinePosMs < musicStart + (musicTrimEnd - musicTrimStart);
+    if (shouldBePlayingMusic && !musicPlayer.playing) {
+      const offsetMs = timelinePosMs - musicStart + musicTrimStart;
+      musicPlayer.seekTo(offsetMs / 1000)
+        .then(() => musicPlayer.play())
+        .catch((e) => console.log("music seek failed:", e));
+    } else if (!shouldBePlayingMusic && musicPlayer.playing) {
+      musicPlayer.pause();
     }
-  });
-
-  const togglePlayback = () => {
-    const currentlyPlaying = player.playing;
-    if (currentlyPlaying) {
+  }
+  // ── end background music sync ──
+  if (curTimeMs >= trimEndMs) {
+    const activeIdx = clips.findIndex((c) => c.id === activeClip.id);
+    if (activeIdx !== -1 && activeIdx + 1 < clips.length) {
+      const nextClip = clips[activeIdx + 1];
+      setSelectedClipId(nextClip.id);
       player.pause();
-    } else {
-      if (activeClip) {
-        const trimStartMs = activeClip.trimStartMs ?? 0;
-        const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
-        const posMs = player.currentTime * 1000;
-        if (posMs < trimStartMs || posMs >= trimEndMs) {
-          player.currentTime = trimStartMs / 1000;
-        }
-      }
+      player.replace(nextClip.uri);
+      const nextStart = nextClip.trimStartMs ?? 0;
+      player.currentTime = nextStart / 1000;
       player.play();
+    } else {
+      player.pause();
+      player.currentTime = trimEndMs / 1000;
     }
-  };
+  } else {
+    setCurrentTime(payload.currentTime);
+  }
+});
+
+
+const togglePlayback = () => {
+  const currentlyPlaying = player.playing;
+  if (currentlyPlaying) {
+    player.pause();
+    musicPlayer.pause();
+  } else {
+    if (activeClip) {
+      const trimStartMs = activeClip.trimStartMs ?? 0;
+      const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
+      const posMs = currentTime * 1000; // use React state, not player.currentTime
+      if (posMs < trimStartMs || posMs >= trimEndMs) {
+        player.currentTime = trimStartMs / 1000;
+        setCurrentTime(trimStartMs / 1000); // keep state in sync immediately
+      }
+    }
+    player.play();
+  }
+};
+
 
   // Generate Thumbnails
   const [clipThumbnails, setClipThumbnails] = useState<
@@ -1020,13 +1070,27 @@ const handleConfirmCrop = (cropData: {
           clipUri={activeClip?.uri ?? ""}
         />
 ) : activeToolLabel === 'Crop' ? (
-  <CropRatioPanel
+   <CropRatioPanel
     visible={true}
     presets={CROP_RATIO_PRESETS}
     selectedRatioId={activeClip?.cropRatioId}
     onSelectRatio={handleSelectCropRatio}
     onClose={closeToolPanel}
   />
+) : activeToolLabel === 'Music' ? (
+  // NEW: background music panel — pick a file, adjust volume, or remove
+  <MusicToolPanel
+    visible={true}
+    backgroundMusic={project?.backgroundMusic}
+    onPick={(uri, durationMs) => setBackgroundMusic(uri, durationMs)}
+    onVolumeChange={(volume) => updateBackgroundMusic({ volume })}
+    onRemove={() => {
+      removeBackgroundMusic();
+      closeToolPanel();
+    }}
+    onClose={closeToolPanel}
+  />
+
 ) : (
   /*for the edit tool panel  */
         <EditToolPanel

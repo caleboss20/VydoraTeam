@@ -6,7 +6,7 @@ import React, {
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { VideoProject,TextOverlay ,VideoClip } from '../types';
+import { VideoProject,TextOverlay ,VideoClip, BackgroundMusic } from '../types';
 import { CONFIG } from '../config';
 
 import {
@@ -15,6 +15,7 @@ import {
   updateOverlayInClip,
   removeOverlayFromClip,
 } from '../services/textOverlayservice';
+import { createBackgroundMusic,updateBackgroundMusic as updateBackgroundMusicHelper } from '../services/BackgroundmusicService';
 
 
 
@@ -36,6 +37,10 @@ interface VideoProjectContextType {
   updateClipSpeed: (clipId: string, speed: number) => void;
   updateClipFilter: (clipId: string, filterId: string) => void;
 
+  setBackgroundMusic: (uri: string, durationMs: number) => void;
+updateBackgroundMusic: (changes: Partial<BackgroundMusic>) => void;
+removeBackgroundMusic: () => void;
+
   addTextOverlay: (clipId: string, text: string, startMs: number, durationMs?: number) => string;
   updateTextOverlay: (clipId: string, overlayId: string, changes: Partial<TextOverlay>) => void;
   removeTextOverlay: (clipId: string, overlayId: string) => void;
@@ -49,8 +54,13 @@ interface VideoProjectContextType {
     }
   ) => void;
 }
+
 // ─── Context ─────────────────────────────────────────────────────────────────
+
 const VideoProjectContext = createContext<VideoProjectContextType | undefined>(undefined);
+
+
+
 // ─── Provider ────────────────────────────────────────────────────────────────
 export function VideoProjectProvider({ children }: { children: ReactNode }) {
   const [currentVideoProject, setCurrentVideoProjectState] = useState<VideoProject | null>(null);
@@ -307,6 +317,7 @@ const updateClipCrop = (
   });
 };
 
+
 const addTextOverlay = (
   clipId: string,
   text: string,
@@ -332,6 +343,7 @@ const addTextOverlay = (
   });
   return overlay.id;
 };
+
 const updateTextOverlay = (
   clipId: string,
   overlayId: string,
@@ -354,6 +366,8 @@ const updateTextOverlay = (
     return updated;
   });
 };
+
+
 const removeTextOverlay = (clipId: string, overlayId: string) => {
   setCurrentVideoProjectState((prev) => {
     if (!prev) return prev;
@@ -369,6 +383,58 @@ const removeTextOverlay = (clipId: string, overlayId: string) => {
       CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
       JSON.stringify(updated)
     ).catch((e) => console.log('Failed to persist text overlay remove', e));
+    return updated;
+  });
+};
+
+
+const setBackgroundMusic = (uri: string, durationMs: number) => {
+  const music = createBackgroundMusic(uri, durationMs);
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updated = {
+      ...prev,
+      backgroundMusic: music,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist background music add', e));
+    return updated;
+  });
+};
+// to update volume, trim, or start position of the existing background music
+
+const updateBackgroundMusic = (changes: Partial<BackgroundMusic>) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev || !prev.backgroundMusic) return prev;
+    const updatedMusic = updateBackgroundMusicHelper(prev.backgroundMusic, changes);
+    const updated = {
+      ...prev,
+      backgroundMusic: updatedMusic,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist background music update', e));
+    return updated;
+  });
+};
+// to remove the background music entirely
+const removeBackgroundMusic = () => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const { backgroundMusic, ...rest } = prev;
+    const updated = {
+      ...rest,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist background music removal', e));
     return updated;
   });
 };
@@ -392,6 +458,10 @@ const removeTextOverlay = (clipId: string, overlayId: string) => {
         removeTextOverlay, 
          updateClipFilter,
         updateClipCrop,
+        setBackgroundMusic,
+        updateBackgroundMusic,
+        removeBackgroundMusic
+
       }}
     >
       {children}

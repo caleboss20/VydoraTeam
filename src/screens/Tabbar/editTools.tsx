@@ -34,6 +34,11 @@ const tools: Tool[] = [
     label: "Audio",
     
   },
+   {
+    icon: "musical-notes-outline",
+    label: "Music",
+    
+  },
   {
     icon: "crop-outline",
     label: "Crop",

@@ -125,6 +125,7 @@ export type VideoProject = {
   clips: VideoClip[];
   coverThumbnailUri?: string;
   totalDurationMs: number;
+  backgroundMusic?: BackgroundMusic;
 };
 
 export interface VideoFilter{
@@ -192,3 +193,18 @@ export interface VersionRowProps {
 export type VersionHistoryScreenParams = {
   projectId: string;
 };
+
+
+
+export interface BackgroundMusic{
+uri:string;
+volume:number;
+startMs:number;
+trimStartMs?:number;
+trimEndMs?:number;
+durationMs?:number;
+}
+
+
+
+
