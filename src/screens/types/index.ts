@@ -119,6 +119,7 @@ export type VideoClip = {
 
 export type VideoProject = {
   id: string;
+  projectId:string;
   title: string;
   createdAt: string; // ISO timestamp
   updatedAt: string; // ISO timestamp

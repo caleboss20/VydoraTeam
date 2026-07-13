@@ -295,6 +295,95 @@ function ClipTrimmer({
   );
 }
 
+
+function DraggableOverlay({
+  overlay,
+  previewSize,
+  onTap,
+  onDragEnd,
+}: {
+  overlay: TextOverlay;
+  previewSize: { width: number; height: number };
+  onTap: () => void;
+  onDragEnd: (x: number, y: number) => void;
+}) {
+  const startXRef = useRef((overlay.x ?? 0.5) * previewSize.width);
+  const startYRef = useRef((overlay.y ?? 0.5) * previewSize.height);
+  const [pos, setPos] = useState({
+    x: (overlay.x ?? 0.5) * previewSize.width,
+    y: (overlay.y ?? 0.5) * previewSize.height,
+  });
+  const movedRef = useRef(false);
+  useEffect(() => {
+    setPos({
+      x: (overlay.x ?? 0.5) * previewSize.width,
+      y: (overlay.y ?? 0.5) * previewSize.height,
+    });
+  }, [overlay.x, overlay.y, previewSize.width, previewSize.height]);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        startXRef.current = pos.x;
+        startYRef.current = pos.y;
+        movedRef.current = false;
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4) {
+          movedRef.current = true;
+        }
+        const nextX = Math.max(0, Math.min(previewSize.width, startXRef.current + gesture.dx));
+        const nextY = Math.max(0, Math.min(previewSize.height, startYRef.current + gesture.dy));
+        setPos({ x: nextX, y: nextY });
+      },
+      onPanResponderRelease: () => {
+        if (movedRef.current) {
+          const normX = pos.x / previewSize.width;
+          const normY = pos.y / previewSize.height;
+          onDragEnd(normX, normY);
+        } else {
+          onTap();
+        }
+      },
+    })
+  ).current;
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={[
+        styles.overlayTextWrapper,
+        {
+          left: pos.x,
+          top: pos.y,
+        },
+      ]}
+    >
+      <Text
+        style={{
+          color: overlay.color ?? "#FFFFFF",
+          fontSize: scale(overlay.fontSize ?? 24),
+          fontWeight: overlay.fontWeight === "bold" ? "700" : "400",
+          textAlign: overlay.align ?? "center",
+          backgroundColor: overlay.backgroundColor
+            ? `${overlay.backgroundColor}${Math.round((overlay.backgroundOpacity ?? 0.6) * 255)
+                .toString(16)
+                .padStart(2, "0")}`
+            : "transparent",
+          borderRadius: scale(overlay.backgroundRadius ?? 0),
+          paddingHorizontal: scale(8),
+          paddingVertical: verticalScale(4),
+          overflow: "hidden",
+        }}
+      >
+        {overlay.text}
+      </Text>
+    </View>
+  );
+}
+
+
+
+
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
 
@@ -330,6 +419,9 @@ export default function EditorScreen() {
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
     null,
   );
+
+//for the textoverlay//
+  const [previewSize, setPreviewSize] = useState({ width: 1, height: 1 });
 
   useEffect(() => {
     if (projectId) {
@@ -794,7 +886,13 @@ const handleConfirmCrop = (cropData: {
 
       {/* Video Preview */}
       <View style={styles.previewWrapper}>
-        <View style={styles.previewContainer}>
+        <View 
+          onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+      setPreviewSize({ width, height });
+     }}
+        style={styles.previewContainer}
+        >
           {activeClip ? (
             <VideoView
               style={styles.videoView}
@@ -827,43 +925,19 @@ const handleConfirmCrop = (cropData: {
               ]}
             />
           )}
-
-          {activeVisibleOverlays.map((o) => (
-            <TouchableOpacity
-              key={o.id}
-              activeOpacity={0.8}
-              onPress={() => handleToolPress("Text", o.id)}
-              style={[
-                styles.overlayTextWrapper,
-                {
-                  left: `${(o.x ?? 0.5) * 100}%`,
-                  top: `${(o.y ?? 0.5) * 100}%`,
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  color: o.color ?? "#FFFFFF",
-                  fontSize: scale(o.fontSize ?? 24),
-                  fontWeight: o.fontWeight === "bold" ? "700" : "400",
-                  textAlign: o.align ?? "center",
-                  backgroundColor: o.backgroundColor
-                    ? `${o.backgroundColor}${Math.round(
-                        (o.backgroundOpacity ?? 0.6) * 255,
-                      )
-                        .toString(16)
-                        .padStart(2, "0")}`
-                    : "transparent",
-                  borderRadius: scale(o.backgroundRadius ?? 0),
-                  paddingHorizontal: scale(8),
-                  paddingVertical: verticalScale(4),
-                  overflow: "hidden",
-                }}
-              >
-                {o.text}
-              </Text>
-            </TouchableOpacity>
-          ))}
+   
+      
+      {activeVisibleOverlays.map((o) => (
+      <DraggableOverlay
+        key={o.id}
+        overlay={o}
+        previewSize={previewSize}
+        onTap={() => handleToolPress("Text", o.id)}
+        onDragEnd={(x, y) => {
+          if (activeClip) updateTextOverlay(activeClip.id, o.id, { x, y });
+        }}
+      />
+      ))}
 
           <View style={styles.videoTopBar} />
           <View style={styles.timestampOverlay}>

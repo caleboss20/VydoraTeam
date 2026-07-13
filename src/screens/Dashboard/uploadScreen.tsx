@@ -14,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { VideoProject, VideoClip } from '../types';
+import { useProject } from '../Contexts/projectContext';
 
 
 const CONFIG = {
@@ -35,6 +36,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function VideoUploadScreen() {
   const navigation = useNavigation<any>();
   const { currentVideoProject, setCurrentVideoProject } = useVideoProject();
+  const { currentProject } = useProject();
   const [isPicking, setIsPicking] = useState(false);
   // If a video project already exists in context (i.e. the user already
   // uploaded/recorded a clip at some point), there's no reason to show the
@@ -66,6 +68,7 @@ const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
 
   const project: VideoProject = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+   projectId:`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: 'Untitled Project',
     createdAt: now,
     updatedAt: now,
@@ -123,7 +126,9 @@ const startProjectFromAsset = async (asset: ImagePicker.ImagePickerAsset) => {
   };
   // While the redirect effect above is deciding (or mid-navigation), render
   // nothing instead of flashing the picker UI for a frame.
-  if (currentVideoProject && currentVideoProject.clips?.length > 0) {
+  if (currentVideoProject &&
+    currentVideoProject.projectId && currentVideoProject.projectId === currentProject?.id &&
+     currentVideoProject.clips?.length > 0) {
     return <SafeAreaView style={styles.container} edges={['top', 'bottom']} />;
   }
   return (

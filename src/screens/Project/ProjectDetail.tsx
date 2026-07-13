@@ -565,6 +565,7 @@ const pickCoverImage = async () => {
   }, [currentProject?.id]);
   if (!currentProject) {
     return (
+      
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.centered}>
           <ActivityIndicator color={YELLOW} />
