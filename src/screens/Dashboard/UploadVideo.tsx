@@ -126,8 +126,7 @@ const { currentProject, updateThumbnail } = useProject(); // ADDED
   // project instead of appending, drop the `currentVideoProject` branch below
   // and always build a fresh project.
  
-
-  const persistClipToVideoProject = useCallback(
+const persistClipToVideoProject = useCallback(
   (file: UploadFile) => {
     const newClip: VideoClip = {
       id: file.id,
@@ -146,40 +145,36 @@ const { currentProject, updateThumbnail } = useProject(); // ADDED
       clips: [newClip],
       totalDurationMs: file.durationMs,
     });
-    navigation.navigate('editorscreen');
+    // navigation.navigate('editorscreen') REMOVED FROM HERE
   },
-  [setCurrentVideoProject, currentProject, navigation]
+  [setCurrentVideoProject, currentProject]
 );
 
 
 
 
 
-
-
-  const startSimulatedUpload = useCallback((id: string) => {
-    const interval = setInterval(() => {
-      setFiles((prev): any => {
-        let justFinished: UploadFile | null = null;
-        const next = prev.map((f) => {
-          if (f.id !== id) return f;
-          const bump = f.isAudio ? 18 : Math.random() * 9 + 3;
-          const nextProgress = Math.min(100, f.progress + bump);
-          const isDone = nextProgress >= 100;
-          if (isDone && f.status !== 'done') {
-            justFinished = { ...f, progress: 100, status: 'done' };
-          }
-          return { ...f, progress: nextProgress, status: isDone ? 'done' : 'uploading' };
-        });
-        if (justFinished) {
+ const startSimulatedUpload = useCallback((id: string) => {
+  const interval = setInterval(() => {
+    setFiles((prev) => {
+      return prev.map((f) => {
+        if (f.id !== id) return f;
+        const bump = f.isAudio ? 18 : Math.random() * 9 + 3;
+        const nextProgress = Math.min(100, f.progress + bump);
+        const isDone = nextProgress >= 100;
+        if (isDone && timersRef.current[id]) {
           clearInterval(timersRef.current[id]);
           delete timersRef.current[id];
         }
-        return next;
+        return { ...f, progress: nextProgress, status: isDone ? 'done' : 'uploading' };
       });
-    }, 450);
-    timersRef.current[id] = interval;
-  }, []);
+    });
+  }, 450)
+  timersRef.current[id] = interval;
+}, []);
+
+
+
   const addFile = useCallback(
     (name: string, uri: string, bytes: number, durationMs?: number) => {
       const ext = getExtension(name);
@@ -320,29 +315,47 @@ const { currentProject, updateThumbnail } = useProject(); // ADDED
           ))}
         </View>
         {/* File list */}
-        {files.map((file) => (
-          <View key={file.id} style={styles.fileRow}>
-            <View style={styles.fileIconWrap}>
-              <Ionicons
-                name={file.isAudio ? 'musical-notes' : 'film-outline'}
-                size={20}
-                color={COLORS.yellow}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
-              <Text style={styles.fileMeta}>
-                {file.sizeLabel} · {file.durationLabel}
-              </Text>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${file.progress}%` }]} />
-              </View>
-            </View>
-            <Pressable onPress={() => removeFile(file.id)} hitSlop={10}>
-              <Ionicons name="close-circle" size={20} color={COLORS.textFaint} />
-            </Pressable>
-          </View>
-        ))}
+        {files.map((file) => {
+  const isDone = file.status === 'done';
+  return (
+    <Pressable
+      key={file.id}
+      style={styles.fileRow}
+      disabled={!isDone}
+      onPress={() => {
+        if (isDone) navigation.navigate('editorscreen');
+      }}
+    >
+      <View style={styles.fileIconWrap}>
+        <Ionicons
+          name={file.isAudio ? 'musical-notes' : 'film-outline'}
+          size={20}
+          color={COLORS.yellow}
+        />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
+        <Text style={styles.fileMeta}>
+          {file.sizeLabel} · {file.durationLabel}
+        </Text>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${file.progress}%` }]} />
+        </View>
+      </View>
+      {isDone ? (
+        <Ionicons name="checkmark-circle" size={20} color={COLORS.online} />
+      ) : (
+        <Pressable onPress={() => removeFile(file.id)} hitSlop={10}>
+          <Ionicons name="close-circle" size={20} color={COLORS.textFaint} />
+        </Pressable>
+      )}
+    </Pressable>
+  );
+})}
+
+
+
+
       </ScrollView>
       {/* URL import modal */}
       <Modal visible={urlModalVisible} transparent animationType="fade">

@@ -619,6 +619,7 @@ const togglePlayback = () => {
       }
     }
     player.play();
+    musicPlayer.play();
   }
 };
 
