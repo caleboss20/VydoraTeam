@@ -19,6 +19,7 @@ import { ms, s, vs } from "react-native-size-matters";
 import * as DocumentPicker from 'expo-document-picker';
 import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { VideoClip } from '../types';
+import {useProject} from '../Contexts/projectContext';
 // ---------------------------------------------------------------------------
 // Vydora — Upload Video screen
 // Full screen (not a modal), dark theme, single yellow accent.
@@ -94,6 +95,8 @@ function isAudioExt(ext: string) {
 }
 export default function UploadVideoScreen({ navigation }: any) {
   const { setCurrentVideoProject } = useVideoProject();
+const { currentProject, updateThumbnail } = useProject(); // ADDED
+
   // TWEAK: removed hardcoded seed files (clip_01.mp4 etc) — starts empty now.
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [urlModalVisible, setUrlModalVisible] = useState(false);
@@ -122,31 +125,38 @@ export default function UploadVideoScreen({ navigation }: any) {
   // yet, a new one is created. If you want every upload to start a *new*
   // project instead of appending, drop the `currentVideoProject` branch below
   // and always build a fresh project.
+ 
+
   const persistClipToVideoProject = useCallback(
-    (file: UploadFile) => {
-      // Always starts a fresh single-clip project — picking a new video
-      // replaces whatever was previously held, it doesn't accumulate into
-      // a multi-clip timeline. Matches the "hold the video being uploaded"
-      // intent for VideoProjectContext.
-      const newClip: VideoClip = {
-        id: file.id,
-        uri: file.uri,
-        durationMs: file.durationMs,
-        order: 0,
-        textOverlays: [],
-      };
-      const now = new Date().toISOString();
-      setCurrentVideoProject({
-        id: `vp-${Date.now()}`,
-        title: file.name,
-        createdAt: now,
-        updatedAt: now,
-        clips: [newClip],
-        totalDurationMs: file.durationMs,
-      });
-    },
-    [setCurrentVideoProject]
-  );
+  (file: UploadFile) => {
+    const newClip: VideoClip = {
+      id: file.id,
+      uri: file.uri,
+      durationMs: file.durationMs,
+      order: 0,
+      textOverlays: [],
+    };
+    const now = new Date().toISOString();
+    setCurrentVideoProject({
+      id: `vp-${Date.now()}`,
+      projectId: currentProject?.id ?? '',
+      title: file.name,
+      createdAt: now,
+      updatedAt: now,
+      clips: [newClip],
+      totalDurationMs: file.durationMs,
+    });
+    navigation.navigate('editorscreen');
+  },
+  [setCurrentVideoProject, currentProject, navigation]
+);
+
+
+
+
+
+
+
   const startSimulatedUpload = useCallback((id: string) => {
     const interval = setInterval(() => {
       setFiles((prev): any => {

@@ -10,7 +10,6 @@ import PasswordSuccess from "./Passwordsuccess";
 import Onboarding from "./Onboarding/Onboardingscreen";
 import EditorScreen from "./Editor/Editorscreen";
 import TimelineScreen from "./Editor/TimeLine";
-import Bottomtabbar from "./Tabbar/BottomTabbar";
 import Dashboardtabbar from "./Tabbar/DashboardTabbar";
 import NewProjectScreen from "./Dashboard/NewProject";
 import InviteMemberScreen from "./Dashboard/InviteMember";
@@ -20,7 +19,6 @@ import SettingsScreen from "./Dashboard/Settings";
 import ProjectDetailScreen from "./Project/ProjectDetail";
 import ActivityScreen from "./Dashboard/ActivityScreen";
 import ExportLibraryScreen from "./Editor/Export";
-import VideoUploadScreen from "./Dashboard/uploadScreen";
 import VersionHistoryScreen from "./Dashboard/VersionHistory";
 
 const Stack=createNativeStackNavigator();
@@ -50,8 +48,8 @@ function MainStackNavigator(){
                    <Stack.Screen name="uploadvideo" component={UploadVideoScreen} />
                     <Stack.Screen name="settings" component={SettingsScreen} />
                      <Stack.Screen name="activities" component={ActivityScreen} />
-                      <Stack.Screen name="uploadscreen" component={VideoUploadScreen} />
-                   
+                      
+                    <Stack.Screen name="export" component={ExportLibraryScreen} />
                <Stack.Screen name="versionhistory" component={VersionHistoryScreen} />
                    
         </Stack.Navigator>

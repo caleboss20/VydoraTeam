@@ -532,6 +532,8 @@ export default function ProjectDetailScreen() {
   //  opens image picker, sets thumbnailUrl on success ──
    
 const pickCoverImage = async () => {
+  
+  if(!currentProject) return; 
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
   if (status !== 'granted') return
   const result = await ImagePicker.launchImageLibraryAsync({
@@ -735,7 +737,7 @@ const pickCoverImage = async () => {
           <TouchableOpacity
             style={styles.primaryBtn}
             activeOpacity={0.85}
-            onPress={() => navigation.navigate("uploadscreen")}
+            onPress={() => navigation.navigate("editorscreen")}
           >
             <Ionicons
               name="create-outline"

@@ -23,6 +23,7 @@ import { useNavigation } from "@react-navigation/native";
 import * as VideoThumbnails from "expo-video-thumbnails";
 
 import { useVideoProject } from "../Contexts/VideoProjectContext";
+import { useProject } from "../Contexts/projectContext";
 import { VideoClip, TextOverlay } from "../types";
 import BottomToolbar from "../Tabbar/editTools";
 import { useComment } from "../Contexts/commentContext";
@@ -33,6 +34,13 @@ import CropRatioPanel from "./cropRatioPanel";
 // import CropOverlay from "./cropOverlay";
 import MusicToolPanel from "./MusicToolPanel"; // panel for picking/adjusting background music
 import { CROP_RATIO_PRESETS } from '../services/cropService';
+
+
+//for the exporting//
+import { ExportConfirmModal } from "../components/ExportModal";
+import { ExportProgressSheet } from "../components/Exportsheet";
+import { exportService } from "../services/exportService";
+import { getRandomQuote } from "../../../constants/exportQuotes";
 
 const COLORS = {
   background: "#0B0D13",
@@ -387,13 +395,22 @@ function DraggableOverlay({
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
 
-  const {
-    currentVideoProject,
-    updateClipTrim,
-    deleteClip,
-    duplicateClip,
-    splitClip,
-  } = useVideoProject();
+const { currentVideoProject, updateClipTrim, deleteClip, duplicateClip, splitClip } = useVideoProject();
+const { currentProject } = useProject();
+
+
+  //for the exporting modal//
+const [showExportConfirm, setShowExportConfirm] = useState(false);
+const [exportState, setExportState] = useState<'idle' | 'exporting' | 'done'>('idle');
+const [progress, setProgress] = useState(0);
+const [quote, setQuote] = useState(getRandomQuote());
+const quoteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+const project = currentVideoProject && currentVideoProject.projectId === currentProject?.id
+    ? currentVideoProject
+    : null;
+
+const projectId = project?.id;
 
   const {
     updateClipSpeed,
@@ -408,20 +425,42 @@ export default function EditorScreen() {
     removeBackgroundMusic,
   } = useVideoProject();
 
-  const project = currentVideoProject;
-  const projectId = project?.id;
   const { fetchComments } = useComment();
 
   //for the video volume//
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
 
-  //for the selectedoverlay//
+  //for the selectedoverlay//s
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
     null,
   );
 
 //for the textoverlay//
   const [previewSize, setPreviewSize] = useState({ width: 1, height: 1 });
+
+//---------for the exporting feature------------//
+useEffect(() => {
+  return () => {
+    if (quoteIntervalRef.current) clearInterval(quoteIntervalRef.current);
+  };
+}, []);
+const handleExportConfirm = () => {
+  if (!currentVideoProject) return;
+  setShowExportConfirm(false);
+  setExportState('exporting');
+  setProgress(0);
+  setQuote(getRandomQuote());
+  quoteIntervalRef.current = setInterval(() => {
+    setQuote((prev) => getRandomQuote(prev));
+  }, 2500);
+  exportService.createExport(currentVideoProject, (pct) => setProgress(pct), '')
+    .then(() => {
+      if (quoteIntervalRef.current) clearInterval(quoteIntervalRef.current);
+      setExportState('done');
+    });
+};
+
+
 
   useEffect(() => {
     if (projectId) {
@@ -838,7 +877,9 @@ const handleConfirmCrop = (cropData: {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn}>
+        <TouchableOpacity 
+        onPress={() => setShowExportConfirm(true)}
+        style={styles.headerBtn}>
           <Ionicons
             name="share-outline"
             size={scale(22)}
@@ -1221,6 +1262,24 @@ const handleConfirmCrop = (cropData: {
     onClose={() => setCropOverlayVisible(false)}
   />
 )} */}
+
+{/* //for the export modal// */}
+
+<ExportConfirmModal
+  visible={showExportConfirm}
+  onCancel={() => setShowExportConfirm(false)}
+  onConfirm={handleExportConfirm}
+/>
+<ExportProgressSheet
+  visible={exportState !== 'idle'}
+  progress={progress}
+  quote={quote}
+  isDone={exportState === 'done'}
+  onClose={() => {
+    setExportState('idle');
+    setProgress(0);
+  }}
+/>
 
     </SafeAreaView>
   );

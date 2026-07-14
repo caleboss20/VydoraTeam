@@ -26,6 +26,14 @@ const Splashscreen = () => {
     const timer = setTimeout(checkAndNavigate, 2000);
     return () => clearTimeout(timer);
   }, [isLoadingAuth, user]);
+
+//  useEffect(() => {
+// AsyncStorage.clear().then(()=>{
+//   console.log('cleared')
+// })
+//  },[])
+
+
   return (
     <View style={styles.container}>
       <Image style={styles.logo} source={require("../../assets/logo.png")} />

@@ -1,4 +1,4 @@
-import { Export } from '../types';
+import { Export ,VideoProject} from '../types';
 import { CONFIG } from '../config';
 // Thin service layer, same pattern as clipService / projectService.
 //
@@ -49,8 +49,55 @@ async function retryExport(exportId: string, token: string): Promise<Export> {
   if (!res.ok) throw new Error('Failed to retry export');
   return res.json();
 }
+
+
+
+async function createExport(
+  project: VideoProject,
+  onProgress: (percent: number) => void,
+  token: string
+): Promise<Export> {
+  if (CONFIG.USE_MOCK) {
+    return new Promise((resolve) => {
+      let pct = 0;
+      const tick = setInterval(() => {
+        pct += Math.random() * 12 + 4;
+        if (pct >= 100) {
+          pct = 100;
+          clearInterval(tick);
+          onProgress(pct);
+          const newExport: Export = {
+            id: `e${Date.now()}`,
+            projectId: project.projectId,
+            projectName: project.title,
+            title: project.title,
+            resolution: '1080p',
+            format: 'MP4',
+            sizeMb: Math.round((project.totalDurationMs / 1000) * 2.5),
+            status: 'Ready',
+            createdAt: new Date().toISOString(),
+          };
+          mockStore = [newExport, ...mockStore];
+          resolve(newExport);
+          return;
+        }
+        onProgress(pct);
+      }, 220);
+    });
+  }
+  const res = await fetch(`${CONFIG.API_BASE}/exports`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId: project.projectId }),
+  });
+  if (!res.ok) throw new Error('Failed to create export');
+  return res.json();
+}
+
+
 export const exportService = {
   getExports,
   deleteExport,
   retryExport,
+  createExport,
 };
