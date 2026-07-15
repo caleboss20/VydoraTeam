@@ -18,6 +18,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (updates: Partial<User>) => Promise<void>;
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -86,6 +87,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(e.message);
     }
   };
+  // Updates user locally + persists to AsyncStorage.
+  // TODO: once authService has an update-profile endpoint, call it here
+  // before setUser, so the name is synced to the backend too.
+  const updateUser = async (updates: Partial<User>) => {
+    if (!user) return;
+    try {
+      setError(null);
+      const updatedUser = { ...user, ...updates };
+      setUser(updatedUser);
+      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.USER, JSON.stringify(updatedUser));
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
   return (
     <AuthContext.Provider value={{
       user,
@@ -95,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      updateUser,
     }}>
       {children}
     </AuthContext.Provider>

@@ -95,6 +95,16 @@ export type TextOverlay = {
 
 };
 
+export type VideoSegment = {
+  id: string;
+  startMs: number;   // in-point within the original clip
+  endMs: number;     // out-point within the original clip
+  transitionOut?: {  // transition into the NEXT segment, undefined = hard cut
+    type: 'crossfade' | 'wipe' | 'none';
+    durationMs: number;
+  };
+};
+
 
 
 export type VideoClip = {
@@ -108,6 +118,7 @@ export type VideoClip = {
   textOverlays?: TextOverlay[];
   trimStartMs?: number; // ADDED: defaults to 0 if unset
   trimEndMs?: number;   // ADDED: defaults to durationMs if unset
+ segments?:VideoSegment;
   volume?:number;
   speed?:number;
   filterId?:string;
@@ -115,6 +126,9 @@ export type VideoClip = {
   cropOffsetX?: number;   // 0 to 1, horizontal position of the crop box within the frame
   cropOffsetY?: number;   // 0 to 1, vertical position of the crop box within the frame
   cropZoom?: number;      // 1 = no zoom, >1 = zoomed in, used with offsets to pan around
+ 
+
+
 };
 
 export type VideoProject = {
@@ -150,6 +164,7 @@ ratioValue:number;
 export type ExportStatus = 'Ready' | 'Processing' | 'Failed';
 export interface Export {
   id: string;
+  fileUrl?:string;
   projectId: string;
   projectName: string;
   title: string;

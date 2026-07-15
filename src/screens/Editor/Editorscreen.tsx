@@ -82,6 +82,8 @@ function ClipTrimmer({
   isActive,
   onPress,
 }: ClipTrimmerProps) {
+
+  
   const clipDurationPx = (clip.durationMs / 1000) * PX_PER_SECOND;
   const trimStartMs = clip.trimStartMs ?? 0;
   const trimEndMs = clip.trimEndMs ?? clip.durationMs;
@@ -747,6 +749,11 @@ const togglePlayback = () => {
     updateClipTrim(clipId, trimStartMs, trimEndMs);
   };
 
+const handleSegmentsChange = (clipId: string, segments: VideoSegment[]) => {
+  updateClipSegments(clipId, segments); // new context method, mirrors updateClipTrim
+};
+
+
   // Text Overlays selector
   const visibleOverlays = useMemo(() => {
     const list: Array<{
@@ -1096,6 +1103,7 @@ const handleConfirmCrop = (cropData: {
                   <Text style={styles.aiTextChipText}>Add text</Text>
                 </TouchableOpacity>
               )}
+              
             </View>
 
             {/* 3. Video Clips Track */}

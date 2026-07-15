@@ -1,4 +1,4 @@
-import { Export ,VideoProject} from '../types';
+import { Export, VideoProject } from '../types';
 import { CONFIG } from '../config';
 // Thin service layer, same pattern as clipService / projectService.
 //
@@ -10,11 +10,11 @@ import { CONFIG } from '../config';
 // Now delete/retry mutate this array directly, so repeated fetches within
 // the same app session reflect prior changes.
 let mockStore: Export[] = [
-  { id: 'e1', projectId: 'p1', projectName: 'Test', title: 'Summer campaign', resolution: '1080p', format: 'MP4', sizeMb: 184, status: 'Ready', isFinal: true, createdAt: '2026-06-14T00:00:00Z' },
-  { id: 'e2', projectId: 'p1', projectName: 'Test', title: 'Campaign, v3', resolution: '1080p', format: 'MP4', sizeMb: 179, status: 'Ready', createdAt: '2026-06-13T00:00:00Z' },
+  { id: 'e1', projectId: 'p1', projectName: 'Test', title: 'Summer campaign', resolution: '1080p', format: 'MP4', sizeMb: 184, status: 'Ready', isFinal: true, createdAt: '2026-06-14T00:00:00Z', fileUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
+  { id: 'e2', projectId: 'p1', projectName: 'Test', title: 'Campaign, v3', resolution: '1080p', format: 'MP4', sizeMb: 179, status: 'Ready', createdAt: '2026-06-13T00:00:00Z', fileUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
   { id: 'e3', projectId: 'p1', projectName: 'Test', title: 'Behind the scenes', resolution: '720p', format: 'MOV', sizeMb: 96, status: 'Processing', createdAt: '2026-06-12T00:00:00Z' },
-  { id: 'e4', projectId: 'p1', projectName: 'Test', title: 'Product launch teaser', resolution: '4K', format: 'MP4', sizeMb: 410, status: 'Ready', createdAt: '2026-06-10T00:00:00Z' },
-  { id: 'e5', projectId: 'p1', projectName: 'Test', title: 'Client review cut', resolution: '1080p', format: 'MP4', sizeMb: 152, status: 'Ready', createdAt: '2026-06-08T00:00:00Z' },
+  { id: 'e4', projectId: 'p1', projectName: 'Test', title: 'Product launch teaser', resolution: '4K', format: 'MP4', sizeMb: 410, status: 'Ready', createdAt: '2026-06-10T00:00:00Z', fileUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
+  { id: 'e5', projectId: 'p1', projectName: 'Test', title: 'Client review cut', resolution: '1080p', format: 'MP4', sizeMb: 152, status: 'Ready', createdAt: '2026-06-08T00:00:00Z', fileUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4' },
 ];
 async function getExports(token: string): Promise<Export[]> {
   if (CONFIG.USE_MOCK) return Promise.resolve(mockStore);
@@ -76,6 +76,7 @@ async function createExport(
             sizeMb: Math.round((project.totalDurationMs / 1000) * 2.5),
             status: 'Ready',
             createdAt: new Date().toISOString(),
+            fileUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4', // ADDED: mock placeholder, replace once real render pipeline exists
           };
           mockStore = [newExport, ...mockStore];
           resolve(newExport);
@@ -100,4 +101,4 @@ export const exportService = {
   deleteExport,
   retryExport,
   createExport,
-};
+}

@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Image
 } from "react-native";
+
+import { Modal, TextInput, KeyboardAvoidingView, Platform,} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { moderateScale, verticalScale, scale } from "react-native-size-matters";
@@ -87,6 +89,8 @@ const ClipsTab = ({
       </View>
     );
   }
+
+
   if (clips.length === 0) {
     return (
       <View style={styles.emptyState}>
@@ -248,6 +252,7 @@ const MembersTab = ({
           )}
         </View>
       ))}
+      
       <TouchableOpacity
         style={styles.inviteBtn}
         onPress={onInvite}
@@ -324,12 +329,14 @@ const SettingsTab = ({
   projectName: string;
 }) => {
   const navigation = useNavigation<any>();
-  const { renameProject, updateStatus, deleteProject } = useProject();
+  const { renameProject, updateStatus, deleteProject,currentProject, updateThumbnail } = useProject();
   const [notifications, setNotifications] = useState(true);
   const [autoSave, setAutoSave] = useState(true);
   const [publicAccess, setPublicAccess] = useState(false);
   const [watermark, setWatermark] = useState(false);
    
+
+
   const handleRename = () => {
     Alert.prompt(
       "Rename project",
@@ -525,27 +532,45 @@ const SettingsTab = ({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProjectDetailScreen() {
-  
+
   const navigation = useNavigation<any>();
   //  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
-  const { currentProject ,updateThumbnail} = useProject();
+  const { currentProject, updateThumbnail, renameProject } = useProject();
   //  opens image picker, sets thumbnailUrl on success ──
-   
-const pickCoverImage = async () => {
-  
-  if(!currentProject) return; 
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
-  if (status !== 'granted') return
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    allowsEditing: true,
-    aspect: [16, 9],
-    quality: 0.7,
-  })
-  if (!result.canceled) {
-    await updateThumbnail(currentProject.id, result.assets[0].uri) // CHANGED
-  }
-}
+
+   // ── Rename bottom sheet state ──
+  const [renameVisible, setRenameVisible] = useState(false);
+  const [renameInput, setRenameInput] = useState(currentProject?.name ?? "");
+
+  const openRenameSheet = () => {
+    setRenameInput(currentProject?.name ?? "");
+    setRenameVisible(true);
+  };
+
+  const isValidRename =
+    renameInput.trim().length > 0 &&
+    renameInput.trim() !== (currentProject?.name ?? "").trim();
+
+  const handleConfirmRename = async () => {
+    if (!isValidRename || !currentProject) return;
+    await renameProject(currentProject.id, renameInput.trim());
+    setRenameVisible(false);
+  };
+
+  const pickCoverImage = async () => {
+    if (!currentProject) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      await updateThumbnail(currentProject.id, result.assets[0].uri); // CHANGED
+    }
+  };
 
   const { fetchClips, getClipsForProject, isLoading: clipsLoading } = useClip();
   const {
@@ -559,6 +584,9 @@ const pickCoverImage = async () => {
     isLoading: commentsLoading,
   } = useComment();
   const [activeTab, setActiveTab] = useState<Tab>("Clips");
+
+ 
+
   useEffect(() => {
     if (!currentProject) return;
     fetchClips(currentProject.id);
@@ -567,7 +595,6 @@ const pickCoverImage = async () => {
   }, [currentProject?.id]);
   if (!currentProject) {
     return (
-      
       <SafeAreaView style={styles.safe} edges={["top"]}>
         <View style={styles.centered}>
           <ActivityIndicator color={YELLOW} />
@@ -583,25 +610,25 @@ const pickCoverImage = async () => {
       label: "Videos",
       value: projectClips.length,
       icon: "videocam-outline" as keyof typeof Ionicons.glyphMap,
-       navigation:"videos"
+      navigation: "videos",
     },
     {
       label: "Members",
       value: projectMembers.length,
       icon: "people-outline" as keyof typeof Ionicons.glyphMap,
-      navigation:"members",
+      navigation: "members",
     },
     {
       label: "Comments",
       value: projectComments.length,
       icon: "chatbubble-outline" as keyof typeof Ionicons.glyphMap,
-       navigation:"comments"
+      navigation: "comments",
     },
     {
       label: "Versions",
       value: 0,
       icon: "git-branch-outline" as keyof typeof Ionicons.glyphMap,
-       navigation:"versionhistory"
+      navigation: "versionhistory",
     },
   ];
 
@@ -609,15 +636,16 @@ const pickCoverImage = async () => {
     key: Tab;
     icon: keyof typeof Ionicons.glyphMap;
     iconActive: keyof typeof Ionicons.glyphMap;
-    navigation:string;
+    navigation: string;
   }[] = [
-    { key: "Clips", icon: "film-outline", iconActive: "film" , navigation:"videos"},
-    { key: "Members", icon: "people-outline", iconActive: "people" , navigation:"members"},
-    { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble" , navigation:"comments"},
-    { key: "Settings", icon: "settings-outline", iconActive: "settings" , navigation:"settings"},
+    { key: "Clips", icon: "film-outline", iconActive: "film", navigation: "videos" },
+    { key: "Members", icon: "people-outline", iconActive: "people", navigation: "members" },
+    { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble", navigation: "comments" },
+    { key: "Settings", icon: "settings-outline", iconActive: "settings", navigation: "settings" },
   ];
 
   const isActive = currentProject.status === "Active";
+
   const renderTab = () => {
     switch (activeTab) {
       case "Clips":
@@ -651,8 +679,6 @@ const pickCoverImage = async () => {
     }
   };
 
-  
-
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Header */}
@@ -677,46 +703,64 @@ const pickCoverImage = async () => {
         contentContainerStyle={styles.scroll}
       >
         {/* Thumbnail */}
-      <Pressable style={styles.thumbnail} onPress={pickCoverImage}>
-        {currentProject.thumbnailUrl ? ( // CHANGED: read from currentProject, not local state
-    <Image source={{ uri: currentProject.thumbnailUrl }} style={styles.coverImage} />
-        ) : (
-    <Ionicons
-      name="film"
-      size={moderateScale(52)}
-      color={TEXT_MUTED}
-      style={{ opacity: 0.4 }}
-    />
-  )}
+        <Pressable style={styles.thumbnail} onPress={pickCoverImage}>
+          {currentProject.thumbnailUrl ? ( // CHANGED: read from currentProject, not local state
+            <Image source={{ uri: currentProject.thumbnailUrl }} style={styles.coverImage} />
+          ) : (
+            <Ionicons
+              name="film"
+              size={moderateScale(52)}
+              color={TEXT_MUTED}
+              style={{ opacity: 0.4 }}
+            />
+          )}
+        </Pressable>
+
+        {/* Title + Badge */}
+<Pressable
+
+ style={styles.titleRow}>
+  <Pressable
+  onPress={openRenameSheet}
+   style={[styles.titleNameRow, { flex: 1, minWidth: 0 }]}>
+    <Text
+      style={[styles.projectTitle, { flexShrink: 1 }]}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
+      {currentProject.name}
+    </Text>
+    <TouchableOpacity
+      onPress={openRenameSheet}
+      hitSlop={8}
+      style={[styles.renamePencil, { flexShrink: 0 }]}
+    >
+      <Ionicons name="pencil" size={moderateScale(15)} color="#fff" />
+    </TouchableOpacity>
+  </Pressable>
+
+  <View style={[styles.activeBadge, !isActive && styles.draftBadge, { flexShrink: 0 }]}>
+    {isActive && <View style={styles.activeDot} />}
+    <Text
+      style={[
+        styles.activeBadgeText,
+        !isActive && { color: TEXT_MUTED },
+      ]}
+    >
+      {currentProject.status}
+    </Text>
+  </View>
 </Pressable>
 
 
-
-        {/* Title + Badge */}
-        <View style={styles.titleRow}>
-          <Text style={styles.projectTitle}>{currentProject.name}</Text>
-          <View style={[styles.activeBadge, !isActive && styles.draftBadge]}>
-            {isActive && <View style={styles.activeDot} />}
-            <Text
-              style={[
-                styles.activeBadgeText,
-                !isActive && { color: TEXT_MUTED },
-              ]}
-            >
-              {currentProject.status}
-            </Text>
-          </View>
-        </View>
         {/* Stats Row */}
         <View style={styles.statsRow}>
-         
           {stats.map((stat, i) => (
             <React.Fragment key={stat.label}>
               <Pressable
-                 style={styles.statItem}
-                 onPress={() => navigation.navigate(stat.navigation) }
-                 
-                 >
+                style={styles.statItem}
+                onPress={() => navigation.navigate(stat.navigation)}
+              >
                 <Ionicons
                   name={stat.icon}
                   size={moderateScale(14)}
@@ -729,8 +773,6 @@ const pickCoverImage = async () => {
               {i < stats.length - 1 && <View style={styles.statDivider} />}
             </React.Fragment>
           ))}
-
-
         </View>
         {/* CTA Buttons */}
         <View style={styles.ctaRow}>
@@ -756,8 +798,6 @@ const pickCoverImage = async () => {
           </TouchableOpacity>
         </View>
         {/* Tabs */}
-
-
         <View style={styles.tabBar}>
           {TABS.map((tab) => {
             const active = activeTab === tab.key;
@@ -786,9 +826,50 @@ const pickCoverImage = async () => {
         {/* Tab Content */}
         <View style={styles.tabContent}>{renderTab()}</View>
       </ScrollView>
+
+      {/* Rename bottom sheet */}
+      <Modal
+        visible={renameVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setRenameVisible(false)}
+      >
+        <Pressable style={styles.sheetOverlay} onPress={() => setRenameVisible(false)}>
+          <Pressable style={styles.sheetContainer} onPress={() => {}}>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Rename project</Text>
+                <TouchableOpacity onPress={() => setRenameVisible(false)} hitSlop={10}>
+                  <Ionicons name="close-outline" size={moderateScale(22)} color={TEXT_MUTED} />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.sheetInput}
+                value={renameInput}
+                onChangeText={setRenameInput}
+                placeholder="Project name"
+                placeholderTextColor={TEXT_MUTED}
+                autoFocus
+              />
+              <TouchableOpacity
+                style={[styles.sheetConfirmBtn, isValidRename && styles.sheetConfirmBtnActive]}
+                activeOpacity={0.8}
+                disabled={!isValidRename}
+                onPress={handleConfirmRename}
+              >
+                <Text style={[styles.sheetConfirmText, isValidRename && styles.sheetConfirmTextActive]}>
+                  Confirm
+                </Text>
+              </TouchableOpacity>
+            </KeyboardAvoidingView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
+
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
@@ -843,6 +924,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(16),
     marginBottom: verticalScale(16),
   },
+
+
+
+//for the project title//
+titleNameRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: scale(6),
+},
+renamePencil: {
+  padding: scale(4),
+  marginTop:scale(3),
+},
+
+
+
+
+
+
   projectTitle: {
     color: TEXT_PRIMARY,
     fontSize: moderateScale(20),
@@ -1211,4 +1311,71 @@ const styles = StyleSheet.create({
   draftBadge: {
     backgroundColor: "#2A2A2A",
   },
+
+//for the bottom sheet for editing project name//
+
+sheetOverlay: {
+  flex: 1,
+  backgroundColor: "rgba(0,0,0,0.6)",
+  justifyContent: "flex-end",
+},
+sheetContainer: {
+  backgroundColor: "#1C1C1C",
+  borderTopLeftRadius: moderateScale(20),
+  borderTopRightRadius: moderateScale(20),
+  paddingHorizontal: moderateScale(20),
+  paddingTop: verticalScale(10),
+  paddingBottom: verticalScale(28),
+},
+sheetHandle: {
+  width: moderateScale(36),
+  height: moderateScale(4),
+  borderRadius: moderateScale(2),
+  backgroundColor: "#2A2A2A",
+  alignSelf: "center",
+  marginBottom: verticalScale(14),
+},
+sheetHeader: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: verticalScale(16),
+},
+sheetTitle: {
+  color: TEXT_PRIMARY,
+  fontSize: moderateScale(16),
+  fontWeight: "600",
+},
+sheetInput: {
+  backgroundColor: "#141414",
+  borderWidth: 1,
+  borderColor: "#2A2A2A",
+  borderRadius: moderateScale(12),
+  paddingHorizontal: moderateScale(14),
+  paddingVertical: verticalScale(12),
+  color: TEXT_PRIMARY,
+  fontSize: moderateScale(15),
+  marginBottom: verticalScale(18),
+},
+sheetConfirmBtn: {
+  backgroundColor: "#2A2A2A",
+  borderRadius: moderateScale(12),
+  paddingVertical: verticalScale(13),
+  alignItems: "center",
+},
+sheetConfirmBtnActive: {
+  backgroundColor: YELLOW,
+},
+sheetConfirmText: {
+  color: TEXT_MUTED,
+  fontSize: moderateScale(15),
+  fontWeight: "600",
+},
+sheetConfirmTextActive: {
+  color: "#141414",
+},
+
+
+
 });
+
