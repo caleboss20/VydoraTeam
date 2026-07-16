@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+
 import {
   moderateScale,
   verticalScale,
@@ -19,6 +20,7 @@ import {
   s,
   vs,
 } from "react-native-size-matters";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
@@ -53,6 +55,8 @@ const C = {
   textDim: "#5A5A5A",
   iconBg: "#222222",
 };
+
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getInitials(name: string | undefined): string {
   if (!name || !name.trim()) return "?";
@@ -60,6 +64,9 @@ function getInitials(name: string | undefined): string {
   if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+
+
+
 // ─── Subcomponents ────────────────────────────────────────────────────────────
 const SectionLabel = ({ title }: { title: string }) => (
   <Text style={styles.sectionLabel}>{title}</Text>
@@ -112,16 +119,22 @@ export default function ProfileScreen() {
   const handleLogout = () => {
     logout();
   };
+
+
+  
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity>
+      <View style={styles.header}>``
+        <TouchableOpacity
+        onPress={()=>navigation.navigate("projects")}
+        >
           <Ionicons
-            name="menu-outline"
+            name="arrow-back"
             size={moderateScale(24)}
             color={C.text}
           />
+
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
         <TouchableOpacity onPress={() => navigation.navigate("settings")}>
@@ -165,20 +178,27 @@ export default function ProfileScreen() {
           ))}
         </View>
         {/* Pro plan banner — tappable, but data is placeholder until billing context exists */}
-        <TouchableOpacity style={styles.planBanner} activeOpacity={0.8}>
+        <TouchableOpacity
+        onPress={()=>navigation.navigate("proscreen")}
+         style={styles.planBanner} activeOpacity={0.8}>
           <View style={styles.planLeft}>
             <Ionicons
               name="star-outline"
               size={moderateScale(20)}
               color={C.accent}
             />
-            <View style={styles.planText}>
+            <View
+          
+            style={styles.planText}>
               <Text style={styles.planName}>{PLAN_PLACEHOLDER.name}</Text>
               <Text style={styles.planDetail}>{PLAN_PLACEHOLDER.detail}</Text>
             </View>
           </View>
           <Text style={styles.planManage}>Manage</Text>
         </TouchableOpacity>
+
+
+
         {/* Account section */}
         <SectionLabel title="ACCOUNT" />
         <View style={styles.card}>
