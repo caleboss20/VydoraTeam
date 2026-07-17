@@ -153,7 +153,7 @@ intensity?:number;
 }
 
 export interface CropRatioPreset {
-id:string;
+id:string
 label:string;
 ratioLabel:string;
 ratioValue:number;

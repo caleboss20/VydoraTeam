@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Dimensions,
   Animated,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { s, ms, vs } from 'react-native-size-matters';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,12 +20,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Remote: { uri: 'https://your-cdn.com/pro-bg-1.jpg' }
 const HERO_IMAGES = [
   require('../../../assets/lady4.jpg'),
-  require('../../../assets/lady1.jpg'),
-    require('../../../assets/lady5.jpg'),
-      require('../../../assets/lady6.jpg'),
-        require('../../../assets/lady2.jpg'),
-  require('../../../assets/lady7.jpg'),
-    require('../../../assets/lady3.jpg'),
+   require('../../../assets/lady1.jpg'),
+    require('../../../assets/lady2.jpg'),
+      require('../../../assets/lady3.jpg'),
+   require('../../../assets/lady5.jpg'),
+    require('../../../assets/lady6.jpg'),
+     require('../../../assets/lady7.jpg'),
+    
+  
 ];
 
 const AnimatedImageBackground = Animated.createAnimatedComponent(ImageBackground);
@@ -44,6 +48,35 @@ function formatTime(totalSeconds: number) {
 
 const IMAGE_ROTATE_MS = 5000; // change image every 5s
 const FADE_MS = 500;
+
+// TODO: point this at your real backend
+const API_BASE_URL = 'https://api.vydora.app';
+
+// TODO: replace amounts with your actual plan pricing in kobo/pesewas (Paystack expects the smallest currency unit)
+const PLAN_DETAILS: Record<
+  PlanId,
+  { label: string; amountMinorUnits: number; paystackPlanCode?: string }
+> = {
+  yearlyTrial: {
+    label: 'Yearly (Free Trial)',
+    amountMinorUnits: 3898_00, // charged only after trial ends
+    paystackPlanCode: 'PLN_yearly_trial', // TODO: real Paystack plan code
+  },
+  yearlyDiscount: {
+    label: 'Yearly (50% off)',
+    amountMinorUnits: 3898_00,
+    paystackPlanCode: 'PLN_yearly_discount', // TODO: real Paystack plan code
+  },
+  monthly: {
+    label: 'Monthly',
+    amountMinorUnits: 849_00,
+    paystackPlanCode: 'PLN_monthly', // TODO: real Paystack plan code
+  },
+};
+
+// TODO: your backend should redirect Paystack back to a URL containing this path
+// once payment completes, so the WebView knows to stop and verify.
+const PAYMENT_CALLBACK_MATCH = '/payment/callback';
 
 export default function ProScreen({ navigation }: any) {
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('yearlyDiscount');
@@ -104,6 +137,119 @@ export default function ProScreen({ navigation }: any) {
   };
 
   const currentSeconds = progress * PREVIEW_DURATION_SEC;
+
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // ── STUBBED FOR NOW ──────────────────────────────────────────────
+  // No backend yet, so this just simulates a purchase: spinner → short
+  // delay → success alert → navigate to Dashboard. Nothing is charged,
+  // nothing hits the network. Swap this out for the real version below
+  // once /payments/paystack/initialize and /verify exist on your backend.
+  const handleContinue = () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
+    setTimeout(() => {
+      setIsProcessing(false);
+      Alert.alert(
+        'Welcome to Vydora Pro 🎉',
+        `You're subscribed to: ${PLAN_DETAILS[selectedPlan].label}`,
+        [
+          {
+            text: 'Continue',
+            onPress: () =>
+              navigation?.replace
+                ? navigation.replace('projects')
+                : navigation?.navigate('projects'),
+          },
+        ]
+      );
+    }, 1200);
+  };
+
+  /* ── REAL PAYSTACK VERSION — swap in once your backend is ready ──────
+
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [showCheckout, setShowCheckout] = useState(false);
+
+  const handleContinue = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      // TODO: swap in the real signed-in user's email — Paystack requires one
+      // to initialize a transaction, and your backend should already know it.
+      const userEmail = 'user@example.com';
+
+      const response = await fetch(
+        `${API_BASE_URL}/payments/paystack/initialize`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // TODO: attach your auth token, e.g. Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            plan: selectedPlan,
+            planCode: PLAN_DETAILS[selectedPlan].paystackPlanCode,
+            email: userEmail,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to start checkout (${response.status})`);
+      }
+
+      // Expected backend shape: { authorizationUrl: string, reference: string }
+      const data = await response.json();
+      if (!data?.authorizationUrl) {
+        throw new Error('No checkout URL returned from backend');
+      }
+
+      setCheckoutUrl(data.authorizationUrl);
+      setShowCheckout(true);
+    } catch (err) {
+      console.error('Checkout init failed:', err);
+      Alert.alert(
+        "Couldn't start checkout",
+        'Please check your connection and try again.'
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Fires as the WebView navigates. Once Paystack redirects back to our
+  // callback URL, we close the sheet and verify the transaction server-side.
+  const handleWebViewNavigation = async (navState: { url: string }) => {
+    if (!navState.url.includes(PAYMENT_CALLBACK_MATCH)) return;
+
+    setShowCheckout(false);
+
+    try {
+      const reference = new URL(navState.url).searchParams.get('reference');
+      const verifyResponse = await fetch(
+        `${API_BASE_URL}/payments/paystack/verify/${reference}`,
+        {
+          headers: {
+            // TODO: attach your auth token here too
+          },
+        }
+      );
+      const verifyData = await verifyResponse.json();
+
+      if (verifyResponse.ok && verifyData?.status === 'success') {
+        navigation?.replace ? navigation.replace('Dashboard') : navigation?.navigate('Dashboard');
+      } else {
+        Alert.alert('Payment not confirmed', 'If you were charged, contact support and we\u2019ll sort it out.');
+      }
+    } catch (err) {
+      console.error('Verification failed:', err);
+      Alert.alert('Payment verification failed', 'Please contact support if you were charged.');
+    }
+  };
+
+  ────────────────────────────────────────────────────────────────── */
 
   return (
     <View style={styles.container}>
@@ -212,11 +358,11 @@ export default function ProScreen({ navigation }: any) {
               end={{ x: 1, y: 0 }}
               style={styles.badge}
             >
-              <Text style={styles.badgeText}>50% OFF</Text>
+              <Text style={styles.badgeText}>45% OFF</Text>
             </LinearGradient>
             <Text style={styles.planTitle}>Yearly</Text>
-            <Text style={styles.planMain}>$38.98</Text>
-            <Text style={styles.planSub}>$0.74 / Week</Text>
+            <Text style={styles.planMain}>GH₵ 200.00 </Text>
+            <Text style={styles.planSub}>GH₵ 3.85 / Week</Text>
           </TouchableOpacity>
 
           {/* Monthly */}
@@ -228,20 +374,28 @@ export default function ProScreen({ navigation }: any) {
             onPress={() => setSelectedPlan('monthly')}
           >
             <Text style={styles.planTitle}>Monthly</Text>
-            <Text style={styles.planMain}>$8.49</Text>
-            <Text style={styles.planSub}>$2.12 / Week</Text>
+            <Text style={styles.planMain}>GH₵ 30.00</Text>
+            <Text style={styles.planSub}>GH₵ 6.92 / Week</Text>
           </TouchableOpacity>
         </View>
 
         {/* Continue button */}
-        <TouchableOpacity activeOpacity={0.85}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleContinue}
+          disabled={isProcessing}
+        >
           <LinearGradient
             colors={['#F2C200', '#FF8A00']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            style={styles.continueBtn}
+            style={[styles.continueBtn, isProcessing && { opacity: 0.7 }]}
           >
-            <Text style={styles.continueText}>Continue</Text>
+            {isProcessing ? (
+              <ActivityIndicator color="#1A1A1A" />
+            ) : (
+              <Text style={styles.continueText}>Continue</Text>
+            )}
           </LinearGradient>
         </TouchableOpacity>
 
@@ -257,6 +411,10 @@ export default function ProScreen({ navigation }: any) {
           <Text style={styles.footerLink}>Restore</Text>
         </View>
       </View>
+
+      {/* Paystack checkout modal goes here once the backend exists —
+          see the commented-out "REAL PAYSTACK VERSION" block above for
+          the WebView + handleWebViewNavigation code to drop back in. */}
     </View>
   );
 }
@@ -461,7 +619,7 @@ const styles = StyleSheet.create({
   continueBtn: {
     marginTop: vs(20),
     borderRadius: ms(12),
-    paddingVertical: vs(12),
+    paddingVertical: vs(11),
     alignItems: 'center',
   },
   continueText: {
@@ -488,5 +646,14 @@ const styles = StyleSheet.create({
     color: '#444',
     fontSize: ms(11),
     marginHorizontal: s(8),
+  },
+  checkoutCloseBtn: {
+    alignSelf: 'flex-end',
+    padding: s(16),
+  },
+  checkoutLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

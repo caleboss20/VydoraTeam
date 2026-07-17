@@ -359,7 +359,7 @@ const SettingsTab = ({
         style: "destructive",
         onPress: () => {
           updateStatus(projectId, "Archived");
-          navigation.navigate("dashboard");
+          navigation.navigate("projects");
         },
       },
       { text: "Cancel", style: "cancel" },

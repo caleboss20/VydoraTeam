@@ -29,7 +29,7 @@ const Splashscreen = () => {
 
 //  useEffect(() => {
 // AsyncStorage.clear().then(()=>{
-//   console.log('cleared')
+//   console.log('cleared')r
 // })
 //  },[])
 

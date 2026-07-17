@@ -16,6 +16,7 @@ export const CONFIG = {
     MEMBERS: 'vydora:members',
      VIDEO_PROJECTS: 'vydora:videoProjects',           
     CURRENT_VIDEO_PROJECT: 'vydora:currentVideoProject',
+    PENDING_INVITE_TOKEN:'vydora:pendingInviteToken',
   },
   USE_MOCK: true,
 };

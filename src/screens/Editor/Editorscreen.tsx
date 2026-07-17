@@ -399,6 +399,8 @@ export default function EditorScreen() {
 
 const { currentVideoProject, updateClipTrim, deleteClip, duplicateClip, splitClip } = useVideoProject();
 const { currentProject } = useProject();
+  const { getMembersForProject, fetchMembers } = useMember();
+
 
 
   //for the exporting modal//
@@ -480,7 +482,7 @@ const handleExportConfirm = () => {
 
   //--------------for the sidebar--------------//
   const [sidebarVisible, setSidebarVisible] = useState(false);
-  const { getMembersForProject, fetchMembers } = useMember();
+
   const onlineMembers = projectId
     ? getMembersForProject(projectId).filter((m) => m.online)
     : [];
@@ -560,7 +562,7 @@ useEffect(() => {
       player.playbackRate = activeClip.speed ?? 1;
     }
   }, [activeClip?.speed, player]);
-
+  
   // Handle active clip playback endpoint
 useEventListener(player, "timeUpdate", (payload) => {
   if (!activeClip) return;
@@ -571,7 +573,7 @@ useEventListener(player, "timeUpdate", (payload) => {
     const musicStart = backgroundMusic.startMs ?? 0;
     const musicTrimStart = backgroundMusic.trimStartMs ?? 0;
     const musicTrimEnd = backgroundMusic.trimEndMs ?? backgroundMusic.durationMs ?? 0;
-    const timelinePosMs = currentPositionMs;
+    const timelinePosMs = curTimeMs;
     const shouldBePlayingMusic =
       timelinePosMs >= musicStart &&
       timelinePosMs < musicStart + (musicTrimEnd - musicTrimStart);
@@ -749,9 +751,9 @@ const togglePlayback = () => {
     updateClipTrim(clipId, trimStartMs, trimEndMs);
   };
 
-const handleSegmentsChange = (clipId: string, segments: VideoSegment[]) => {
-  updateClipSegments(clipId, segments); // new context method, mirrors updateClipTrim
-};
+  const handleSegmentsChange = (clipId: string, segments: VideoSegment[]) => {
+    updateClipSegments(clipId, segments); // new context method, mirrors updateClipTrim
+  };
 
 
   // Text Overlays selector

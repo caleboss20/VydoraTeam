@@ -17,7 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ms, s, vs } from "react-native-size-matters";
 import { useMember } from '../Contexts/memberContext';
-import { useProject } from '../Contexts/projectContext'; 
+import { useProject } from '../Contexts/projectContext';
+import { useInvite } from '../Contexts/InviteContext'; 
 // ---------------------------------------------------------------------------
 // Vydora — Invite Member screen
 // Collaborative video editor. Dark theme, single yellow accent.
@@ -54,6 +55,7 @@ function isValidEmail(value: string) {
 }
 export default function InviteMemberScreen({ navigation }: any) {
   const { inviteMember } = useMember();
+  const {sendInvite,isLoading,error,lastInviteLink}=useInvite()
   const { currentProject } = useProject();
   const projectId = currentProject?.id;
   const [emails, setEmails] = useState<string[]>([]);

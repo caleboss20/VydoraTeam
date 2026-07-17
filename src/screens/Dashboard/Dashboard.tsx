@@ -26,6 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNotification } from "../Contexts/notificatinContext";
 import { Project } from "../types";
 import { useExport } from "../Contexts/exportContext";
+import UpgradeToProBanner from "../components/upgradeToProBanner";
 // ─── Palette ─────────────────────────────────────────────────────────────────
 const C = {
   bg: "#141414",
@@ -158,6 +159,16 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
     </View>
   );
 };
+
+
+// In your Home/Dashboard screen file:
+
+
+
+
+
+
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 function DashboardScreen() {
   const navigation = useNavigation<any>();
@@ -189,6 +200,11 @@ const handleConfirmRename = async () => {
   setRenameVisible(false);
   setRenameTarget(null);
 };
+
+
+
+
+
 
   const unreadCount = notifications.filter((n) => !n.read).length;
   const filteredProjects = useMemo(() => {
@@ -312,10 +328,14 @@ localUri = downloaded.uri;
               onPress={() => navigation.navigate("Profile")}
               style={styles.profileBox}
             >
-              <Image
-                style={styles.profileimage}
-                source={require("../../../assets/app.png")}
-              />
+             <Image
+  style={styles.profileimage}
+  source={
+    user?.avatarUrl
+      ? { uri: user.avatarUrl }
+      : require("../../../assets/app.png")
+  }
+/>
               <View style={styles.topgreetingbox}>
                 <Text style={styles.headerGreeting}>{getGreeting()}</Text>
                 <View style={styles.headerNameRow}>
@@ -388,6 +408,12 @@ localUri = downloaded.uri;
               </TouchableOpacity>
             )}
           </View>
+
+             {/**upgrade to pro banner */}
+         {/* <UpgradeToProBanner onPress={() => navigation.navigate('proscreen')} /> */}
+
+
+
           {/* ── NEW PROJECT hero card (light teal, dashed CTA) ── */}
           <TouchableOpacity
             style={styles.heroCard}

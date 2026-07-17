@@ -13,16 +13,30 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  NavigationProp,
+  RouteProp,
+} from "@react-navigation/native";
 import { useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "./Contexts/Authcontext";
+import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere relative to this file
 // ── Types ─────────────────────────────────────────────────────────
+// signup params + AcceptInvite added to support the invite-driven signup path:
+// - prefillEmail / pendingInviteToken arrive when AcceptInviteScreen sends a
+//   logged-out invitee here
+// - AcceptInvite needs to be listed since this screen may navigate there
+//   after a successful invite-driven signup
 type RootStackParamList = {
   splashscreen: undefined;
   signin: undefined;
   onboarding: undefined;
+  signup: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
+  AcceptInvite: { token: string };
 };
 interface ValidationFields {
   fullName: string;
@@ -39,11 +53,15 @@ interface TouchedFields {
   email?: boolean;
   password?: boolean;
 }
-export default function Signupscreen(){
+export default function Signupscreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "signup">>();
   const { register, isLoadingAuth, error } = useAuth();
   const [fullName, setFullName] = useState<string>("");
-  const [email, setEmail] = useState<string>("");
+  // Prefilled with the invited email address, if this screen was reached
+  // via an invite link — reduces the chance of signing up with a
+  // different email than the one that was actually invited.
+  const [email, setEmail] = useState<string>(route.params?.prefillEmail ?? "");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -81,6 +99,34 @@ export default function Signupscreen(){
     setErrors(e);
     if (Object.keys(e).length === 0) {
       await register(fullName, email, password);
+      // AuthContext's register() catches its own errors internally and
+      // never rethrows, so we can't trust a local success flag or the
+      // `error` state read immediately after this line. Instead, check
+      // the one thing register() only writes on actual success: the
+      // persisted auth token.
+      const savedToken = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN);
+      if (!savedToken) return; // registration failed — `error` below will render
+      // Recover the invite token two possible ways:
+      // 1. Still sitting in route.params — normal case, nothing interrupted
+      //    the AcceptInviteScreen -> Signup handoff
+      // 2. Fall back to AsyncStorage — safety net for when the app was
+      //    killed mid-flow (e.g. invitee left to check an OTP email) and
+      //    route params were lost on relaunch. AcceptInviteScreen wrote
+      //    this key as a backup the moment it detected the person wasn't
+      //    logged in.
+      const pendingToken =
+        route.params?.pendingInviteToken ??
+        (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
+      if (pendingToken) {
+        // Send them back to AcceptInviteScreen instead of wherever a normal
+        // signup would land. This time isAuthenticated will read true there,
+        // so it takes the real accept branch and joins them to the project.
+        navigation.navigate("AcceptInvite", { token: pendingToken });
+      }
+      // No else branch on purpose: for a normal (non-invite) signup, this
+      // screen doesn't navigate at all. Whatever conditionally renders the
+      // auth stack vs. main app stack based on AuthContext's user/token
+      // state handles that redirect automatically.
     }
   };
   const hasError = (field: keyof ValidationErrors): boolean =>
@@ -126,9 +172,7 @@ export default function Signupscreen(){
               onBlur={() => handleBlur("fullName")}
             />
           </View>
-          {hasError("fullName") && (
-            <Text style={styles.errorText}>{errors.fullName}</Text>
-          )}
+          {hasError("fullName") && <Text style={styles.errorText}>{errors.fullName}</Text>}
           {/* Email Input */}
           <View style={[styles.inputRow, hasError("email") && styles.inputError]}>
             <Ionicons name="mail-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />
@@ -149,9 +193,7 @@ export default function Signupscreen(){
               onBlur={() => handleBlur("email")}
             />
           </View>
-          {hasError("email") && (
-            <Text style={styles.errorText}>{errors.email}</Text>
-          )}
+          {hasError("email") && <Text style={styles.errorText}>{errors.email}</Text>}
           {/* Password Input */}
           <View style={[styles.inputRow, hasError("password") && styles.inputError]}>
             <Ionicons name="lock-closed-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />
@@ -178,9 +220,7 @@ export default function Signupscreen(){
               />
             </TouchableOpacity>
           </View>
-          {hasError("password") && (
-            <Text style={styles.errorText}>{errors.password}</Text>
-          )}
+          {hasError("password") && <Text style={styles.errorText}>{errors.password}</Text>}
           {/* Auth error from context */}
           {error && <Text style={styles.errorText}>{error}</Text>}
           {/* Sign Up CTA */}
@@ -201,16 +241,10 @@ export default function Signupscreen(){
           {/* Social icons row */}
           <View style={styles.socialRow}>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
-              <Image
-                style={styles.logo}
-                source={require("../../assets/facebook.png")}
-              />
+              <Image style={styles.logo} source={require("../../assets/facebook.png")} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
-              <Image
-                style={styles.logo}
-                source={require("../../assets/google.png")}
-              />
+              <Image style={styles.logo} source={require("../../assets/google.png")} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
               <Ionicons name="logo-apple" size={ms(22)} color="#FFFFFF" />
@@ -228,6 +262,8 @@ export default function Signupscreen(){
     </SafeAreaView>
   );
 }
+
+
 
 
 const styles = StyleSheet.create({

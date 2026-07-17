@@ -10,6 +10,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  Image,
 } from "react-native";
 
 import {
@@ -20,6 +22,7 @@ import {
   s,
   vs,
 } from "react-native-size-matters";
+import * as ImagePicker from "expo-image-picker"
 
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -105,11 +108,39 @@ export default function ProfileScreen() {
   const isValidName =
     nameInput.trim().length > 0 &&
     nameInput.trim() !== (user?.name ?? "").trim();
-  const handleConfirmName = () => {
+  
+    const handleConfirmName = () => {
     if (!isValidName) return;
     updateUser({ name: nameInput.trim() });
     setEditVisible(false);
   };
+
+const handleChangeAvatar = async () => {
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (status !== "granted") {
+    Alert.alert(
+      "Permission needed",
+      "Allow photo library access to set a profile picture."
+    );
+    return;
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.7,
+  });
+
+  if (!result.canceled && result.assets?.[0]?.uri) {
+    updateUser({ avatarUrl: result.assets[0].uri });
+  }
+};
+
+
+
+
+
   // Only Projects + Exports are backed by real contexts right now.
   // Teams has no context yet, so it's omitted rather than shown as a fake number.
   const stats = [
@@ -151,20 +182,36 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Avatar + name */}
-        <View style={styles.avatarSection}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarInitial}>{initials}</Text>
-          </View>
-          <Text style={styles.userName}>{user?.name ?? "Unnamed"}</Text>
-          <Text style={styles.userEmail}>{user?.email ?? ""}</Text>
-          <TouchableOpacity
-            style={styles.editBtn}
-            activeOpacity={0.75}
-            onPress={openEditSheet}
-          >
-            <Text style={styles.editBtnText}>Edit</Text>
-          </TouchableOpacity>
-        </View>
+<View style={styles.avatarSection}>
+  <TouchableOpacity
+    style={styles.avatar}
+    activeOpacity={0.8}
+    onPress={handleChangeAvatar}
+  >
+    {user?.avatarUrl ? (
+      <Image
+        source={{ uri: user.avatarUrl }}
+        style={styles.avatarImage}
+      />
+    ) : (
+      <Text style={styles.avatarInitial}>{initials}</Text>
+    )}
+    <View style={styles.avatarEditBadge}>
+      <Ionicons name="camera" size={moderateScale(13)} color="#0F0F0F" />
+    </View>
+  </TouchableOpacity>
+  <Text style={styles.userName}>{user?.name ?? "Unnamed"}</Text>
+  <Text style={styles.userEmail}>{user?.email ?? ""}</Text>
+  <TouchableOpacity
+    style={styles.editBtn}
+    activeOpacity={0.75}
+    onPress={openEditSheet}
+  >
+    <Text style={styles.editBtnText}>Edit</Text>
+  </TouchableOpacity>
+</View>
+
+        
         {/* Stats row — Projects + Exports only (real data) */}
         <View style={styles.statsRow}>
           {stats.map((stat, i) => (
@@ -545,4 +592,24 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   sheetConfirmTextActive: { color: "#0F0F0F" },
+
+
+  avatarImage: {
+  width: "100%",
+  height: "100%",
+  borderRadius: 999,
+},
+avatarEditBadge: {
+  position: "absolute",
+  bottom: 0,
+  right: 0,
+  width: moderateScale(24),
+  height: moderateScale(24),
+  borderRadius: moderateScale(12),
+  backgroundColor: C.accent,
+  alignItems: "center",
+  justifyContent: "center",
+  borderWidth: 2,
+  borderColor: C.bg,
+},
 });

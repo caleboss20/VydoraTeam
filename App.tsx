@@ -1,7 +1,7 @@
 import React from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import MainStackNavigator from "./src/screens/MainstackNavigator";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, LinkingOptions } from "@react-navigation/native";
 import { AuthProvider } from "./src/screens/Contexts/Authcontext";
 import { ProjectProvider } from "./src/screens/Contexts/projectContext";
 import { ClipProvider } from "./src/screens/Contexts/clipContext";
@@ -11,6 +11,16 @@ import { NotificationProvider } from "./src/screens/Contexts/notificatinContext"
 import { ExportProvider } from "./src/screens/Contexts/exportContext";
 import { VideoProjectProvider } from "./src/screens/Contexts/VideoProjectContext";
 import { VersionHistoryProvider } from "./src/screens/Contexts/VersionHistoryContext";
+import { InviteProvider } from "./src/screens/Contexts/InviteContext";
+
+const linking: LinkingOptions<any> = {
+  prefixes: ["vydora://", "https://vydora.io"],
+  config: {
+    screens: {
+      AcceptInvite: "invite/:token",
+    },
+  },
+};
 
 export default function App() {
   return (
@@ -18,13 +28,14 @@ export default function App() {
       <AuthProvider>
         <ProjectProvider>
           <VideoProjectProvider>
-            <ClipProvider>
+           <InviteProvider>
+             <ClipProvider>
               <VersionHistoryProvider>
                 <ExportProvider>
                   <MemberProvider>
                     <CommentProvider>
                       <NotificationProvider>
-                        <NavigationContainer>
+                        <NavigationContainer linking={linking}>
                           <MainStackNavigator />
                         </NavigationContainer>
                       </NotificationProvider>
@@ -33,6 +44,7 @@ export default function App() {
                 </ExportProvider>
               </VersionHistoryProvider>
             </ClipProvider>
+           </InviteProvider>
           </VideoProjectProvider>
         </ProjectProvider>
       </AuthProvider>

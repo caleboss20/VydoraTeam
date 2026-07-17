@@ -1,3 +1,4 @@
+
 import {
   View,
   Text,
@@ -14,10 +15,26 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
+import {
+  useNavigation,
+  useRoute,
+  NavigationProp,
+  RouteProp,
+} from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "./Contexts/Authcontext";
+import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere relative to this file
+// signin params + AcceptInvite added for the invite-driven login path —
+// same reasoning as Signupscreen: an invitee might already have an account
+// and land here instead of signup.
+type RootStackParamList = {
+  signup: undefined;
+  forgotpassword: undefined;
+  signin: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
+  AcceptInvite: { token: string };
+};
 interface ValidationFields {
   email: string;
   password: string;
@@ -31,9 +48,10 @@ interface TouchedFields {
   password?: boolean;
 }
 export default function SignInscreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "signin">>();
   const { login, isLoadingAuth, error } = useAuth();
-  const [email, setEmail] = useState<string>("");
+  const [email, setEmail] = useState<string>(route.params?.prefillEmail ?? "");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [rememberMe, setRememberMe] = useState<boolean>(false);
@@ -65,6 +83,19 @@ export default function SignInscreen() {
     setErrors(e);
     if (Object.keys(e).length === 0) {
       await login(email, password);
+      // Same reasoning as Signupscreen: login() catches its own errors and
+      // never rethrows, so check the persisted token directly rather than
+      // trusting a stale `error`/`user` closure right after the await.
+      const savedToken = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN);
+      if (!savedToken) return; // login failed — `error` below will render
+      const pendingToken =
+        route.params?.pendingInviteToken ??
+        (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
+      if (pendingToken) {
+        navigation.navigate("AcceptInvite", { token: pendingToken });
+      }
+      // else: normal login, no explicit navigate — root nav switches on
+      // AuthContext's user/token state as usual.
     }
   };
   const hasError = (field: keyof ValidationErrors): boolean =>
@@ -110,9 +141,7 @@ export default function SignInscreen() {
               onBlur={() => handleBlur("email")}
             />
           </View>
-          {hasError("email") && (
-            <Text style={styles.errorText}>{errors.email}</Text>
-          )}
+          {hasError("email") && <Text style={styles.errorText}>{errors.email}</Text>}
           {/* Password Input */}
           <View style={[styles.inputRow, hasError("password") && styles.inputError]}>
             <Ionicons name="lock-closed-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />
@@ -139,9 +168,7 @@ export default function SignInscreen() {
               />
             </TouchableOpacity>
           </View>
-          {hasError("password") && (
-            <Text style={styles.errorText}>{errors.password}</Text>
-          )}
+          {hasError("password") && <Text style={styles.errorText}>{errors.password}</Text>}
           {/* Auth error from context */}
           {error && <Text style={styles.errorText}>{error}</Text>}
           {/* Remember Me */}
@@ -151,9 +178,7 @@ export default function SignInscreen() {
             activeOpacity={0.8}
           >
             <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
-              {rememberMe && (
-                <Ionicons name="checkmark" size={ms(12)} color="#13151A" />
-              )}
+              {rememberMe && <Ionicons name="checkmark" size={ms(12)} color="#13151A" />}
             </View>
             <Text style={styles.rememberText}>Remember me</Text>
           </TouchableOpacity>
@@ -182,16 +207,10 @@ export default function SignInscreen() {
           {/* Social icons row */}
           <View style={styles.socialRow}>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
-              <Image
-                style={styles.logo}
-                source={require("../../assets/facebook.png")}
-              />
+              <Image style={styles.logo} source={require("../../assets/facebook.png")} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
-              <Image
-                style={styles.logo}
-                source={require("../../assets/google.png")}
-              />
+              <Image style={styles.logo} source={require("../../assets/google.png")} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
               <Ionicons name="logo-apple" size={ms(22)} color="#FFFFFF" />
@@ -209,6 +228,12 @@ export default function SignInscreen() {
     </SafeAreaView>
   );
 }
+
+
+
+
+
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
