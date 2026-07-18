@@ -49,15 +49,49 @@ async function retryExport(exportId: string, token: string): Promise<Export> {
   if (!res.ok) throw new Error('Failed to retry export');
   return res.json();
 }
-
-
-
+export interface ExportSettings {
+  resolution: '720p' | '1080p' | '4K';
+  format: 'MP4' | 'MOV' | 'WebM';
+  quality: number; // 0-100
+  includeTextOverlays: boolean;
+  includeFilters: boolean;
+  includeWatermark: boolean;
+}
+const RESOLUTION_WEIGHT: Record<ExportSettings['resolution'], number> = {
+  '720p': 1,
+  '1080p': 2.2,
+  '4K': 7.5,
+};
+const FORMAT_WEIGHT: Record<ExportSettings['format'], number> = {
+  MP4: 1,
+  MOV: 1.15,
+  WebM: 0.8,
+};
 async function createExport(
   project: VideoProject,
+  settings: ExportSettings,
   onProgress: (percent: number) => void,
   token: string
 ): Promise<Export> {
   if (CONFIG.USE_MOCK) {
+    // ── FRONTEND ROLE (this mock stands in for it) ──
+    // Right now this just fakes a progress bar over ~2-3 seconds and
+    // computes a plausible file size from the chosen settings. It does
+    // NOT touch real pixels — no clip is decoded, no filter is applied,
+    // no text is burned in. That's intentional at this stage: the
+    // frontend's real job is collecting the edit-decision-list (project
+    // + settings) and reflecting job progress/state, not doing the
+    // rendering itself.
+    const durationSec = project.totalDurationMs / 1000;
+    const qualityFactor = settings.quality / 80;
+    const baseMbPerSec = 1.8;
+    const estimatedSizeMb = Math.round(
+      durationSec *
+        baseMbPerSec *
+        RESOLUTION_WEIGHT[settings.resolution] *
+        FORMAT_WEIGHT[settings.format] *
+        qualityFactor
+    );
     return new Promise((resolve) => {
       let pct = 0;
       const tick = setInterval(() => {
@@ -71,12 +105,12 @@ async function createExport(
             projectId: project.projectId,
             projectName: project.title,
             title: project.title,
-            resolution: '1080p',
-            format: 'MP4',
-            sizeMb: Math.round((project.totalDurationMs / 1000) * 2.5),
+            resolution: settings.resolution,
+            format: settings.format,
+            sizeMb: estimatedSizeMb,
             status: 'Ready',
             createdAt: new Date().toISOString(),
-            fileUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4', // ADDED: mock placeholder, replace once real render pipeline exists
+            fileUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4',
           };
           mockStore = [newExport, ...mockStore];
           resolve(newExport);
@@ -86,10 +120,26 @@ async function createExport(
       }, 220);
     });
   }
+  // ── BACKEND ROLE (once real, replaces everything above) ──
+  // A real POST here hands off an edit-decision-list, not a finished file:
+  //   { projectId, clips: [...with trims/crop/filter/overlay data], settings }
+  // The server would then:
+  //   1. Pull the raw clip files (already uploaded, or fetched by URI)
+  //   2. Run FFmpeg (or MediaConvert) to trim/crop/filter/overlay/concat
+  //      per clip according to `settings.includeTextOverlays` /
+  //      `includeFilters` / `includeWatermark`
+  //   3. Encode to `settings.format` at `settings.resolution` /
+  //      `settings.quality`
+  //   4. Upload the finished file to storage, get back a fileUrl
+  //   5. Return an Export record with status 'Ready' + fileUrl, or
+  //      status 'Failed' + errorMessage if FFmpeg errored
+  // Progress would come from polling this Export's status, or a
+  // websocket/SSE channel keyed by the export id — onProgress here would
+  // be driven by real percentages the server reports, not a fake timer.
   const res = await fetch(`${CONFIG.API_BASE}/exports`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectId: project.projectId }),
+    body: JSON.stringify({ projectId: project.projectId, settings }),
   });
   if (!res.ok) throw new Error('Failed to create export');
   return res.json();

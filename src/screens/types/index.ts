@@ -55,6 +55,9 @@ export interface Comment {
   color: string;
   text: string;
   timestamp: string;
+  /** Frame-accurate position on the project timeline (ms) */
+  timecodeMs?: number;
+  timecodeLabel?: string;
 }
 // ─── Notification ────────────────────────────────────────────────────────────
 export type NotificationType = 'invite' | 'comment' | 'clip_upload' | 'role_change';
@@ -107,6 +110,13 @@ export type VideoSegment = {
 
 
 
+export type ClipTransitionType = 'none' | 'crossfade' | 'wipe' | 'slide' | 'zoom';
+
+export interface ClipTransition {
+  type: ClipTransitionType;
+  durationMs: number;
+}
+
 export type VideoClip = {
   id: string;
   uri: string;
@@ -126,8 +136,7 @@ export type VideoClip = {
   cropOffsetX?: number;   // 0 to 1, horizontal position of the crop box within the frame
   cropOffsetY?: number;   // 0 to 1, vertical position of the crop box within the frame
   cropZoom?: number;      // 1 = no zoom, >1 = zoomed in, used with offsets to pan around
- 
-
+  transitionOut?: ClipTransition;
 
 };
 

@@ -450,18 +450,21 @@ useEffect(() => {
 }, []);
 const handleExportConfirm = () => {
   if (!currentVideoProject) return;
-  setShowExportConfirm(false);
-  setExportState('exporting');
-  setProgress(0);
-  setQuote(getRandomQuote());
-  quoteIntervalRef.current = setInterval(() => {
-    setQuote((prev) => getRandomQuote(prev));
-  }, 2500);
-  exportService.createExport(currentVideoProject, (pct) => setProgress(pct), '')
-    .then(() => {
-      if (quoteIntervalRef.current) clearInterval(quoteIntervalRef.current);
-      setExportState('done');
-    });
+  // setShowExportConfirm(false);
+  // setExportState('exporting');
+  // setProgress(0);
+  // setQuote(getRandomQuote());
+  // quoteIntervalRef.current = setInterval(() => {
+  //   setQuote((prev) => getRandomQuote(prev));
+  // }, 2500);
+  // exportService.createExport(currentVideoProject, (pct) => setProgress(pct), '')
+  //   .then(() => {
+  //     if (quoteIntervalRef.current) clearInterval(quoteIntervalRef.current);
+  //     setExportState('done');
+  //   });
+
+  navigation.navigate("reviewexport")
+
 };
 
 
@@ -1281,7 +1284,7 @@ const handleConfirmCrop = (cropData: {
   onCancel={() => setShowExportConfirm(false)}
   onConfirm={handleExportConfirm}
 />
-<ExportProgressSheet
+{/* <ExportProgressSheet
   visible={exportState !== 'idle'}
   progress={progress}
   quote={quote}
@@ -1290,7 +1293,7 @@ const handleConfirmCrop = (cropData: {
     setExportState('idle');
     setProgress(0);
   }}
-/>
+/> */}
 
     </SafeAreaView>
   );

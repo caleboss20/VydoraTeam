@@ -22,6 +22,7 @@ import ExportLibraryScreen from "./Editor/Export";
 import VersionHistoryScreen from "./Dashboard/VersionHistory";
 import ProScreen from "./ProVersion/ProVersion";
 import AcceptInviteScreen from "./AcceptInvite/AcceptInvitescreen";
+import ExportReviewScreen from "./Editor/ReviewExport";
 
 const Stack=createNativeStackNavigator();
 
@@ -55,6 +56,7 @@ function MainStackNavigator(){
                           
                       
                     <Stack.Screen name="export" component={ExportLibraryScreen} />
+                      <Stack.Screen name="reviewexport" component={ExportReviewScreen} />
                <Stack.Screen name="versionhistory" component={VersionHistoryScreen} />
                    
         </Stack.Navigator>
