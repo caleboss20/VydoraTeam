@@ -16,7 +16,17 @@ interface ClipContextType {
   isLoading: boolean;
   error: string | null;
   fetchClips: (projectId: string) => Promise<void>;
-  addClip: (projectId: string, title: string, duration: string, resolution: string) => Promise<void>;
+  /**
+   * Create a collaboration clip. For the real API, pass `videoUrl` (and ideally
+   * `durationSeconds`) from uploadService — required by CreateClipRequest.
+   */
+  addClip: (
+    projectId: string,
+    title: string,
+    duration: string,
+    resolution: string,
+    options?: { videoUrl?: string; durationSeconds?: number; order?: number }
+  ) => Promise<void>;
   deleteClip: (projectId: string, clipId: string) => Promise<void>;
   getClipsForProject: (projectId: string) => Clip[];
 }
@@ -63,12 +73,20 @@ export function ClipProvider({ children }: { children: ReactNode }) {
     projectId: string,
     title: string,
     duration: string,
-    resolution: string
+    resolution: string,
+    options?: { videoUrl?: string; durationSeconds?: number; order?: number }
   ) => {
     try {
       setIsLoading(true);
       setError(null);
-      const newClip = await clipService.addClip(projectId, title, duration, resolution, token!);
+      const newClip = await clipService.addClip(
+        projectId,
+        title,
+        duration,
+        resolution,
+        token!,
+        options
+      );
       const next = {
         ...clips,
         [projectId]: [newClip, ...(clips[projectId] || [])],
@@ -77,6 +95,7 @@ export function ClipProvider({ children }: { children: ReactNode }) {
       await persist(next);
     } catch (e: any) {
       setError(e.message);
+      throw e;
     } finally {
       setIsLoading(false);
     }

@@ -1,119 +1,91 @@
+/**
+ * Clip service — collaboration clip metadata under `/api/v1`.
+ *
+ * CreateClipRequest requires: { videoUrl, durationSeconds, title?, order? }
+ * List: GET /projects/{id}/clips → PagedResponse
+ * Get:  GET /clips/{clipId}
+ * Delete: DELETE /clips/{clipId}
+ *
+ * The editor’s local VideoProject (file:// URIs, trims, filters) is separate.
+ * Wire uploads through uploadService first, then call addClip with videoUrl.
+ */
 import { CONFIG } from '../config';
 import { Clip } from '../types';
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-let MOCK_CLIPS: Clip[] = [
-  {
-    id: '1',
-    projectId: '1',
-    title: 'Intro clip',
-    duration: '00:18',
-    resolution: '1080p',
-    uploadedAt: 'Jun 12, 2026',
-    uploadedBy: '1',
-  },
-  {
-    id: '2',
-    projectId: '1',
-    title: 'Main segment',
-    duration: '00:42',
-    resolution: '4K',
-    uploadedAt: 'Jun 11, 2026',
-    uploadedBy: '1',
-  },
-  {
-    id: '3',
-    projectId: '1',
-    title: 'Outro',
-    duration: '00:12',
-    resolution: '1080p',
-    uploadedAt: 'Jun 10, 2026',
-    uploadedBy: '2',
-  },
-  {
-    id: '4',
-    projectId: '1',
-    title: 'B-Roll montage',
-    duration: '01:05',
-    resolution: '1080p',
-    uploadedAt: 'Jun 9, 2026',
-    uploadedBy: '3',
-  },
-];
-// ─── Service ─────────────────────────────────────────────────────────────────
+import { apiRequest } from './apiClient';
+import { ApiClip, mapClipFromApi, parseDurationToSeconds } from './mappers';
+
+type PagedClips = { items: ApiClip[]; page: number; limit: number; total: number };
+
+export type AddClipOptions = {
+  /** Required for the real API — Cloudinary (or other CDN) URL from uploadService. */
+  videoUrl?: string;
+  durationSeconds?: number;
+  order?: number;
+};
+
 export const clipService = {
-  // get all clips for a project
-  getClips: async (projectId: string, token: string): Promise<Clip[]> => {
-    if (CONFIG.USE_MOCK) {
-      return MOCK_CLIPS.filter(c => c.projectId === projectId);
-    }
-    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}/clips`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Failed to fetch clips');
-    return res.json();
-  },
-  // get single clip
-  getClipById: async (
-    projectId: string,
-    clipId: string,
-    token: string
-  ): Promise<Clip> => {
-    if (CONFIG.USE_MOCK) {
-      const clip = MOCK_CLIPS.find(c => c.id === clipId);
-      if (!clip) throw new Error('Clip not found');
-      return clip;
-    }
-    const res = await fetch(
-      `${CONFIG.API_BASE}/projects/${projectId}/clips/${clipId}`,
-      { headers: { Authorization: `Bearer ${token}` } }
+  getClips: async (projectId: string, _token: string): Promise<Clip[]> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock clips disabled.');
+    const data = await apiRequest<PagedClips>(
+      `/projects/${projectId}/clips?page=1&limit=100`
     );
-    if (!res.ok) throw new Error('Failed to fetch clip');
-    return res.json();
+    return (data.items || []).map(mapClipFromApi);
   },
-  // add new clip to project
+
+  getClipById: async (
+    _projectId: string,
+    clipId: string,
+    _token: string
+  ): Promise<Clip> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock clips disabled.');
+    const data = await apiRequest<ApiClip>(`/clips/${clipId}`);
+    return mapClipFromApi(data);
+  },
+
+  /**
+   * Create a clip on the project.
+   * Legacy callers still pass (title, duration string, resolution); when
+   * `options.videoUrl` is missing we throw a clear error so upload wiring
+   * is obvious during the editor integration pass.
+   */
   addClip: async (
     projectId: string,
     title: string,
     duration: string,
-    resolution: string,
-    token: string
+    _resolution: string,
+    _token: string,
+    options?: AddClipOptions
   ): Promise<Clip> => {
-    if (CONFIG.USE_MOCK) {
-      return {
-        id: Date.now().toString(),
-        projectId,
-        title,
-        duration,
-        resolution,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: '1',
-      };
+    if (CONFIG.USE_MOCK) throw new Error('Mock clips disabled.');
+
+    const videoUrl = options?.videoUrl;
+    if (!videoUrl) {
+      throw new Error(
+        'Clip create requires a videoUrl. Upload with uploadService.uploadVideo() first, then pass { videoUrl, durationSeconds }.'
+      );
     }
-    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}/clips`, {
+
+    const durationSeconds =
+      options?.durationSeconds ?? parseDurationToSeconds(duration);
+
+    const data = await apiRequest<ApiClip>(`/projects/${projectId}/clips`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ title, duration, resolution }),
+      body: JSON.stringify({
+        title,
+        videoUrl,
+        durationSeconds,
+        order: options?.order ?? 0,
+      }),
     });
-    if (!res.ok) throw new Error('Failed to add clip');
-    return res.json();
+    return mapClipFromApi(data);
   },
-  // delete a clip
+
   deleteClip: async (
-    projectId: string,
+    _projectId: string,
     clipId: string,
-    token: string
+    _token: string
   ): Promise<void> => {
-    if (CONFIG.USE_MOCK) return;
-    const res = await fetch(
-      `${CONFIG.API_BASE}/projects/${projectId}/clips/${clipId}`,
-      {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    if (!res.ok) throw new Error('Failed to delete clip');
+    if (CONFIG.USE_MOCK) throw new Error('Mock clips disabled.');
+    await apiRequest<void>(`/clips/${clipId}`, { method: 'DELETE' });
   },
 };

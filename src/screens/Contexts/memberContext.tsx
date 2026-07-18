@@ -16,8 +16,9 @@ interface MemberContextType {
   isLoading: boolean;
   error: string | null;
   fetchMembers: (projectId: string) => Promise<void>;
-  inviteMember: (projectId: string, email: string, role: MemberRole) => Promise<void>;
-  changeRole: (projectId: string, memberId: string, role: MemberRole) => Promise<void>;
+  /** `role` accepts Title-Case MemberRole or InviteMember keys (editor/viewer/admin). */
+  inviteMember: (projectId: string, email: string, role: MemberRole | string) => Promise<void>;
+  changeRole: (projectId: string, memberId: string, role: MemberRole | string) => Promise<void>;
   removeMember: (projectId: string, memberId: string) => Promise<void>;
   getMembersForProject: (projectId: string) => Member[];
   setMemberOnline: (projectId: string, userId: string, online: boolean) => void;
@@ -65,11 +66,12 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   const inviteMember = async (
     projectId: string,
     email: string,
-    role: MemberRole
+    role: MemberRole | string
   ) => {
     try {
       setIsLoading(true);
       setError(null);
+      // role may arrive as Title-Case or InviteMember’s lowercase keys — mapper handles both.
       const newMember = await memberService.inviteMember(projectId, email, role, token!);
       const next = {
         ...members,
@@ -79,6 +81,8 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       await persist(next);
     } catch (e: any) {
       setError(e.message);
+      // Re-throw so InviteMemberScreen can show its Alert on failure.
+      throw e;
     } finally {
       setIsLoading(false);
     }
@@ -86,7 +90,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   const changeRole = async (
     projectId: string,
     memberId: string,
-    role: MemberRole
+    role: MemberRole | string
   ) => {
     try {
       setError(null);

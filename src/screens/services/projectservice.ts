@@ -1,200 +1,110 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+/**
+ * Project service — `/api/v1/projects`.
+ *
+ * Backend CreateProjectRequest: { title, description? }
+ * Backend UpdateProjectRequest: { title?, description?, status? }  (single PUT)
+ * List returns PagedResponse: { items, page, limit, total }
+ *
+ * Screens still speak `name` / Active|Draft|Archived — mappers translate.
+ */
 import { CONFIG } from '../config';
 import { Project, ProjectStatus } from '../types';
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-// This mock store used to be a plain in-memory `let MOCK_PROJECTS: Project[] = []`.
-// That fixed the earlier "frozen const" bug (mutations were no longer silently
-// discarded), but it introduced a *different* problem: a plain in-memory array
-// only lives as long as the JS module stays loaded. On every app reload, this
-// file re-runs from scratch and MOCK_PROJECTS resets to `[]` — so even though
-// ProjectContext correctly rehydrates its React state from AsyncStorage on
-// mount, the very next automatic fetchProjects() call asks this "mock server"
-// for the truth, gets back an empty array, and overwrites the good cached data
-// with nothing.
-//
-// The fix here: treat AsyncStorage as this mock service's actual persistence
-// layer, the same way a real backend would use a real database. Every mock
-// method awaits ensureHydrated() first, which loads MOCK_PROJECTS from
-// AsyncStorage exactly once per app session. Every mutation (create, rename,
-// update status, delete) writes the updated array straight back to
-// AsyncStorage, so the "mock server" itself survives reloads — regardless of
-// what ProjectContext does or doesn't do with its own separate cache.
-let MOCK_PROJECTS: Project[] = [];
-let hasHydrated = false;
-let hydrationPromise: Promise<void> | null = null;
-async function ensureHydrated(): Promise<void> {
-  if (hasHydrated) return;
-  // guard against multiple concurrent calls (e.g. getProjects + createProject
-  // firing close together on launch) all trying to hydrate at once
-  if (!hydrationPromise) {
-    hydrationPromise = (async () => {
-      try {
-        const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PROJECTS);
-        if (cached) MOCK_PROJECTS = JSON.parse(cached);
-      } catch (e) {
-        console.log('Mock project store hydration failed', e);
-      } finally {
-        hasHydrated = true;
-      }
-    })();
-  }
-  await hydrationPromise;
-}
-async function persist(): Promise<void> {
-  try {
-    await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.PROJECTS, JSON.stringify(MOCK_PROJECTS));
-  } catch (e) {
-    console.log('Mock project store persist failed', e);
-  }
-}
-// ─── Service ─────────────────────────────────────────────────────────────────
+import { apiRequest } from './apiClient';
+import {
+  ApiProject,
+  mapProjectFromApi,
+  mapProjectStatusToApi,
+} from './mappers';
+
+type PagedProjects = {
+  items: ApiProject[];
+  page: number;
+  limit: number;
+  total: number;
+};
+
 export const projectService = {
-  // get all projects where user is owner OR member
-  getProjects: async (token: string): Promise<Project[]> => {
+  /** List projects the current user owns or belongs to. */
+  getProjects: async (_token: string): Promise<Project[]> => {
     if (CONFIG.USE_MOCK) {
-      await ensureHydrated();
-      return MOCK_PROJECTS;
+      throw new Error('Mock projects disabled — start the backend or set USE_MOCK true.');
     }
-    const res = await fetch(`${CONFIG.API_BASE}/projects`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Failed to fetch projects');
-    return res.json();
+    // Pull a large page so the Dashboard still feels like an unpaginated list.
+    const data = await apiRequest<PagedProjects>('/projects?page=1&limit=100');
+    return (data.items || []).map(mapProjectFromApi);
   },
-  // get single project by id
-  getProjectById: async (projectId: string, token: string): Promise<Project> => {
-    if (CONFIG.USE_MOCK) {
-      await ensureHydrated();
-      const project = MOCK_PROJECTS.find(p => p.id === projectId);
-      if (!project) throw new Error('Project not found');
-      return project;
-    }
-    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Failed to fetch project');
-    return res.json();
+
+  getProjectById: async (projectId: string, _token: string): Promise<Project> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
+    const data = await apiRequest<ApiProject>(`/projects/${projectId}`);
+    return mapProjectFromApi(data);
   },
-  // create new project — creator becomes Owner automatically
+
+  /**
+   * Create a project. Creator becomes OWNER automatically on the backend.
+   * `visibility` / `thumbnailUrl` are accepted for UI compatibility but are
+   * not part of CreateProjectRequest yet (thumbnail can be set later via PUT).
+   */
   createProject: async (
     name: string,
     description: string,
-    visibility: 'Private' | 'Team' | 'Public',
-    token: string,
-    thumbnailUrl?: string
+    _visibility: 'Private' | 'Team' | 'Public',
+    _token: string,
+    _thumbnailUrl?: string
   ): Promise<Project> => {
-    if (CONFIG.USE_MOCK) {
-      await ensureHydrated();
-      const newProject: Project = {
-        id: Date.now().toString(),
-        name,
-        description,
-        visibility,
-        status: 'Active',
-        ownerId: 'u1',
-        thumbnailUrl,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        members: [],
-      };
-      MOCK_PROJECTS = [newProject, ...MOCK_PROJECTS];
-      await persist();
-      return newProject;
-    }
-    const res = await fetch(`${CONFIG.API_BASE}/projects`, {
+    if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
+    const data = await apiRequest<ApiProject>('/projects', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ name, description, visibility, thumbnailUrl }),
+      body: JSON.stringify({ title: name, description }),
     });
-    if (!res.ok) throw new Error('Failed to create project');
-    return res.json();
+    return mapProjectFromApi(data);
   },
-  // rename project
-  renameProject: async (projectId: string, name: string, token: string): Promise<Project> => {
-    if (CONFIG.USE_MOCK) {
-      await ensureHydrated();
-      const idx = MOCK_PROJECTS.findIndex(p => p.id === projectId);
-      if (idx === -1) throw new Error('Project not found');
-      MOCK_PROJECTS[idx] = { ...MOCK_PROJECTS[idx], name, updatedAt: new Date().toISOString() };
-      await persist();
-      return MOCK_PROJECTS[idx];
-    }
-    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}/rename`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ name }),
+
+  /** Rename → PUT /projects/{id} with { title }. */
+  renameProject: async (
+    projectId: string,
+    name: string,
+    _token: string
+  ): Promise<Project> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
+    const data = await apiRequest<ApiProject>(`/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ title: name }),
     });
-    if (!res.ok) throw new Error('Failed to rename project');
-    return res.json();
+    return mapProjectFromApi(data);
   },
-  // update project status
+
+  /** Status change → PUT /projects/{id} with mapped enum. */
   updateStatus: async (
     projectId: string,
     status: ProjectStatus,
-    token: string
+    _token: string
   ): Promise<Project> => {
-    if (CONFIG.USE_MOCK) {
-      await ensureHydrated();
-      const idx = MOCK_PROJECTS.findIndex(p => p.id === projectId);
-      if (idx === -1) throw new Error('Project not found');
-      MOCK_PROJECTS[idx] = { ...MOCK_PROJECTS[idx], status, updatedAt: new Date().toISOString() };
-      await persist();
-      return MOCK_PROJECTS[idx];
-    }
-    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}/status`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status }),
+    if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
+    const data = await apiRequest<ApiProject>(`/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: mapProjectStatusToApi(status) }),
     });
-    if (!res.ok) throw new Error('Failed to update project');
-    return res.json();
+    return mapProjectFromApi(data);
   },
-  // ADDED: update just the thumbnail on an existing project
+
+  /**
+   * Thumbnail update. Backend UpdateProjectRequest has no thumbnailUrl field yet,
+   * so this is a no-op against the API and returns the current project.
+   * When the backend adds the field, switch the body to `{ thumbnailUrl }`.
+   */
   updateThumbnail: async (
     projectId: string,
     thumbnailUrl: string,
     token: string
   ): Promise<Project> => {
-    if (CONFIG.USE_MOCK) {
-      await ensureHydrated();
-      const idx = MOCK_PROJECTS.findIndex(p => p.id === projectId);
-      if (idx === -1) throw new Error('Project not found');
-      MOCK_PROJECTS[idx] = { ...MOCK_PROJECTS[idx], thumbnailUrl, updatedAt: new Date().toISOString() };
-      await persist();
-      return MOCK_PROJECTS[idx];
-    }
-    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}/thumbnail`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ thumbnailUrl }),
-    });
-    if (!res.ok) throw new Error('Failed to update thumbnail');
-    return res.json();
+    if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
+    const current = await projectService.getProjectById(projectId, token);
+    return { ...current, thumbnailUrl, updatedAt: new Date().toISOString() };
   },
-  // delete project — only Owner can do this
-  deleteProject: async (projectId: string, token: string): Promise<void> => {
-    if (CONFIG.USE_MOCK) {
-      await ensureHydrated();
-      MOCK_PROJECTS = MOCK_PROJECTS.filter(p => p.id !== projectId);
-      await persist();
-      return;
-    }
-    const res = await fetch(`${CONFIG.API_BASE}/projects/${projectId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Failed to delete project');
+
+  deleteProject: async (projectId: string, _token: string): Promise<void> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
+    await apiRequest<void>(`/projects/${projectId}`, { method: 'DELETE' });
   },
 };

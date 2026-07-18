@@ -1,3 +1,9 @@
+/**
+ * ProjectContext — Dashboard / ProjectDetail data layer.
+ * Fetches from projectService (real API when CONFIG.USE_MOCK is false) and
+ * mirrors the list into AsyncStorage for offline-first cold starts.
+ * No UI here — screens keep their existing styles and bindings (`project.name`, etc.).
+ */
 import React, {
   createContext,
   useContext,

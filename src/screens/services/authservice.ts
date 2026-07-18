@@ -1,74 +1,103 @@
-
+/**
+ * Auth service — maps to `POST/GET /api/v1/auth/*`.
+ *
+ * Backend AuthResponse shape:
+ *   { accessToken, refreshToken, accessTokenExpiresInMs, userId, name, email }
+ *
+ * We still return `{ user, token, refreshToken }` so AuthContext can persist
+ * both tokens while screens keep using `token` as the access JWT.
+ */
 import { CONFIG } from '../config';
 import { User } from '../types';
-// ─── Mock Credentials ────────────────────────────────────────────
-const MOCK_CREDENTIALS = {
-  email: 'mrrcaleboss@gmail.com',
-  password: 'Fabbi324#314',
+import { apiRequest, setApiTokens } from './apiClient';
+import { mapAuthUser } from './mappers';
+
+export type AuthSession = {
+  user: User;
+  /** Access JWT — same meaning as AuthContext.token. */
+  token: string;
+  refreshToken: string;
 };
-const MOCK_USER: User = {
-  id: '1',
-  name: 'Caleb Dwamena',
-  email: 'mrrcaleboss@gmail.com',
-  initials: 'CD',
-  color: '#F5C518',
+
+type AuthResponseDto = {
+  accessToken: string | null;
+  refreshToken: string | null;
+  accessTokenExpiresInMs: number;
+  userId: string;
+  name: string;
+  email: string;
 };
-// ─── Service ─────────────────────────────────────────────────────
+
+function sessionFromAuthResponse(data: AuthResponseDto): AuthSession {
+  if (!data.accessToken || !data.refreshToken) {
+    throw new Error('Auth response missing tokens');
+  }
+  const user = mapAuthUser(data);
+  setApiTokens(data.accessToken, data.refreshToken);
+  return {
+    user,
+    token: data.accessToken,
+    refreshToken: data.refreshToken,
+  };
+}
+
 export const authService = {
-  login: async (
-    email: string,
-    password: string
-  ): Promise<{ user: User; token: string }> => {
+  /** Sign in — public endpoint (no Bearer). */
+  login: async (email: string, password: string): Promise<AuthSession> => {
     if (CONFIG.USE_MOCK) {
-      if (
-        email !== MOCK_CREDENTIALS.email ||
-        password !== MOCK_CREDENTIALS.password
-      ) {
-        throw new Error('Invalid email or password');
-      }
-      return { user: MOCK_USER, token: 'mock-jwt-token-123' };
+      throw new Error('Mock auth is disabled. Use the real API (CONFIG.USE_MOCK = false).');
     }
-    const res = await fetch(`${CONFIG.API_BASE}/auth/login`, {
+    const data = await apiRequest<AuthResponseDto>('/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      skipAuth: true,
       body: JSON.stringify({ email, password }),
     });
-    if (!res.ok) throw new Error('Login failed');
-    return res.json();
+    return sessionFromAuthResponse(data);
   },
+
+  /** Register — returns the same token pair as login. */
   register: async (
     name: string,
     email: string,
     password: string
-  ): Promise<{ user: User; token: string }> => {
+  ): Promise<AuthSession> => {
     if (CONFIG.USE_MOCK) {
-      return {
-        user: { ...MOCK_USER, name, email },
-        token: 'mock-jwt-token-123',
-      };
+      throw new Error('Mock auth is disabled. Use the real API (CONFIG.USE_MOCK = false).');
     }
-    
-    const res = await fetch(`${CONFIG.API_BASE}/auth/register`, {
+    const data = await apiRequest<AuthResponseDto>('/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      skipAuth: true,
       body: JSON.stringify({ name, email, password }),
     });
-    if (!res.ok) throw new Error('Registration failed');
-    return res.json();
+    return sessionFromAuthResponse(data);
   },
-  logout: async (token: string): Promise<void> => {
+
+  /**
+   * Revoke the refresh token server-side.
+   * Body: `{ refreshToken }`. Also requires a valid access JWT.
+   */
+  logout: async (accessToken: string, refreshToken: string): Promise<void> => {
     if (CONFIG.USE_MOCK) return;
-    await fetch(`${CONFIG.API_BASE}/auth/logout`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    try {
+      setApiTokens(accessToken, refreshToken);
+      await apiRequest<void>('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken }),
+      });
+    } finally {
+      setApiTokens(null, null);
+    }
   },
-  getMe: async (token: string): Promise<User> => {
-    if (CONFIG.USE_MOCK) return MOCK_USER;
-    const res = await fetch(`${CONFIG.API_BASE}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Session expired');
-    return res.json();
+
+  /**
+   * Validate the current access token and load identity fields.
+   * `/auth/me` returns AuthResponse with tokens null — we only map userId/name/email.
+   */
+  getMe: async (_token: string): Promise<User> => {
+    if (CONFIG.USE_MOCK) {
+      throw new Error('Mock auth is disabled.');
+    }
+    const data = await apiRequest<AuthResponseDto>('/auth/me');
+    return mapAuthUser(data);
   },
 };

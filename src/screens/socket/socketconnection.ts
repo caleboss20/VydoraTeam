@@ -1,9 +1,25 @@
-
+/**
+ * Project WebSocket hook (STOMP over SockJS) — stubbed for the next pass.
+ *
+ * Backend (already live on vydora-backend):
+ *   Endpoint:  CONFIG.WS_BASE  →  http://localhost:8080/ws
+ *   Auth:      CONNECT header  Authorization: Bearer <accessToken>
+ *   Subscribe: /topic/project/{id}/comments|members|presence
+ *              /user/queue/notifications
+ *   Publish:   /app/project/{id}/comment  { clipId, text, timestampSeconds }
+ *
+ * Not implemented on the backend yet (leave commented):
+ *   /topic/project/{id}/clips|edits  — collaborative timeline sync (editor pass)
+ *
+ * Call this from ProjectDetail / Editor once SockJS + @stomp/stompjs are added.
+ * Do not change UI while enabling — only mount the hook and update contexts.
+ */
 import { useEffect } from 'react';
-import { useComment } from '../Contexts/commentContext'; 
-import { useMember } from '../Contexts/memberContext'; 
-import { useClip } from '../Contexts/clipContext'; 
-import { useNotification } from '../Contexts/notificatinContext'; 
+import { useComment } from '../Contexts/commentContext';
+import { useMember } from '../Contexts/memberContext';
+import { useClip } from '../Contexts/clipContext';
+import { useNotification } from '../Contexts/notificatinContext';
+
 export function useProjectSocket(projectId: string) {
   const { fetchComments } = useComment();
   const { fetchMembers, setMemberOnline } = useMember();
@@ -114,8 +130,8 @@ export function useProjectSocket(projectId: string) {
     //   );
     //   stompClient.disconnect();
     // };
-    console.log(`[Socket] Project ${projectId} socket stub ready`);
-    console.log(`[Socket] Waiting for Spring Boot backend...`);
-    console.log(`[Socket] Features ready: comments, clips, members, presence, editing, notifications`);
+    // Hook is intentionally a no-op until SockJS client packages are installed
+    // and CONNECT auth is wired. REST paths already work without this.
+    console.log(`[Socket] Stub active for project ${projectId} — enable STOMP in the collab pass`);
   }, [projectId]);
 }

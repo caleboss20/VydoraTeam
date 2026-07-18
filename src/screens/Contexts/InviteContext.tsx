@@ -1,7 +1,10 @@
-// InviteContext.tsx
-// useState-only context, matching Vydora's existing six-context convention
-// (no reducers / Zustand / Redux). Wraps inviteService.
-
+/**
+ * InviteContext — wraps inviteService with loading/error state.
+ *
+ * Uses AuthContext so accept/decline can pass the current userId into
+ * POST /projects/{projectId}/members/{userId}/accept|decline.
+ * Deep-link “token” === projectId (see inviteService header comments).
+ */
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import {
   sendInvite as sendInviteService,
@@ -10,8 +13,8 @@ import {
   declineInvite as declineInviteService,
   InviteDetails,
   InviteRole,
-} 
-from "../services/inviteService"
+} from '../services/inviteService';
+import { useAuth } from './Authcontext';
 
 interface InviteContextValue {
   currentInvite: InviteDetails | null;
@@ -26,7 +29,8 @@ interface InviteContextValue {
     message?: string
   ) => Promise<void>;
   loadInviteByToken: (token: string) => Promise<void>;
-  acceptInvite: (token: string) => Promise<string | null>; // returns projectId on success
+  /** Returns projectId on success so AcceptInvite can navigate. */
+  acceptInvite: (token: string) => Promise<string | null>;
   declineInvite: (token: string) => Promise<void>;
   clearInviteError: () => void;
 }
@@ -34,38 +38,43 @@ interface InviteContextValue {
 const InviteContext = createContext<InviteContextValue | undefined>(undefined);
 
 export function InviteProvider({ children }: { children: ReactNode }) {
+  const { user, token } = useAuth();
   const [currentInvite, setCurrentInvite] = useState<InviteDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
 
-async function sendInvite(
-  projectId: string,
-  emails: string[],
-  role: InviteRole,
-  message?: string
-) {
-  setIsLoading(true);
-  setError(null);
-
-  try {
-    const result = await sendInviteService(projectId, emails, role, message);
-    setLastInviteLink(result.inviteLink);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Failed to send invite';
-    setError(msg);
-    throw err; // let the caller's try/catch handle UI feedback (Alert, status reset)
-  } finally {
-    setIsLoading(false);
-  }
-}
-
-  async function loadInviteByToken(token: string) {
+  async function sendInvite(
+    projectId: string,
+    emails: string[],
+    role: InviteRole,
+    message?: string
+  ) {
     setIsLoading(true);
     setError(null);
-
     try {
-      const invite = await getInviteByTokenService(token);
+      const result = await sendInviteService(
+        projectId,
+        emails,
+        role,
+        message,
+        token || undefined
+      );
+      setLastInviteLink(result.inviteLink);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to send invite';
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function loadInviteByToken(inviteToken: string) {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const invite = await getInviteByTokenService(inviteToken);
       setCurrentInvite(invite);
     } catch (err) {
       setCurrentInvite(null);
@@ -75,13 +84,18 @@ async function sendInvite(
     }
   }
 
-  async function acceptInvite(token: string): Promise<string | null> {
+  async function acceptInvite(inviteToken: string): Promise<string | null> {
     setIsLoading(true);
     setError(null);
-
     try {
-      const result = await acceptInviteService(token);
-      setCurrentInvite((prev:any) => (prev ? { ...prev, status: 'accepted' } : prev));
+      const result = await acceptInviteService(
+        inviteToken,
+        user?.id,
+        token || undefined
+      );
+      setCurrentInvite((prev) =>
+        prev ? { ...prev, status: 'accepted' } : prev
+      );
       return result.projectId;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to accept invite');
@@ -91,13 +105,14 @@ async function sendInvite(
     }
   }
 
-  async function declineInvite(token:string) {
+  async function declineInvite(inviteToken: string) {
     setIsLoading(true);
     setError(null);
-
     try {
-      await declineInviteService(token);
-      setCurrentInvite((prev:any) => (prev ? { ...prev, status: 'declined' } : prev));
+      await declineInviteService(inviteToken, user?.id, token || undefined);
+      setCurrentInvite((prev) =>
+        prev ? { ...prev, status: 'declined' } : prev
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to decline invite');
     } finally {
@@ -121,15 +136,15 @@ async function sendInvite(
     clearInviteError,
   };
 
-  return <InviteContext.Provider value={value}>{children}</InviteContext.Provider>;
+  return (
+    <InviteContext.Provider value={value}>{children}</InviteContext.Provider>
+  );
 }
 
 export function useInvite(): InviteContextValue {
   const context = useContext(InviteContext);
-
   if (context === undefined) {
     throw new Error('useInvite must be used within an InviteProvider');
   }
-
   return context;
 }

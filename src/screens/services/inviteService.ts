@@ -1,14 +1,26 @@
-// inviteService.ts
-// Follows Vydora's existing six-service USE_MOCK pattern.
-// Swap USE_MOCK to false once the Spring Boot backend is live on GitHub,
-// and point BASE_URL at the real API host.
+/**
+ * Invite service — adapted to the backend’s email-membership flow.
+ *
+ * The UI still speaks “invite tokens” and deep links (`vydora://invite/:token`).
+ * The Spring API has no opaque invite tokens; instead:
+ *   1. Owner calls POST /projects/{id}/members/invite { email, role }
+ *   2. Invitee (logged in as that email) calls
+ *        POST /projects/{id}/members/{userId}/accept|decline
+ *
+ * We therefore treat the deep-link “token” as the **projectId**. Share links
+ * look like `vydora.io/invite/<projectId>` so AcceptInviteScreen keeps working
+ * without UI changes. Auth is required for accept/decline and for loading
+ * project details when logged in.
+ */
+import { CONFIG } from '../config';
+import { apiRequest } from './apiClient';
+import {
+  ApiProject,
+  mapMemberRoleFromApi,
+  mapMemberRoleToApi,
+} from './mappers';
+import { memberService } from './membersServvice';
 
-const USE_MOCK = true;
-
-const BASE_URL = 'https://api.vydora.io'; // placeholder — update when backend is pushed
-
-// Lowercase to match MemberRole exactly — no mapping layer needed when
-// AcceptInviteScreen hands this straight into useMember().inviteMember().
 export type InviteRole = 'Owner' | 'Editor' | 'Viewer';
 
 export interface SendInvitePayload {
@@ -18,7 +30,6 @@ export interface SendInvitePayload {
   message?: string;
 }
 
-// One entry per email — each invitee gets their own token / accept-decline state.
 export interface SentInvite {
   email: string;
   token: string;
@@ -29,7 +40,7 @@ export interface SendInviteResult {
   success: boolean;
   invitesSent: number;
   invites: SentInvite[];
-  inviteLink:string;
+  inviteLink: string;
 }
 
 export interface InviteDetails {
@@ -53,178 +64,119 @@ export interface DeclineInviteResult {
   success: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Mock data store — keyed by token. One record per invitee email, so each
-// person has their own independent pending/accepted/declined state.
-// ---------------------------------------------------------------------------
-
-const MOCK_LATENCY_MS = 500;
-
-
-// mock store — fix casing to match InviteRole
-const mockInviteStore: Record<string, InviteDetails> = {
-  'demo-token-123': {
-    token: 'demo-token-123',
-    projectId: 'proj-001',
-    projectName: 'Summer Campaign Edit',
-    projectThumbnailUrl: 'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
-    inviterName: 'Kel',
-    inviteeEmail: 'demo@vydora.io',
-    role: 'Editor', // was 'editor'
-    message: 'Hey! Would love your eye on the color grade before we lock this.',
-    status: 'pending',
-  },
-};
-
-
-
-function delay<T>(value: T, ms: number = MOCK_LATENCY_MS): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+function shareLinkForProject(projectId: string): string {
+  return `vydora.io/invite/${projectId}`;
 }
 
-function generateMockToken(): string {
-  return `mock-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// ---------------------------------------------------------------------------
-// sendInvite — creates one invite record per email, each with its own token.
-// ---------------------------------------------------------------------------
-
-// sendInvite mock branch — actually populate inviteLink
+/**
+ * Invite each email via the members API.
+ * `accessToken` is unused directly (apiClient holds it) but kept so call sites
+ * can pass auth explicitly once InviteContext wires useAuth.
+ */
 export async function sendInvite(
   projectId: string,
   emails: string[],
-  role: InviteRole,
-  message?: string
+  role: InviteRole | string,
+  _message?: string,
+  accessToken?: string
 ): Promise<SendInviteResult> {
-  if (USE_MOCK) {
-    const invites: SentInvite[] = emails.map((email) => {
-      const token = generateMockToken();
+  if (CONFIG.USE_MOCK) {
+    throw new Error('Mock invites disabled — use the real members/invite API.');
+  }
 
-      mockInviteStore[token] = {
-        token,
-        projectId,
-        projectName: 'Summer Campaign Edit',
-        projectThumbnailUrl: 'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
-        inviterName: 'Kel',
-        inviteeEmail: email,
-        role,
-        message,
-        status: 'pending',
-      };
+  const token = accessToken || '';
+  const invites: SentInvite[] = [];
 
-      return {
-        email,
-        token,
-        inviteLink: `vydora.io/invite/${token}`,
-      };
-    });
-
-    return delay({
-      success: true,
-      invitesSent: invites.length,
-      invites,
-      // TWEAK: project-level link uses the first invite's link as a stand-in
-      // until the backend generates a single shareable project invite link.
-      inviteLink: invites[0]?.inviteLink ?? '',
+  for (const email of emails) {
+    await memberService.inviteMember(projectId, email, role as InviteRole, token);
+    invites.push({
+      email,
+      // Deep-link token === projectId (see file header).
+      token: projectId,
+      inviteLink: shareLinkForProject(projectId),
     });
   }
 
-  const response = await fetch(`${BASE_URL}/projects/${projectId}/invites`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ emails, role, message }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`sendInvite failed: ${response.status}`);
-  }
-
-  return response.json();
+  return {
+    success: true,
+    invitesSent: invites.length,
+    invites,
+    inviteLink: shareLinkForProject(projectId),
+  };
 }
 
-// ---------------------------------------------------------------------------
-// getInviteByToken
-// ---------------------------------------------------------------------------
-
+/**
+ * Load invite presentation data for AcceptInviteScreen.
+ * `token` is the projectId embedded in the deep link.
+ */
 export async function getInviteByToken(token: string): Promise<InviteDetails> {
-  if (USE_MOCK) {
-    const invite = mockInviteStore[token];
-
-    if (!invite) {
-      throw new Error('Invite not found');
-    }
-
-    return delay(invite);
+  if (CONFIG.USE_MOCK) {
+    throw new Error('Mock invites disabled.');
   }
 
-  const response = await fetch(`${BASE_URL}/invites/${token}`);
-
-  if (!response.ok) {
-    throw new Error(`getInviteByToken failed: ${response.status}`);
+  const projectId = token;
+  try {
+    const project = await apiRequest<ApiProject>(`/projects/${projectId}`);
+    return {
+      token: projectId,
+      projectId: project.id,
+      projectName: project.title,
+      projectThumbnailUrl:
+        project.thumbnailUrl ||
+        'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
+      inviterName: 'A teammate',
+      inviteeEmail: '',
+      role: 'Editor',
+      status: 'pending',
+    };
+  } catch {
+    // Logged-out users (or non-members) cannot GET the project yet.
+    // Still return enough for the Accept screen to render and prompt login.
+    return {
+      token: projectId,
+      projectId,
+      projectName: 'Project invite',
+      projectThumbnailUrl:
+        'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
+      inviterName: 'A teammate',
+      inviteeEmail: '',
+      role: 'Editor',
+      status: 'pending',
+    };
   }
-
-  return response.json();
 }
 
-
-// ---------------------------------------------------------------------------
-// acceptInvite — flips this invite's own status server-side. The actual
-// membership creation happens in AcceptInviteScreen via useMember().inviteMember(),
-// which is the real source of truth for project membership.
-// ---------------------------------------------------------------------------
-
-
-export async function acceptInvite(token: string): Promise<AcceptInviteResult> {
-  if (USE_MOCK) {
-    const invite = mockInviteStore[token];
-
-    if (!invite) {
-      throw new Error('Invite not found');
-    }
-
-    invite.status = 'accepted';
-
-    return delay({ success: true, projectId: invite.projectId });
+/**
+ * Accept membership for the logged-in user.
+ * Requires `userId` of the current user (from AuthContext).
+ */
+export async function acceptInvite(
+  token: string,
+  userId?: string,
+  accessToken?: string
+): Promise<AcceptInviteResult> {
+  if (CONFIG.USE_MOCK) throw new Error('Mock invites disabled.');
+  if (!userId) {
+    throw new Error('You must be signed in to accept an invite.');
   }
-
-  const response = await fetch(`${BASE_URL}/invites/${token}/accept`, {
-    method: 'POST',
-  });
-
-  if (!response.ok) {
-    throw new Error(`acceptInvite failed: ${response.status}`);
-  }
-
-  return response.json();
+  const projectId = token;
+  await memberService.acceptInvite(projectId, userId, accessToken || '');
+  return { success: true, projectId };
 }
 
-// ---------------------------------------------------------------------------
-// declineInvite
-// ---------------------------------------------------------------------------
-
-export async function declineInvite(token: string): Promise<DeclineInviteResult> {
-  if (USE_MOCK) {
-    const invite = mockInviteStore[token];
-
-    if (!invite) {
-      throw new Error('Invite not found');
-    }
-
-    invite.status = 'declined';
-
-    return delay({ success: true });
+export async function declineInvite(
+  token: string,
+  userId?: string,
+  accessToken?: string
+): Promise<DeclineInviteResult> {
+  if (CONFIG.USE_MOCK) throw new Error('Mock invites disabled.');
+  if (!userId) {
+    throw new Error('You must be signed in to decline an invite.');
   }
-
-  const response = await fetch(`${BASE_URL}/invites/${token}/decline`, {
-    method: 'POST',
-  });
-
-  if (!response.ok) {
-    throw new Error(`declineInvite failed: ${response.status}`);
-  }
-
-  return response.json();
+  const projectId = token;
+  await memberService.declineInvite(projectId, userId, accessToken || '');
+  return { success: true };
 }
 
-
+// Re-export helpers used by invite UI if role labels need mapping later.
+export { mapMemberRoleFromApi, mapMemberRoleToApi };

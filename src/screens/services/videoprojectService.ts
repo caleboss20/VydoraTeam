@@ -1,3 +1,11 @@
+/**
+ * Local video-project / timeline helpers.
+ *
+ * NOT used by VideoProjectContext today (editor state is AsyncStorage-only).
+ * There is no `/video-projects` API on vydora-backend yet — leave this alone
+ * until the editor persistence pass. Do not flip this onto the network without
+ * a matching Spring resource.
+ */
 import { VideoProject, VideoClip, TextOverlay } from '../types';
 import { CONFIG } from '../config';
 // ─── Mock store ────────────────────────────────────────────────────────────
@@ -14,6 +22,8 @@ const buildProject = (firstClip: Omit<VideoClip, 'id' | 'order'>): VideoProject 
   const now = new Date().toISOString();
   return {
     id: generateId(),
+    // Local-only editor project; collab projectId is filled when linked later.
+    projectId: '',
     title: 'Untitled Project',
     createdAt: now,
     updatedAt: now,
