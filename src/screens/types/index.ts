@@ -34,6 +34,8 @@ export interface Clip {
 }
 // ─── Member ──────────────────────────────────────────────────────────────────
 export type MemberRole = 'Owner' | 'Editor' | 'Viewer';
+/** Mirrors backend MemberStatus — INVITED rows power the Pending Invites list. */
+export type MemberInviteStatus = 'INVITED' | 'ACTIVE';
 export interface Member {
   id: string;
   projectId: string;
@@ -43,6 +45,12 @@ export interface Member {
   color: string;
   role: MemberRole;
   online: boolean;
+  /** Present on real API members; used by Team Members screen. */
+  email?: string;
+  /** ACTIVE = full member; INVITED = pending invite (not yet accepted). */
+  status?: MemberInviteStatus;
+  /** ISO timestamp from backend `joinedAt` (invite sent / accepted time). */
+  joinedAt?: string;
 }
 // ─── Comment ─────────────────────────────────────────────────────────────────
 export interface Comment {

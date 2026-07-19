@@ -86,32 +86,25 @@ export function mapAuthUser(data: {
 
 // ─── Projects ────────────────────────────────────────────────────────────────
 
-type ApiProjectStatus = 'DRAFT' | 'IN_REVIEW' | 'PUBLISHED';
-
-/** Backend project status → values already used in Dashboard / ProjectDetail. */
+/** Backend project status → Dashboard / ProjectDetail values (Title-Case on Supabase). */
 export function mapProjectStatusFromApi(status: string): ProjectStatus {
   switch (status) {
+    case 'Draft':
     case 'DRAFT':
       return 'Draft';
+    case 'Archived':
     case 'PUBLISHED':
       return 'Archived';
+    case 'Active':
     case 'IN_REVIEW':
     default:
       return 'Active';
   }
 }
 
-/** UI status → UpdateProjectRequest.status */
-export function mapProjectStatusToApi(status: ProjectStatus): ApiProjectStatus {
-  switch (status) {
-    case 'Draft':
-      return 'DRAFT';
-    case 'Archived':
-      return 'PUBLISHED';
-    case 'Active':
-    default:
-      return 'IN_REVIEW';
-  }
+/** UI status → UpdateProjectRequest.status (matches DB CHECK: Active|Archived|Draft). */
+export function mapProjectStatusToApi(status: ProjectStatus): string {
+  return status;
 }
 
 export type ApiProject = {
@@ -121,11 +114,19 @@ export type ApiProject = {
   thumbnailUrl?: string | null;
   ownerId: string;
   status: string;
+  visibility?: string | null;
   memberCount?: number;
   clipCount?: number;
   createdAt: string;
   updatedAt: string;
 };
+
+function mapVisibilityFromApi(
+  visibility?: string | null
+): 'Private' | 'Team' | 'Public' {
+  if (visibility === 'Team' || visibility === 'Public') return visibility;
+  return 'Private';
+}
 
 export function mapProjectFromApi(p: ApiProject): Project {
   return {
@@ -133,8 +134,7 @@ export function mapProjectFromApi(p: ApiProject): Project {
     // Screens bind `project.name`; API field is `title`.
     name: p.title,
     description: p.description || '',
-    // Visibility is UI-only today — backend has no equivalent column yet.
-    visibility: 'Private',
+    visibility: mapVisibilityFromApi(p.visibility),
     status: mapProjectStatusFromApi(p.status),
     ownerId: p.ownerId,
     thumbnailUrl: p.thumbnailUrl || undefined,
@@ -159,14 +159,14 @@ export function mapMemberRoleFromApi(role: string): MemberRole {
 }
 
 /**
- * Accepts both Title-Case MemberRole and InviteMember’s lowercase keys
- * (`editor` | `viewer` | `admin`).
+ * Accepts Title-Case MemberRole or InviteMember lowercase keys.
+ * Backend/DB now store Owner|Editor|Viewer.
  */
-export function mapMemberRoleToApi(role: string): 'OWNER' | 'EDITOR' | 'VIEWER' {
+export function mapMemberRoleToApi(role: string): 'Owner' | 'Editor' | 'Viewer' {
   const r = (role || '').toUpperCase();
-  if (r === 'OWNER' || r === 'ADMIN') return 'OWNER';
-  if (r === 'VIEWER') return 'VIEWER';
-  return 'EDITOR';
+  if (r === 'OWNER' || r === 'ADMIN') return 'Owner';
+  if (r === 'VIEWER') return 'Viewer';
+  return 'Editor';
 }
 
 export type ApiMember = {
@@ -181,6 +181,8 @@ export type ApiMember = {
 };
 
 export function mapMemberFromApi(m: ApiMember): Member {
+  const status =
+    (m.status || 'ACTIVE').toUpperCase() === 'INVITED' ? 'INVITED' : 'ACTIVE';
   return {
     // Screens key rows by `member.id`; backend membership PK is userId+projectId.
     id: m.userId,
@@ -192,6 +194,9 @@ export function mapMemberFromApi(m: ApiMember): Member {
     role: mapMemberRoleFromApi(m.role),
     // Presence comes from WebSocket later; REST always starts offline.
     online: false,
+    email: m.email || undefined,
+    status,
+    joinedAt: m.joinedAt,
   };
 }
 
@@ -271,7 +276,9 @@ export type ApiExport = {
 };
 
 export function mapExportStatusFromApi(status: string): ExportStatus {
-  switch ((status || '').toUpperCase()) {
+  const s = (status || '').toUpperCase();
+  switch (s) {
+    case 'READY':
     case 'COMPLETED':
       return 'Ready';
     case 'FAILED':

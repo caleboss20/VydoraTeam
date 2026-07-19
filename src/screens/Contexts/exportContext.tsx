@@ -1,3 +1,13 @@
+/**
+ * ExportContext — Export library tab data.
+ *
+ * Loads real jobs from the API (aggregated across the user’s projects).
+ * Does NOT seed mock rows. Stale AsyncStorage from the old mock era is
+ * cleared on launch when CONFIG.USE_MOCK is false.
+ *
+ * After ReviewExport finishes a job, call `prependExport` (or `fetchExports`)
+ * so the library updates immediately.
+ */
 import React, {
   createContext,
   useContext,
@@ -12,91 +22,130 @@ import { exportService } from '../services/exportService';
 import { useAuth } from './Authcontext';
 import { CONFIG } from '../config';
 
-// ─── Config ────────────────────────────────────────────────────────────────
+const POLL_INTERVAL_MS = 15000;
 
-
-const POLL_INTERVAL_MS = 15000; // 15s — exports are background work, not live editing
-
-// ─── Context Type ─────────────────────────────────────────────────────────────
 interface ExportContextType {
   exports: Export[];
   isLoading: boolean;
   error: string | null;
   fetchExports: () => Promise<void>;
+  /** Insert a just-created export at the top of the library (and persist). */
+  prependExport: (item: Export) => Promise<void>;
   deleteExport: (exportId: string) => Promise<void>;
   retryExport: (exportId: string) => Promise<void>;
   getExportsByStatus: (status: Export['status'] | 'All') => Export[];
 }
-// ─── Context ─────────────────────────────────────────────────────────────────
+
 const ExportContext = createContext<ExportContextType | undefined>(undefined);
-// ─── Provider ────────────────────────────────────────────────────────────────
+
 export function ExportProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const [exports, setExports] = useState<Export[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // ── Rehydrate from AsyncStorage on launch (offline-first, same pattern as ProjectContext) ──
+
+  // Drop legacy mock cache so the library starts empty until a real fetch/create.
   useEffect(() => {
-    const rehydrate = async () => {
-      try {
-        const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS);
-        if (cached) setExports(JSON.parse(cached));
-      } catch (e) {
-        console.log('Export rehydration failed', e);
+    const boot = async () => {
+      if (CONFIG.USE_MOCK) {
+        try {
+          const cached = await AsyncStorage.getItem(
+            CONFIG.ASYNC_STORAGE_KEYS.EXPORTS
+          );
+          if (cached) setExports(JSON.parse(cached));
+        } catch (e) {
+          console.log('Export rehydration failed', e);
+        }
+        return;
       }
+      try {
+        await AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS);
+      } catch {
+        /* ignore */
+      }
+      setExports([]);
     };
-    rehydrate();
+    boot();
   }, []);
-  // ── Fetch fresh data once token is available ──
+
   useEffect(() => {
-    if (token) fetchExports();
+    if (token && !CONFIG.USE_MOCK) fetchExports();
   }, [token]);
-  // Global fetch — no projectId, this pulls every export for the logged-in user.
+
+  const persist = async (next: Export[]) => {
+    await AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.EXPORTS,
+      JSON.stringify(next)
+    );
+  };
+
   const fetchExports = async () => {
+    if (!token) return;
     try {
       setIsLoading(true);
       setError(null);
-      const data = await exportService.getExports(token!);
+      const data = await exportService.getExports(token);
       setExports(data);
-      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS, JSON.stringify(data));
+      await persist(data);
     } catch (e: any) {
       setError(e.message);
+      // Don't keep fake/stale rows when the live API fails — show empty instead.
+      if (!CONFIG.USE_MOCK) {
+        setExports([]);
+        await AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS).catch(
+          () => {}
+        );
+      }
     } finally {
       setIsLoading(false);
     }
   };
+
+  const prependExport = async (item: Export) => {
+    const next = [item, ...exports.filter((e) => e.id !== item.id)];
+    setExports(next);
+    await persist(next);
+  };
+
   const deleteExport = async (exportId: string) => {
     try {
       setError(null);
       await exportService.deleteExport(exportId, token!);
-      const updated = exports.filter(e => e.id !== exportId);
+      const updated = exports.filter((e) => e.id !== exportId);
       setExports(updated);
-      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS, JSON.stringify(updated));
+      await persist(updated);
     } catch (e: any) {
       setError(e.message);
     }
   };
+
   const retryExport = async (exportId: string) => {
     try {
       setError(null);
       const updatedItem = await exportService.retryExport(exportId, token!);
-      const updated = exports.map(e => (e.id === exportId ? updatedItem : e));
-      setExports(updated);
-      await AsyncStorage.setItem(CONFIG.ASYNC_STORAGE_KEYS.EXPORTS, JSON.stringify(updated));
+      const updated = exports.map((e) =>
+        e.id === exportId ? updatedItem : e
+      );
+      // Retry creates a new job id on the backend — also prepend if id changed.
+      const next =
+        updatedItem.id !== exportId
+          ? [updatedItem, ...exports.filter((e) => e.id !== exportId)]
+          : updated;
+      setExports(next);
+      await persist(next);
     } catch (e: any) {
       setError(e.message);
     }
   };
+
   const getExportsByStatus = (status: Export['status'] | 'All'): Export[] => {
     if (status === 'All') return exports;
-    return exports.filter(e => e.status === status);
+    return exports.filter((e) => e.status === status);
   };
-  // ── Poll only while something is actively Processing. ──
-  // Starts an interval when a Processing export appears, clears it once
-  // nothing's left in that state — avoids polling forever for no reason.
+
   useEffect(() => {
-    const hasProcessing = exports.some(e => e.status === 'Processing');
+    const hasProcessing = exports.some((e) => e.status === 'Processing');
     if (hasProcessing && !pollRef.current) {
       pollRef.current = setInterval(() => {
         fetchExports();
@@ -113,21 +162,25 @@ export function ExportProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [exports]);
+
   return (
-    <ExportContext.Provider value={{
-      exports,
-      isLoading,
-      error,
-      fetchExports,
-      deleteExport,
-      retryExport,
-      getExportsByStatus,
-    }}>
+    <ExportContext.Provider
+      value={{
+        exports,
+        isLoading,
+        error,
+        fetchExports,
+        prependExport,
+        deleteExport,
+        retryExport,
+        getExportsByStatus,
+      }}
+    >
       {children}
     </ExportContext.Provider>
   );
 }
-// ─── Hook ────────────────────────────────────────────────────────────────────
+
 export function useExport() {
   const context = useContext(ExportContext);
   if (!context) throw new Error('useExport must be used within ExportProvider');

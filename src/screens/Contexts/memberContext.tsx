@@ -103,6 +103,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       await persist(next);
     } catch (e: any) {
       setError(e.message);
+      throw e;
     }
   };
   const removeMember = async (projectId: string, memberId: string) => {
@@ -117,6 +118,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       await persist(next);
     } catch (e: any) {
       setError(e.message);
+      throw e;
     }
   };
   const getMembersForProject = (projectId: string): Member[] => {

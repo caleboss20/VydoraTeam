@@ -5,20 +5,32 @@
  * Paths below already include `/api/v1` — services append resource paths only
  * (e.g. `/auth/login`, `/projects`).
  *
+ * Override via `.env.local`:
+ *   EXPO_PUBLIC_API_BASE=http://<host>:8080/api/v1
+ *   EXPO_PUBLIC_WS_BASE=http://<host>:8080/ws
+ *
  * Device tips:
  * - iOS simulator / web: `localhost` works.
- * - Android emulator: use `http://10.0.2.2:8080/api/v1` (emulator’s host loopback).
- * - Physical phone: use your computer’s LAN IP, e.g. `http://192.168.1.23:8080/api/v1`.
+ * - Android emulator: `http://10.0.2.2:8080/api/v1`.
+ * - Physical phone (Expo Go): use your PC’s LAN IP, e.g. `http://192.168.1.23:8080/api/v1`.
  */
+const API_BASE =
+  process.env.EXPO_PUBLIC_API_BASE?.replace(/\/$/, '') ||
+  'http://localhost:8080/api/v1';
+
+const WS_BASE =
+  process.env.EXPO_PUBLIC_WS_BASE?.replace(/\/$/, '') ||
+  'http://localhost:8080/ws';
+
 export const CONFIG = {
   /** REST base URL for the Spring Boot API. */
-  API_BASE: 'http://localhost:8080/api/v1',
+  API_BASE,
 
   /**
    * SockJS/STOMP endpoint (no `/api/v1` prefix).
    * Connect with JWT on the STOMP CONNECT frame: `Authorization: Bearer <accessToken>`.
    */
-  WS_BASE: 'http://localhost:8080/ws',
+  WS_BASE,
 
   ASYNC_STORAGE_KEYS: {
     USER: 'vydora:user',

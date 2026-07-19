@@ -77,66 +77,76 @@ export default function VersionHistoryScreen() {
         <Text style={styles.autoSaveLabel}>AUTO-SAVED EVERY 2 MIN</Text>
         {loading && <ActivityIndicator style={styles.loader} color="#F5C518" />}
         {error && <Text style={styles.errorText}>{error}</Text>}
-        <ScrollView
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-        >
-          {listItems.map((version, index) => (
-            <View key={version.id} style={styles.row}>
-              <View style={styles.dotColumn}>
-                <View
-                  style={[styles.dot, version.isCurrent && styles.dotCurrent]}
-                />
-                {index < listItems.length - 1 && <View style={styles.line} />}
-              </View>
-              <View
-                style={[styles.card, version.isCurrent && styles.cardCurrent]}
-              >
-                <View style={styles.cardHeader}>
-                  <Text style={styles.versionTitle}>
-                    Version {version.versionNumber}
-                  </Text>
-                  {version.isCurrent ? (
-                    <View style={styles.currentPill}>
-                      <Text style={styles.currentPillText}>Current</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      disabled={!!restoringVersionId}
-                      onPress={() => restoreVersion(version.id)}
-                    >
-                      {restoringVersionId === version.id ? (
-                        <ActivityIndicator size="small" color="#F5C518" />
-                      ) : (
-                        <Text style={styles.restoreText}>Restore</Text>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                </View>
-                <View style={styles.authorRow}>
+        {!loading && !error && listItems.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="time-outline" size={40} color="#555" />
+            <Text style={styles.emptyTitle}>No versions yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Auto-saves will show up here as you edit this project.
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+          >
+            {listItems.map((version, index) => (
+              <View key={version.id} style={styles.row}>
+                <View style={styles.dotColumn}>
                   <View
-                    style={[
-                      styles.avatar,
-                      { backgroundColor: version.author.color },
-                    ]}
-                  >
-                    <Text style={styles.avatarText}>
-                      {version.author.initials}
+                    style={[styles.dot, version.isCurrent && styles.dotCurrent]}
+                  />
+                  {index < listItems.length - 1 && <View style={styles.line} />}
+                </View>
+                <View
+                  style={[styles.card, version.isCurrent && styles.cardCurrent]}
+                >
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.versionTitle}>
+                      Version {version.versionNumber}
                     </Text>
+                    {version.isCurrent ? (
+                      <View style={styles.currentPill}>
+                        <Text style={styles.currentPillText}>Current</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        disabled={!!restoringVersionId}
+                        onPress={() => restoreVersion(version.id)}
+                      >
+                        {restoringVersionId === version.id ? (
+                          <ActivityIndicator size="small" color="#F5C518" />
+                        ) : (
+                          <Text style={styles.restoreText}>Restore</Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
                   </View>
-                  <Text style={styles.authorText}>
-                    {version.author.name} · {version.relativeTime}
-                  </Text>
-                  {version.isRestored && !version.isCurrent && (
-                    <View style={styles.restoredPill}>
-                      <Text style={styles.restoredPillText}>Restored</Text>
+                  <View style={styles.authorRow}>
+                    <View
+                      style={[
+                        styles.avatar,
+                        { backgroundColor: version.author.color },
+                      ]}
+                    >
+                      <Text style={styles.avatarText}>
+                        {version.author.initials}
+                      </Text>
                     </View>
-                  )}
+                    <Text style={styles.authorText}>
+                      {version.author.name} · {version.relativeTime}
+                    </Text>
+                    {version.isRestored && !version.isCurrent && (
+                      <View style={styles.restoredPill}>
+                        <Text style={styles.restoredPillText}>Restored</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
-        </ScrollView>
+            ))}
+          </ScrollView>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -180,6 +190,24 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 20,
     paddingHorizontal: 16,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingTop: vs(40),
+  },
+  emptyTitle: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "700",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    color: "#8A8A8A",
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 20,
   },
   list: {
     paddingHorizontal: 16,

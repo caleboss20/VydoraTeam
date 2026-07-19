@@ -1,5 +1,13 @@
-
-import React, { useState } from "react";
+/**
+ * Team Members screen — real per-project members + pending invites.
+ *
+ * Data source: GET /projects/{projectId}/members
+ *   - status ACTIVE  → "X MEMBERS" list
+ *   - status INVITED → "PENDING INVITES" list
+ *
+ * Styles / layout below are untouched — only the data + handlers are wired.
+ */
+import React, { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,12 +17,28 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import type { NavigationProp } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+  type RouteProp,
+} from "@react-navigation/native";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import { useMember } from "../Contexts/memberContext";
+import { useProject } from "../Contexts/projectContext";
+import { useAuth } from "../Contexts/Authcontext";
+import type { Member as ApiMember, MemberRole } from "../types";
+
+dayjs.extend(relativeTime);
+
 // ─────────────────────────────────────────────
-// TYPES
+// TYPES (UI row shapes — same as before)
 // ─────────────────────────────────────────────
 type Role = "Owner" | "Editor" | "Viewer";
 interface Member {
@@ -35,9 +59,6 @@ interface RoleColorSet {
   bg: string;
   text: string;
 }
-interface TeamMembersScreenProps {
-  navigation?: NavigationProp<any>;
-}
 interface AvatarProps {
   name: string;
   online?: boolean;
@@ -45,6 +66,12 @@ interface AvatarProps {
 interface RoleBadgeProps {
   role: Role;
 }
+
+type TeamMembersRoute = RouteProp<
+  { teammember: { projectId?: string } },
+  "teammember"
+>;
+
 // ─────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────
@@ -56,19 +83,7 @@ const ROLE_COLORS: Record<Role, RoleColorSet> = {
 };
 /** All assignable roles (Owner is excluded from the picker — you can't promote to owner) */
 const ASSIGNABLE_ROLES: Role[] = ["Editor", "Viewer"];
-// ─────────────────────────────────────────────
-// SEED DATA
-// ─────────────────────────────────────────────
-const SEED_MEMBERS: Member[] = [
-  { id: "1", name: "You", email: "you@vydora.io", role: "Owner", online: true, isMe: true },
-  { id: "2", name: "Caleb", email: "caleb@vydora.io", role: "Editor", online: true },
-  { id: "3", name: "James", email: "james@vydora.io", role: "Editor", online: true },
-  { id: "4", name: "Sam", email: "sam@vydora.io", role: "Viewer", online: false },
-];
-const SEED_INVITES: Invite[] = [
-  { id: "i1", email: "Dave@mail.com", role: "Editor", sentAgo: "2 hr ago" },
-  { id: "i2", email: "mark@studio.io", role: "Viewer", sentAgo: "yesterday" },
-];
+
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
@@ -78,6 +93,35 @@ const initials = (name: string): string => name.charAt(0).toUpperCase();
 const AVATAR_PALETTE: string[] = ["#F5C518", "#E05B5B", "#4ECBA4", "#9B8EF5", "#5BA3E0"];
 const avatarBg = (name: string): string =>
   AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
+
+function formatSentAgo(joinedAt?: string): string {
+  if (!joinedAt) return "recently";
+  return dayjs(joinedAt).fromNow(); // e.g. "2 hours ago", "just now"
+}
+
+/** Map an ACTIVE API member into the row shape this screen already renders. */
+function toUiMember(m: ApiMember, currentUserId?: string | null): Member {
+  const isMe = !!currentUserId && m.userId === currentUserId;
+  return {
+    id: m.id,
+    name: isMe ? "You" : m.name,
+    email: m.email || "",
+    role: m.role as Role,
+    online: !!m.online,
+    isMe,
+  };
+}
+
+/** Map an INVITED API member into the pending-invite row shape. */
+function toUiInvite(m: ApiMember): Invite {
+  return {
+    id: m.id,
+    email: m.email || m.name,
+    role: m.role as Role,
+    sentAgo: formatSentAgo(m.joinedAt),
+  };
+}
+
 // ─────────────────────────────────────────────
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────
@@ -106,15 +150,66 @@ function RoleBadge({ role }: RoleBadgeProps) {
 // ─────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────
-export default function TeamMembersScreen({ navigation }: TeamMembersScreenProps) {
-  const [members, setMembers] = useState<Member[]>(SEED_MEMBERS);
-  const [invites, setInvites] = useState<Invite[]>(SEED_INVITES);
+export default function TeamMembersScreen() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<TeamMembersRoute>();
+  const { user } = useAuth();
+  const { currentProject } = useProject();
+  const {
+    fetchMembers,
+    getMembersForProject,
+    changeRole,
+    removeMember,
+    inviteMember,
+    isLoading,
+  } = useMember();
+
+  // Prefer route param from Project Detail → "View All members"; fall back to current project.
+  const projectId =
+    route.params?.projectId || currentProject?.id || "";
+
   const [search, setSearch] = useState<string>("");
+  /** Local override so Resend can flip "sentAgo" to "just now" without a backend resend API. */
+  const [resentIds, setResentIds] = useState<Record<string, true>>({});
   /* ── context menu state ── */
   const [menuVisible, setMenuVisible] = useState<boolean>(false);
   const [menuTarget, setMenuTarget] = useState<Member | null>(null);
   /* ── role picker state ── */
   const [rolePickerVisible, setRolePickerVisible] = useState<boolean>(false);
+
+  // Refresh whenever this screen is focused (e.g. after inviting someone).
+  useFocusEffect(
+    useCallback(() => {
+      if (!projectId) return;
+      fetchMembers(projectId);
+      setResentIds({});
+    }, [projectId])
+  );
+
+  const apiMembers = projectId ? getMembersForProject(projectId) : [];
+
+  const members: Member[] = useMemo(
+    () =>
+      apiMembers
+        .filter((m) => (m.status || "ACTIVE") !== "INVITED")
+        .map((m) => toUiMember(m, user?.id)),
+    [apiMembers, user?.id]
+  );
+
+  const invites: Invite[] = useMemo(
+    () =>
+      apiMembers
+        .filter((m) => m.status === "INVITED")
+        .map((m) => {
+          const row = toUiInvite(m);
+          if (resentIds[row.id]) {
+            return { ...row, sentAgo: "just now" };
+          }
+          return row;
+        }),
+    [apiMembers, resentIds]
+  );
+
   // ── filtered members ──
   const filteredMembers = members.filter(
     (m) =>
@@ -127,31 +222,47 @@ export default function TeamMembersScreen({ navigation }: TeamMembersScreenProps
     setMenuVisible(true);
   };
   // ── change role ──
-  const handleChangeRole = (newRole: Role): void => {
-    if (!menuTarget) return;
-    setMembers((prev) =>
-      prev.map((m) => (m.id === menuTarget.id ? { ...m, role: newRole } : m))
-    );
-    setRolePickerVisible(false);
-    setMenuVisible(false);
+  const handleChangeRole = async (newRole: Role): Promise<void> => {
+    if (!menuTarget || !projectId) return;
+    try {
+      await changeRole(projectId, menuTarget.id, newRole as MemberRole);
+      setRolePickerVisible(false);
+      setMenuVisible(false);
+    } catch (e: any) {
+      Alert.alert("Could not change role", e?.message || "Please try again.");
+    }
   };
   // ── remove member ──
-  const handleRemove = (): void => {
-    if (!menuTarget) return;
-    setMembers((prev) => prev.filter((m) => m.id !== menuTarget.id));
-    setMenuVisible(false);
+  const handleRemove = async (): Promise<void> => {
+    if (!menuTarget || !projectId) return;
+    try {
+      await removeMember(projectId, menuTarget.id);
+      setMenuVisible(false);
+      setMenuTarget(null);
+    } catch (e: any) {
+      Alert.alert("Could not remove member", e?.message || "Please try again.");
+    }
   };
   // ── resend invite ──
-  const handleResend = (id: string): void => {
-    /* In production: call API. Here we just give visual feedback via state. */
-    setInvites((prev) =>
-      prev.map((inv) => (inv.id === id ? { ...inv, sentAgo: "just now" } : inv))
-    );
+  // Backend has no dedicated resend endpoint (re-invite hits ALREADY_MEMBER).
+  // We refresh the invite timestamp in the UI; membership stays INVITED.
+  const handleResend = async (id: string): Promise<void> => {
+    const pending = apiMembers.find((m) => m.id === id && m.status === "INVITED");
+    if (!pending || !projectId) return;
+    setResentIds((prev) => ({ ...prev, [id]: true }));
+    // Best-effort: if somehow the row was removed, a fresh invite would recreate it.
+    // For normal pending rows this is a no-op against the API (conflict) — UI still updates.
+    if (pending.email) {
+      try {
+        await inviteMember(projectId, pending.email, pending.role);
+      } catch {
+        // Expected when the invite already exists — keep the "just now" feedback.
+      }
+    }
   };
   // ── navigate to invite screen ──
   const goToInvite = (): void => {
-    /* Replace with your actual route name */
-    navigation?.navigate("InviteMember");
+    navigation?.navigate("invitemember");
   };
   // ─────────────────────────────────────────────
   // RENDER HELPERS
@@ -218,24 +329,30 @@ export default function TeamMembersScreen({ navigation }: TeamMembersScreenProps
             onChangeText={setSearch}
           />
         </View>
-        {/* ── Members section ── */}
-        <Text style={styles.sectionLabel}>{filteredMembers.length} MEMBERS</Text>
-        {filteredMembers.map((item) => renderMember(item))}
-        {/* ── Pending Invites section ── */}
-        {invites.length > 0 && (
+        {isLoading && members.length === 0 && invites.length === 0 ? (
+          <ActivityIndicator color="#F5C518" style={{ marginTop: 40 }} />
+        ) : (
           <>
-            <View style={styles.sectionRow}>
-              <Text style={styles.sectionLabel}>PENDING INVITES</Text>
-              <Text style={styles.inviteCount}>{invites.length}</Text>
-            </View>
-            {invites.map((item) => renderInvite(item))}
+            {/* ── Members section ── */}
+            <Text style={styles.sectionLabel}>{filteredMembers.length} MEMBERS</Text>
+            {filteredMembers.map((item) => renderMember(item))}
+            {/* ── Pending Invites section ── */}
+            {invites.length > 0 && (
+              <>
+                <View style={styles.sectionRow}>
+                  <Text style={styles.sectionLabel}>PENDING INVITES</Text>
+                  <Text style={styles.inviteCount}>{invites.length}</Text>
+                </View>
+                {invites.map((item) => renderInvite(item))}
+              </>
+            )}
+            {/* ── Invite button ── */}
+            <TouchableOpacity style={styles.inviteButton} onPress={goToInvite} activeOpacity={0.85}>
+              <Ionicons name="add" size={18} color="#000" style={{ marginRight: 6 }} />
+              <Text style={styles.inviteButtonText}>Invite new member</Text>
+            </TouchableOpacity>
           </>
         )}
-        {/* ── Invite button ── */}
-        <TouchableOpacity style={styles.inviteButton} onPress={goToInvite} activeOpacity={0.85}>
-          <Ionicons name="add" size={18} color="#000" style={{ marginRight: 6 }} />
-          <Text style={styles.inviteButtonText}>Invite new member</Text>
-        </TouchableOpacity>
       </ScrollView>
       {/* ─────────────────────────────────────────
           CONTEXT MENU MODAL  ("..." tapped)

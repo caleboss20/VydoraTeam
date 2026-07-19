@@ -164,7 +164,7 @@ export default function ExportLibraryScreen() {
           </TouchableOpacity>
         </View>
         {/* ─── LIST OR EMPTY STATE ─── */}
-        {isEmpty ? (
+        {isLoading && exportsList.length === 0 ? null : isEmpty ? (
           <EmptyState
             tab={activeTab}
             isSearchEmpty={isSearchEmpty}

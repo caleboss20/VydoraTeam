@@ -177,6 +177,7 @@ const MembersTab = ({
   onInvite: () => void;
 }) => {
   const { changeRole, removeMember } = useMember();
+  const navigation=useNavigation<any>();
   const handleMemberAction = (member: Member) => {
     Alert.alert(member.name, "What would you like to do?", [
       {
@@ -254,6 +255,7 @@ const MembersTab = ({
       ))}
       
       <TouchableOpacity
+      
         style={styles.inviteBtn}
         onPress={onInvite}
         activeOpacity={0.8}
@@ -265,6 +267,11 @@ const MembersTab = ({
         />
         <Text style={styles.inviteBtnText}>Invite member</Text>
       </TouchableOpacity>
+      <Text
+      onPress={() =>
+        navigation.navigate("teammember", { projectId })
+      }
+       style={styles.teammembersText}>View All members</Text>
     </View>
   );
 };
@@ -603,7 +610,10 @@ export default function ProjectDetailScreen() {
     );
   }
   const projectClips = getClipsForProject(currentProject.id);
-  const projectMembers = getMembersForProject(currentProject.id);
+  // Active members only on the Project Detail tab — pending invites live on Team Members.
+  const projectMembers = getMembersForProject(currentProject.id).filter(
+    (m) => (m.status || "ACTIVE") !== "INVITED",
+  );
   const projectComments = getCommentsForProject(currentProject.id);
   const stats = [
     {
@@ -1374,7 +1384,11 @@ sheetConfirmText: {
 sheetConfirmTextActive: {
   color: "#141414",
 },
-
+teammembersText:{
+fontSize:scale(12),
+color:'#fff',
+textAlign:'center',
+},
 
 
 });

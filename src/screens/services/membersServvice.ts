@@ -1,7 +1,7 @@
 /**
  * Member service — `/api/v1/projects/{projectId}/members`.
  *
- * Invite:  POST .../members/invite  { email, role: OWNER|EDITOR|VIEWER }
+ * Invite:  POST .../members/invite  { email, role: Owner|Editor|Viewer }
  *            Invitee must already have a Vydora account.
  * List:    GET  .../members         → { items: MemberResponse[] }
  * Role:    PUT  .../members/{userId} { role }

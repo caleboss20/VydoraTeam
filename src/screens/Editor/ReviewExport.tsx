@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Video, ResizeMode } from "expo-av";
 import { useVideoProject } from "../Contexts/VideoProjectContext";
 import { useAuth } from "../Contexts/Authcontext";
+import { useExport } from "../Contexts/exportContext";
 import { exportService } from "../services/exportService";
 import { Export } from "../types";
 
@@ -51,6 +52,7 @@ export default function ExportReviewScreen({ navigation }: any) {
   const [showSuccessSheet, setShowSuccessSheet] = useState(false);
 
   const { token } = useAuth();
+  const { prependExport } = useExport();
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [completedExport, setCompletedExport] = useState<Export | null>(null);
@@ -77,6 +79,8 @@ export default function ExportReviewScreen({ navigation }: any) {
       );
 
       setCompletedExport(result);
+      // Push into Export library immediately so the tab isn’t stuck empty/stale.
+      await prependExport(result);
       confettiRef.current?.start();
 
       setTimeout(() => setShowSuccessSheet(true), 1800);

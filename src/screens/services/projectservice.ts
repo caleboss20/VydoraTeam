@@ -41,21 +41,20 @@ export const projectService = {
   },
 
   /**
-   * Create a project. Creator becomes OWNER automatically on the backend.
-   * `visibility` / `thumbnailUrl` are accepted for UI compatibility but are
-   * not part of CreateProjectRequest yet (thumbnail can be set later via PUT).
+   * Create a project. Creator becomes Owner automatically on the backend.
+   * `thumbnailUrl` is UI-only until UpdateProjectRequest supports it.
    */
   createProject: async (
     name: string,
     description: string,
-    _visibility: 'Private' | 'Team' | 'Public',
+    visibility: 'Private' | 'Team' | 'Public',
     _token: string,
     _thumbnailUrl?: string
   ): Promise<Project> => {
     if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
     const data = await apiRequest<ApiProject>('/projects', {
       method: 'POST',
-      body: JSON.stringify({ title: name, description }),
+      body: JSON.stringify({ title: name, description, visibility }),
     });
     return mapProjectFromApi(data);
   },
