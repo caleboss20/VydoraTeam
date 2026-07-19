@@ -148,10 +148,20 @@ export async function apiRequest<T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(`${CONFIG.API_BASE}${path}`, {
-    ...rest,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${CONFIG.API_BASE}${path}`, {
+      ...rest,
+      headers,
+    });
+  } catch {
+    // Real fetch failure (not a mock) — phone usually cannot reach the PC API.
+    throw new Error(
+      `Cannot reach the Vydora API at ${CONFIG.API_BASE}. ` +
+        'Make sure the backend is running, your phone is on the same Wi‑Fi, ' +
+        'and EXPO_PUBLIC_API_BASE uses your computer’s LAN IP (not localhost).'
+    );
+  }
 
   if (res.status === 401 && !skipAuth && !skipRefresh) {
     const refreshed = await tryRefresh();

@@ -34,6 +34,7 @@ type RootStackParamList = {
   forgotpassword: undefined;
   signin: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
   AcceptInvite: { token: string };
+  projects: undefined;
 };
 interface ValidationFields {
   email: string;
@@ -82,20 +83,23 @@ export default function SignInscreen() {
     const e = validate({ email, password });
     setErrors(e);
     if (Object.keys(e).length === 0) {
-      await login(email, password);
-      // Same reasoning as Signupscreen: login() catches its own errors and
-      // never rethrows, so check the persisted token directly rather than
-      // trusting a stale `error`/`user` closure right after the await.
-      const savedToken = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN);
-      if (!savedToken) return; // login failed — `error` below will render
+      try {
+        // Real API: POST /api/v1/auth/login → validates against DB password hash.
+        await login(email, password);
+      } catch {
+        return; // AuthContext already set `error` for the UI
+      }
       const pendingToken =
         route.params?.pendingInviteToken ??
         (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
       if (pendingToken) {
         navigation.navigate("AcceptInvite", { token: pendingToken });
+        return;
       }
-      // else: normal login, no explicit navigate — root nav switches on
-      // AuthContext's user/token state as usual.
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "projects" }],
+      });
     }
   };
   const hasError = (field: keyof ValidationErrors): boolean =>

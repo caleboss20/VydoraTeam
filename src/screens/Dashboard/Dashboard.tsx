@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
-    marginRight:s(10),
+    marginRight:s(2),
   },
   bellBadge: {
     position: "absolute",

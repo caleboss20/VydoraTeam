@@ -24,14 +24,19 @@ type PagedProjects = {
 };
 
 export const projectService = {
-  /** List projects the current user owns or belongs to. */
-  getProjects: async (_token: string): Promise<Project[]> => {
+  /**
+   * List projects for the Projects tab.
+   * Backend returns owned/created projects only; `ownerId` is a client-side
+   * safety filter so a stale cache can never paint another account's rows.
+   */
+  getProjects: async (_token: string, ownerId?: string): Promise<Project[]> => {
     if (CONFIG.USE_MOCK) {
       throw new Error('Mock projects disabled — start the backend or set USE_MOCK true.');
     }
-    // Pull a large page so the Dashboard still feels like an unpaginated list.
     const data = await apiRequest<PagedProjects>('/projects?page=1&limit=100');
-    return (data.items || []).map(mapProjectFromApi);
+    const mapped = (data.items || []).map(mapProjectFromApi);
+    if (!ownerId) return mapped;
+    return mapped.filter((p) => p.ownerId === ownerId);
   },
 
   getProjectById: async (projectId: string, _token: string): Promise<Project> => {

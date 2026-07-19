@@ -70,8 +70,8 @@ export default function InviteMemberScreen({ navigation }: any) {
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const sendScale = useRef(new Animated.Value(1)).current;
   const checkAnim = useRef(new Animated.Value(1)).current;
-  // TWEAK: invite link is static/mocked — no real backend link generation yet
-  const inviteLink = 'vydora.io/invite/sc2026x';
+  // Deep link token === projectId (backend invite accept flow).
+  const inviteLink = projectId ? `vydora://invite/${projectId}` : 'vydora://invite';
   const shake = () => {
     shakeAnim.setValue(0);
     Animated.sequence([
@@ -120,7 +120,7 @@ export default function InviteMemberScreen({ navigation }: any) {
     setDraft(text);
   };
   const handleCopyLink = async () => {
-    await Clipboard.setString(`https://${inviteLink}`);
+    await Clipboard.setString(inviteLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };

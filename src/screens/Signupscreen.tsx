@@ -35,6 +35,7 @@ type RootStackParamList = {
   splashscreen: undefined;
   signin: undefined;
   onboarding: undefined;
+  projects: undefined;
   signup: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
   AcceptInvite: { token: string };
 };
@@ -98,35 +99,23 @@ export default function Signupscreen() {
     const e = validate({ fullName, email, password });
     setErrors(e);
     if (Object.keys(e).length === 0) {
-      await register(fullName, email, password);
-      // AuthContext's register() catches its own errors internally and
-      // never rethrows, so we can't trust a local success flag or the
-      // `error` state read immediately after this line. Instead, check
-      // the one thing register() only writes on actual success: the
-      // persisted auth token.
-      const savedToken = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN);
-      if (!savedToken) return; // registration failed — `error` below will render
-      // Recover the invite token two possible ways:
-      // 1. Still sitting in route.params — normal case, nothing interrupted
-      //    the AcceptInviteScreen -> Signup handoff
-      // 2. Fall back to AsyncStorage — safety net for when the app was
-      //    killed mid-flow (e.g. invitee left to check an OTP email) and
-      //    route params were lost on relaunch. AcceptInviteScreen wrote
-      //    this key as a backup the moment it detected the person wasn't
-      //    logged in.
+      try {
+        // Real API: POST /api/v1/auth/register → user row in Postgres + JWTs.
+        await register(fullName, email, password);
+      } catch {
+        return; // AuthContext already set `error` for the UI
+      }
       const pendingToken =
         route.params?.pendingInviteToken ??
         (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
       if (pendingToken) {
-        // Send them back to AcceptInviteScreen instead of wherever a normal
-        // signup would land. This time isAuthenticated will read true there,
-        // so it takes the real accept branch and joins them to the project.
         navigation.navigate("AcceptInvite", { token: pendingToken });
+        return;
       }
-      // No else branch on purpose: for a normal (non-invite) signup, this
-      // screen doesn't navigate at all. Whatever conditionally renders the
-      // auth stack vs. main app stack based on AuthContext's user/token
-      // state handles that redirect automatically.
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "projects" }],
+      });
     }
   };
   const hasError = (field: keyof ValidationErrors): boolean =>
