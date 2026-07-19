@@ -30,7 +30,7 @@ interface ProjectContextType {
     description: string,
     visibility: 'Private' | 'Team' | 'Public',
     thumbnailUrl?: string
-  ) => Promise<void>;
+  ) => Promise<Project>;
   setCurrentProject: (project: Project) => void;
   updateStatus: (projectId: string, status: ProjectStatus) => Promise<void>;
   updateThumbnail: (projectId: string, thumbnailUrl: string) => Promise<void>;
@@ -188,8 +188,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       const updatedList = [newProject, ...projects];
       await persistList(updatedList);
       setCurrentProject(newProject);
+      return newProject;
     } catch (e: any) {
       setError(e.message);
+      throw e;
     } finally {
       setIsLoading(false);
     }

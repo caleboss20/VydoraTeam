@@ -149,21 +149,35 @@ export async function apiRequest<T = unknown>(
   }
 
   let res: Response;
+  const timeoutMs = 25_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     res = await fetch(`${CONFIG.API_BASE}${path}`, {
       ...rest,
       headers,
+      signal: rest.signal ?? controller.signal,
     });
-  } catch {
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      throw new Error(
+        `Request timed out talking to ${CONFIG.API_BASE}. ` +
+          'Make sure the backend is running and reachable from your phone.'
+      );
+    }
     // Real fetch failure (not a mock) — phone usually cannot reach the PC API.
     throw new Error(
       `Cannot reach the Vydora API at ${CONFIG.API_BASE}. ` +
         'Make sure the backend is running, your phone is on the same Wi‑Fi, ' +
         'and EXPO_PUBLIC_API_BASE uses your computer’s LAN IP (not localhost).'
     );
+  } finally {
+    clearTimeout(timer);
   }
 
-  if (res.status === 401 && !skipAuth && !skipRefresh) {
+  // Spring can return 403 for anonymous/expired JWT (not only 401). Treat both
+  // as a cue to refresh once, then retry the original request.
+  if ((res.status === 401 || res.status === 403) && !skipAuth && !skipRefresh) {
     const refreshed = await tryRefresh();
     if (refreshed) {
       return apiRequest<T>(path, { ...options, skipRefresh: true });

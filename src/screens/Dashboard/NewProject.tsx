@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Image, // ADDED: to render picked thumbnail
+  Image,
+  Alert,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { ms, s, vs } from 'react-native-size-matters'
@@ -102,12 +103,18 @@ const NewProjectScreen: React.FC = () => {
     if (!validate()) return
     try {
       setCreating(true)
-      await createProject(projectName.trim(), description.trim(), visibility, thumbnailUrl ?? undefined) // CHANGED: added thumbnailUrl arg
-      await new Promise(res=>setTimeout(res,2000))
-      // currentProject is set inside context after createProject
+      await createProject(
+        projectName.trim(),
+        description.trim(),
+        visibility,
+        thumbnailUrl ?? undefined
+      )
       navigation.navigate('projectdetail')
-    } catch (e) {
-      // error already in contextError
+    } catch (e: any) {
+      Alert.alert(
+        'Couldn’t create project',
+        e?.message || contextError || 'Check that the backend is running and try again.'
+      )
     } finally {
       setCreating(false)
     }
