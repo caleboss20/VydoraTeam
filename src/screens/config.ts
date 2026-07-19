@@ -47,6 +47,10 @@ export const CONFIG = {
     VIDEO_PROJECTS: 'vydora:videoProjects',
     CURRENT_VIDEO_PROJECT: 'vydora:currentVideoProject',
     PENDING_INVITE_TOKEN: 'vydora:pendingInviteToken',
+    /** App-wide Settings screen preferences (JSON). */
+    SETTINGS: 'vydora:settings',
+    /** Per-project prefs prefix — append projectId. */
+    PROJECT_PREFS_PREFIX: 'vydora:projectPrefs:',
   },
 
   /**

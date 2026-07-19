@@ -92,19 +92,32 @@ export const projectService = {
     return mapProjectFromApi(data);
   },
 
-  /**
-   * Thumbnail update. Backend UpdateProjectRequest has no thumbnailUrl field yet,
-   * so this is a no-op against the API and returns the current project.
-   * When the backend adds the field, switch the body to `{ thumbnailUrl }`.
-   */
+  /** Cover image → PUT /projects/{id} with { thumbnailUrl }. */
   updateThumbnail: async (
     projectId: string,
     thumbnailUrl: string,
-    token: string
+    _token: string
   ): Promise<Project> => {
     if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
-    const current = await projectService.getProjectById(projectId, token);
-    return { ...current, thumbnailUrl, updatedAt: new Date().toISOString() };
+    const data = await apiRequest<ApiProject>(`/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ thumbnailUrl }),
+    });
+    return mapProjectFromApi(data);
+  },
+
+  /** Visibility → PUT /projects/{id} with { visibility }. */
+  updateVisibility: async (
+    projectId: string,
+    visibility: 'Private' | 'Team' | 'Public',
+    _token: string
+  ): Promise<Project> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock projects disabled.');
+    const data = await apiRequest<ApiProject>(`/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ visibility }),
+    });
+    return mapProjectFromApi(data);
   },
 
   deleteProject: async (projectId: string, _token: string): Promise<void> => {

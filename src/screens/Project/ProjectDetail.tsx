@@ -17,11 +17,18 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { moderateScale, verticalScale, scale } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Sharing from "expo-sharing";
+import { Paths, File } from "expo-file-system";
 import { useProject } from "../Contexts/projectContext";
-import * as ImagePicker from 'expo-image-picker'
+import * as ImagePicker from "expo-image-picker";
 import { useClip } from "../Contexts/clipContext";
 import { useMember } from "../Contexts/memberContext";
 import { useComment } from "../Contexts/commentContext";
+import { useExport } from "../Contexts/exportContext";
+import { useAuth } from "../Contexts/Authcontext";
+import { uploadService } from "../services/uploadService";
+import { CONFIG } from "../config";
 import { Clip, Member, Comment } from "../types";
 // ─── Constants ────────────────────────────────────────────────────────────────
 const YELLOW = "#F5C518";
@@ -77,10 +84,14 @@ const ClipsTab = ({
   clips,
   isLoading,
   onUpload,
+  onOpenClip,
+  onClipMenu,
 }: {
   clips: Clip[];
   isLoading: boolean;
   onUpload: () => void;
+  onOpenClip: (clip: Clip) => void;
+  onClipMenu: (clip: Clip) => void;
 }) => {
   if (isLoading) {
     return (
@@ -125,6 +136,7 @@ const ClipsTab = ({
           key={clip.id}
           style={styles.clipRow}
           activeOpacity={0.7}
+          onPress={() => onOpenClip(clip)}
         >
           <View style={styles.clipThumb}>
             <Ionicons name="play" size={moderateScale(18)} color={YELLOW} />
@@ -142,11 +154,19 @@ const ClipsTab = ({
               year: "numeric",
             })}
           </Text>
-          <Ionicons
-            name="ellipsis-vertical"
-            size={moderateScale(16)}
-            color={TEXT_MUTED}
-          />
+          <TouchableOpacity
+            hitSlop={10}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              onClipMenu(clip);
+            }}
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={moderateScale(16)}
+              color={TEXT_MUTED}
+            />
+          </TouchableOpacity>
         </TouchableOpacity>
       ))}
       <TouchableOpacity
@@ -279,9 +299,11 @@ const MembersTab = ({
 const CommentsTab = ({
   comments,
   isLoading,
+  clipTitleById,
 }: {
   comments: Comment[];
   isLoading: boolean;
+  clipTitleById: Record<string, string>;
 }) => {
   if (isLoading)
     return (
@@ -318,7 +340,10 @@ const CommentsTab = ({
                 size={moderateScale(10)}
                 color={TEXT_MUTED}
               />
-              <Text style={styles.commentClipText}> {comment.clipId}</Text>
+              <Text style={styles.commentClipText}>
+                {" "}
+                {clipTitleById[comment.clipId] || "Clip"}
+              </Text>
             </View>
             <Text style={styles.commentText}>{comment.text}</Text>
           </View>
@@ -331,34 +356,54 @@ const CommentsTab = ({
 const SettingsTab = ({
   projectId,
   projectName,
+  onRename,
+  onPickThumbnail,
+  onTransferOwnership,
 }: {
   projectId: string;
   projectName: string;
+  onRename: () => void;
+  onPickThumbnail: () => void;
+  onTransferOwnership: () => void;
 }) => {
   const navigation = useNavigation<any>();
-  const { renameProject, updateStatus, deleteProject,currentProject, updateThumbnail } = useProject();
+  const { updateStatus, deleteProject, currentProject, updateVisibility } =
+    useProject();
+  const prefsKey = `${CONFIG.ASYNC_STORAGE_KEYS.PROJECT_PREFS_PREFIX}${projectId}`;
   const [notifications, setNotifications] = useState(true);
   const [autoSave, setAutoSave] = useState(true);
-  const [publicAccess, setPublicAccess] = useState(false);
   const [watermark, setWatermark] = useState(false);
-   
+  const [publicAccess, setPublicAccess] = useState(
+    currentProject?.visibility === "Public"
+  );
 
+  useEffect(() => {
+    setPublicAccess(currentProject?.visibility === "Public");
+  }, [currentProject?.visibility]);
 
-  const handleRename = () => {
-    Alert.prompt(
-      "Rename project",
-      "Enter a new project name",
-      (newName) => {
-        if (newName && newName.trim().length >= 3) {
-          renameProject(projectId, newName.trim());
-        } else {
-          Alert.alert("Invalid name", "Name must be at least 3 characters.");
-        }
-      },
-      "plain-text",
-      projectName,
-    );
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(prefsKey);
+        if (!raw) return;
+        const p = JSON.parse(raw);
+        if (typeof p.notifications === "boolean") setNotifications(p.notifications);
+        if (typeof p.autoSave === "boolean") setAutoSave(p.autoSave);
+        if (typeof p.watermark === "boolean") setWatermark(p.watermark);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [prefsKey]);
+
+  const persistPrefs = async (next: {
+    notifications: boolean;
+    autoSave: boolean;
+    watermark: boolean;
+  }) => {
+    await AsyncStorage.setItem(prefsKey, JSON.stringify(next));
   };
+
   const handleArchive = () => {
     Alert.alert("Archive project", "Hide this project without deleting it?", [
       {
@@ -373,7 +418,6 @@ const SettingsTab = ({
     ]);
   };
 
-   
   const handleDelete = () => {
     Alert.alert(
       "Delete project",
@@ -388,10 +432,10 @@ const SettingsTab = ({
           },
         },
         { text: "Cancel", style: "cancel" },
-      ],
+      ]
     );
   };
- 
+
   const SettingToggle = ({
     icon,
     label,
@@ -471,17 +515,19 @@ const SettingsTab = ({
         icon="pencil-outline"
         label="Rename project"
         sub="Change the project display name"
-        onPress={handleRename}
+        onPress={onRename}
       />
       <SettingAction
         icon="image-outline"
         label="Project thumbnail"
         sub="Update the cover image"
+        onPress={onPickThumbnail}
       />
       <SettingAction
         icon="settings-outline"
         label="Export settings"
         sub="Resolution, format, frame rate"
+        onPress={() => navigation.navigate("reviewexport")}
       />
       <Text style={styles.settingSection}>COLLABORATION</Text>
       <SettingToggle
@@ -489,34 +535,52 @@ const SettingsTab = ({
         label="Notifications"
         sub="Get alerts for comments and edits"
         value={notifications}
-        onChange={setNotifications}
+        onChange={(v) => {
+          setNotifications(v);
+          void persistPrefs({ notifications: v, autoSave, watermark });
+        }}
       />
       <SettingToggle
         icon="save-outline"
         label="Auto-save"
         sub="Save changes every 30 seconds"
         value={autoSave}
-        onChange={setAutoSave}
+        onChange={(v) => {
+          setAutoSave(v);
+          void persistPrefs({ notifications, autoSave: v, watermark });
+        }}
       />
       <SettingToggle
         icon="globe-outline"
         label="Public access"
         sub="Anyone with the link can view"
         value={publicAccess}
-        onChange={setPublicAccess}
+        onChange={async (v) => {
+          setPublicAccess(v);
+          try {
+            await updateVisibility(projectId, v ? "Public" : "Private");
+          } catch (e: any) {
+            setPublicAccess(!v);
+            Alert.alert("Couldn’t update", e?.message || "Try again.");
+          }
+        }}
       />
       <SettingToggle
         icon="water-outline"
         label="Watermark"
         sub="Add studio watermark on export"
         value={watermark}
-        onChange={setWatermark}
+        onChange={(v) => {
+          setWatermark(v);
+          void persistPrefs({ notifications, autoSave, watermark: v });
+        }}
       />
       <Text style={styles.settingSection}>DANGER ZONE</Text>
       <SettingAction
         icon="swap-horizontal-outline"
         label="Transfer ownership"
         sub="Hand over project to another member"
+        onPress={onTransferOwnership}
       />
       <SettingAction
         icon="archive-outline"
@@ -541,11 +605,16 @@ const SettingsTab = ({
 export default function ProjectDetailScreen() {
 
   const navigation = useNavigation<any>();
-  //  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
-  const { currentProject, updateThumbnail, renameProject } = useProject();
-  //  opens image picker, sets thumbnailUrl on success ──
+  const { user } = useAuth();
+  const {
+    currentProject,
+    updateThumbnail,
+    renameProject,
+    updateStatus,
+    deleteProject,
+  } = useProject();
+  const { exports: exportsList } = useExport();
 
-   // ── Rename bottom sheet state ──
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameInput, setRenameInput] = useState(currentProject?.name ?? "");
 
@@ -567,22 +636,45 @@ export default function ProjectDetailScreen() {
   const pickCoverImage = async () => {
     if (!currentProject) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") return;
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Allow photo access to set a cover.");
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.7,
     });
-    if (!result.canceled) {
-      await updateThumbnail(currentProject.id, result.assets[0].uri); // CHANGED
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+    try {
+      const asset = result.assets[0];
+      const fileName =
+        (asset as { fileName?: string }).fileName ||
+        `cover_${Date.now()}.jpg`;
+      const mime =
+        (asset as { mimeType?: string }).mimeType || "image/jpeg";
+      const uploaded = await uploadService.uploadImage(
+        asset.uri,
+        fileName,
+        mime
+      );
+      await updateThumbnail(currentProject.id, uploaded.url);
+    } catch (e: any) {
+      Alert.alert("Couldn’t update cover", e?.message || "Try again.");
     }
   };
 
-  const { fetchClips, getClipsForProject, isLoading: clipsLoading } = useClip();
+  const {
+    fetchClips,
+    getClipsForProject,
+    deleteClip,
+    isLoading: clipsLoading,
+  } = useClip();
   const {
     fetchMembers,
     getMembersForProject,
+    changeRole,
     isLoading: membersLoading,
   } = useMember();
   const {
@@ -591,6 +683,132 @@ export default function ProjectDetailScreen() {
     isLoading: commentsLoading,
   } = useComment();
   const [activeTab, setActiveTab] = useState<Tab>("Clips");
+
+  const handleShareProject = async () => {
+    if (!currentProject) return;
+    const readyExport = exportsList
+      .filter(
+        (e) =>
+          e.projectId === currentProject.id &&
+          e.status === "Ready" &&
+          e.fileUrl
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )[0];
+
+    if (!readyExport?.fileUrl) {
+      Alert.alert(
+        "No export ready",
+        "Export this project first before sharing.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Export",
+            onPress: () => navigation.navigate("reviewexport"),
+          },
+        ]
+      );
+      return;
+    }
+
+    try {
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert("Sharing not available on this device");
+        return;
+      }
+      let localUri = readyExport.fileUrl;
+      if (readyExport.fileUrl.startsWith("http")) {
+        const fileName =
+          readyExport.fileUrl.split("/").pop() ?? "video.mp4";
+        const destination = new File(Paths.cache, fileName);
+        const downloaded = await File.downloadFileAsync(
+          readyExport.fileUrl,
+          destination
+        );
+        localUri = downloaded.uri;
+      }
+      await Sharing.shareAsync(localUri);
+    } catch {
+      /* dismissed */
+    }
+  };
+
+  const handleOverflow = () => {
+    if (!currentProject) return;
+    Alert.alert(currentProject.name, undefined, [
+      { text: "Rename", onPress: openRenameSheet },
+      { text: "Share", onPress: () => void handleShareProject() },
+      {
+        text: "Archive",
+        style: "destructive",
+        onPress: () => {
+          updateStatus(currentProject.id, "Archived");
+          navigation.navigate("projects");
+        },
+      },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          Alert.alert(
+            "Delete project",
+            "This cannot be undone.",
+            [
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: async () => {
+                  await deleteProject(currentProject.id);
+                  navigation.navigate("projects");
+                },
+              },
+              { text: "Cancel", style: "cancel" },
+            ]
+          );
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const handleTransferOwnership = () => {
+    if (!currentProject || !user) return;
+    const candidates = getMembersForProject(currentProject.id).filter(
+      (m) =>
+        (m.status || "ACTIVE") !== "INVITED" &&
+        m.userId !== user.id &&
+        m.role !== "Owner"
+    );
+    if (candidates.length === 0) {
+      Alert.alert(
+        "No members",
+        "Invite an active teammate first, then transfer ownership."
+      );
+      return;
+    }
+    Alert.alert(
+      "Transfer ownership",
+      "Choose a member to become Owner",
+      [
+        ...candidates.slice(0, 5).map((m) => ({
+          text: m.name,
+          onPress: async () => {
+            try {
+              await changeRole(currentProject.id, m.userId, "Owner");
+              await changeRole(currentProject.id, user.id, "Editor");
+              Alert.alert("Done", `${m.name} is now the project owner.`);
+            } catch (e: any) {
+              Alert.alert("Transfer failed", e?.message || "Try again.");
+            }
+          },
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ]
+    );
+  };
 
  
 
@@ -623,30 +841,38 @@ export default function ProjectDetailScreen() {
     (m) => (m.status || "ACTIVE") !== "INVITED",
   );
   const projectComments = getCommentsForProject(currentProject.id);
-  const stats = [
+  const clipTitleById = Object.fromEntries(
+    projectClips.map((c) => [c.id, c.title])
+  );
+  const stats: {
+    label: string;
+    value: number;
+    icon: keyof typeof Ionicons.glyphMap;
+    onPress: () => void;
+  }[] = [
     {
       label: "Videos",
       value: projectClips.length,
-      icon: "videocam-outline" as keyof typeof Ionicons.glyphMap,
-      navigation: "videos",
+      icon: "videocam-outline",
+      onPress: () => setActiveTab("Clips"),
     },
     {
       label: "Members",
       value: projectMembers.length,
-      icon: "people-outline" as keyof typeof Ionicons.glyphMap,
-      navigation: "members",
+      icon: "people-outline",
+      onPress: () => setActiveTab("Members"),
     },
     {
       label: "Comments",
       value: projectComments.length,
-      icon: "chatbubble-outline" as keyof typeof Ionicons.glyphMap,
-      navigation: "comments",
+      icon: "chatbubble-outline",
+      onPress: () => setActiveTab("Comments"),
     },
     {
       label: "Versions",
       value: 0,
-      icon: "git-branch-outline" as keyof typeof Ionicons.glyphMap,
-      navigation: "versionhistory",
+      icon: "git-branch-outline",
+      onPress: () => navigation.navigate("versionhistory"),
     },
   ];
 
@@ -654,12 +880,11 @@ export default function ProjectDetailScreen() {
     key: Tab;
     icon: keyof typeof Ionicons.glyphMap;
     iconActive: keyof typeof Ionicons.glyphMap;
-    navigation: string;
   }[] = [
-    { key: "Clips", icon: "film-outline", iconActive: "film", navigation: "videos" },
-    { key: "Members", icon: "people-outline", iconActive: "people", navigation: "members" },
-    { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble", navigation: "comments" },
-    { key: "Settings", icon: "settings-outline", iconActive: "settings", navigation: "settings" },
+    { key: "Clips", icon: "film-outline", iconActive: "film" },
+    { key: "Members", icon: "people-outline", iconActive: "people" },
+    { key: "Comments", icon: "chatbubble-outline", iconActive: "chatbubble" },
+    { key: "Settings", icon: "settings-outline", iconActive: "settings" },
   ];
 
   const isActive = currentProject.status === "Active";
@@ -672,6 +897,35 @@ export default function ProjectDetailScreen() {
             clips={projectClips}
             isLoading={clipsLoading}
             onUpload={() => navigation.navigate("uploadvideo")}
+            onOpenClip={() => navigation.navigate("editorscreen")}
+            onClipMenu={(clip) => {
+              Alert.alert(clip.title, undefined, [
+                {
+                  text: "Open in editor",
+                  onPress: () => navigation.navigate("editorscreen"),
+                },
+                {
+                  text: "Delete clip",
+                  style: "destructive",
+                  onPress: () => {
+                    Alert.alert(
+                      "Delete clip",
+                      `Remove "${clip.title}" from this project?`,
+                      [
+                        {
+                          text: "Delete",
+                          style: "destructive",
+                          onPress: () =>
+                            void deleteClip(currentProject.id, clip.id),
+                        },
+                        { text: "Cancel", style: "cancel" },
+                      ]
+                    );
+                  },
+                },
+                { text: "Cancel", style: "cancel" },
+              ]);
+            }}
           />
         );
       case "Members":
@@ -685,13 +939,20 @@ export default function ProjectDetailScreen() {
         );
       case "Comments":
         return (
-          <CommentsTab comments={projectComments} isLoading={commentsLoading} />
+          <CommentsTab
+            comments={projectComments}
+            isLoading={commentsLoading}
+            clipTitleById={clipTitleById}
+          />
         );
       case "Settings":
         return (
           <SettingsTab
             projectId={currentProject.id}
             projectName={currentProject.name}
+            onRename={openRenameSheet}
+            onPickThumbnail={() => void pickCoverImage()}
+            onTransferOwnership={handleTransferOwnership}
           />
         );
     }
@@ -708,7 +969,7 @@ export default function ProjectDetailScreen() {
             color={TEXT_PRIMARY}
           />
         </Pressable>
-        <TouchableOpacity style={styles.headerBtn}>
+        <TouchableOpacity style={styles.headerBtn} onPress={handleOverflow}>
           <Ionicons
             name="ellipsis-horizontal"
             size={moderateScale(20)}
@@ -775,10 +1036,7 @@ export default function ProjectDetailScreen() {
         <View style={styles.statsRow}>
           {stats.map((stat, i) => (
             <React.Fragment key={stat.label}>
-              <Pressable
-                style={styles.statItem}
-                onPress={() => navigation.navigate(stat.navigation)}
-              >
+              <Pressable style={styles.statItem} onPress={stat.onPress}>
                 <Ionicons
                   name={stat.icon}
                   size={moderateScale(14)}
@@ -806,7 +1064,11 @@ export default function ProjectDetailScreen() {
             />
             <Text style={styles.primaryBtnText}>Open editor</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            activeOpacity={0.85}
+            onPress={() => void handleShareProject()}
+          >
             <Ionicons
               name="share-social-outline"
               size={moderateScale(16)}

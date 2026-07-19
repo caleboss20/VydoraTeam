@@ -34,6 +34,10 @@ interface ProjectContextType {
   setCurrentProject: (project: Project) => void;
   updateStatus: (projectId: string, status: ProjectStatus) => Promise<void>;
   updateThumbnail: (projectId: string, thumbnailUrl: string) => Promise<void>;
+  updateVisibility: (
+    projectId: string,
+    visibility: 'Private' | 'Team' | 'Public'
+  ) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
 }
 
@@ -227,6 +231,26 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateVisibility = async (
+    projectId: string,
+    visibility: 'Private' | 'Team' | 'Public'
+  ) => {
+    try {
+      setError(null);
+      const updated = await projectService.updateVisibility(
+        projectId,
+        visibility,
+        token!
+      );
+      const updatedList = projects.map((p) => (p.id === projectId ? updated : p));
+      await persistList(updatedList);
+      if (currentProject?.id === projectId) setCurrentProject(updated);
+    } catch (e: any) {
+      setError(e.message);
+      throw e;
+    }
+  };
+
   const deleteProject = async (projectId: string) => {
     try {
       setError(null);
@@ -257,6 +281,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setCurrentProject,
         updateStatus,
         updateThumbnail,
+        updateVisibility,
         deleteProject,
       }}
     >
