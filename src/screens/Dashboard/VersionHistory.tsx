@@ -6,11 +6,14 @@ import {
   ScrollView,
   ActivityIndicator,
   StyleSheet,
+  Alert,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { s, vs } from "react-native-size-matters";
 import { useVersionHistory } from "../Contexts/VersionHistoryContext";
 import { useProject } from "../Contexts/projectContext";
+import { useVideoProject } from "../Contexts/VideoProjectContext";
 import { ProjectVersion, VersionListItem } from "../types";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,12 +36,19 @@ function formatRelativeTime(iso: string): string {
   return days + " days ago";
 }
 
+function versionLabel(v: ProjectVersion): string {
+  if (v.name?.trim()) return v.name.trim();
+  if (v.kind === "pre_restore") return `Before restore · v${v.versionNumber}`;
+  return `Version ${v.versionNumber}`;
+}
+
 function toListItem(v: ProjectVersion): VersionListItem {
   return { ...v, relativeTime: formatRelativeTime(v.createdAt) };
 }
 export default function VersionHistoryScreen() {
   const navigation = useNavigation();
   const { currentProject } = useProject();
+  const { currentVideoProject, setCurrentVideoProject } = useVideoProject();
   const projectId = currentProject?.id;
   const {
     versions,
@@ -47,10 +57,91 @@ export default function VersionHistoryScreen() {
     restoringVersionId,
     fetchVersions,
     restoreVersion,
+    createVersion,
   } = useVersionHistory();
   useEffect(() => {
     if (projectId) fetchVersions(projectId);
   }, [projectId, fetchVersions]);
+
+  const handleRestore = (version: ProjectVersion) => {
+    Alert.alert(
+      "Restore this version?",
+      `Your current edits will be saved first, then Version ${version.versionNumber} will become current.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          style: "destructive",
+          onPress: async () => {
+            const restoredProject = await restoreVersion(
+              version.id,
+              currentVideoProject?.projectId === projectId
+                ? currentVideoProject
+                : null
+            );
+            if (restoredProject) {
+              setCurrentVideoProject({
+                ...restoredProject,
+                projectId: projectId!,
+                updatedAt: new Date().toISOString(),
+              });
+              Alert.alert("Restored", "Timeline rolled back to that version.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const saveNamedCheckpoint = async (name?: string) => {
+    if (!currentVideoProject?.clips?.length || currentVideoProject.projectId !== projectId) {
+      Alert.alert(
+        "Nothing to save",
+        "Open the editor and add clips for this project first."
+      );
+      return;
+    }
+    const created = await createVersion({
+      kind: "named",
+      name: name?.trim() || `Checkpoint ${new Date().toLocaleString()}`,
+      changeSummary: "Named checkpoint",
+      videoProject: currentVideoProject,
+    });
+    if (created) {
+      Alert.alert("Saved", name?.trim() ? `"${name.trim()}" saved.` : "Checkpoint saved.");
+      fetchVersions(projectId!);
+    }
+  };
+
+  const handleNamedSave = () => {
+    if (Platform.OS === "ios" && typeof (Alert as any).prompt === "function") {
+      (Alert as any).prompt(
+        "Save version",
+        "Name this checkpoint (optional).",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Save",
+            onPress: (name?: string) => {
+              void saveNamedCheckpoint(name);
+            },
+          },
+        ],
+        "plain-text"
+      );
+      return;
+    }
+    Alert.alert("Save version", "Save a named checkpoint of the current timeline?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Save",
+        onPress: () => {
+          void saveNamedCheckpoint();
+        },
+      },
+    ]);
+  };
+
   if (!projectId) {
     return (
       <View style={styles.container}>
@@ -72,7 +163,12 @@ export default function VersionHistoryScreen() {
             </Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Version history</Text>
-          <View style={{ width: 24 }} />
+          <TouchableOpacity
+            onPress={handleNamedSave}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.restoreText}>Save</Text>
+          </TouchableOpacity>
         </View>
         <Text style={styles.autoSaveLabel}>AUTO-SAVED EVERY 2 MIN</Text>
         {loading && <ActivityIndicator style={styles.loader} color="#F5C518" />}
@@ -103,7 +199,7 @@ export default function VersionHistoryScreen() {
                 >
                   <View style={styles.cardHeader}>
                     <Text style={styles.versionTitle}>
-                      Version {version.versionNumber}
+                      {versionLabel(version)}
                     </Text>
                     {version.isCurrent ? (
                       <View style={styles.currentPill}>
@@ -112,7 +208,7 @@ export default function VersionHistoryScreen() {
                     ) : (
                       <TouchableOpacity
                         disabled={!!restoringVersionId}
-                        onPress={() => restoreVersion(version.id)}
+                        onPress={() => handleRestore(version)}
                       >
                         {restoringVersionId === version.id ? (
                           <ActivityIndicator size="small" color="#F5C518" />
@@ -170,10 +266,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 22,
   },
-  headerTitle: { 
-    color: "#fff", 
-    fontSize: 20, 
-    fontWeight: "700" 
+  headerTitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
   },
   autoSaveLabel: {
     color: "#8A8A8A",

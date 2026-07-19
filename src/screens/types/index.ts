@@ -204,15 +204,29 @@ export interface Export {
 
 
 // ─── Version (version history domain) ────────────────────────────────────────
+export type VersionKind = 'auto' | 'named' | 'pre_restore';
+
+export type VersionSnapshot = {
+  schemaVersion: 1;
+  videoProject: VideoProject;
+  savedAt: string;
+};
+
 export interface ProjectVersion {
   id: string;
   versionNumber: number;
   projectId: string;
+  /** Optional named checkpoint label. */
+  name?: string;
+  kind?: VersionKind;
   author: Pick<Member, 'id' | 'name' | 'initials' | 'color'>;
   createdAt: string;
   isCurrent: boolean;
   isRestored: boolean;
   changeSummary?: string;
+  thumbnailUrl?: string;
+  /** Present after create / get / restore — used to apply editor state. */
+  snapshot?: VersionSnapshot;
 }
 export interface VersionHistoryState {
   versions: ProjectVersion[];

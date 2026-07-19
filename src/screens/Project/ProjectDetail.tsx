@@ -27,6 +27,7 @@ import { useMember } from "../Contexts/memberContext";
 import { useComment } from "../Contexts/commentContext";
 import { useExport } from "../Contexts/exportContext";
 import { useAuth } from "../Contexts/Authcontext";
+import { useVersionHistory } from "../Contexts/VersionHistoryContext";
 import { uploadService } from "../services/uploadService";
 import { CONFIG } from "../config";
 import { Clip, Member, Comment } from "../types";
@@ -614,6 +615,7 @@ export default function ProjectDetailScreen() {
     deleteProject,
   } = useProject();
   const { exports: exportsList } = useExport();
+  const { versions, fetchVersions } = useVersionHistory();
 
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameInput, setRenameInput] = useState(currentProject?.name ?? "");
@@ -817,6 +819,7 @@ export default function ProjectDetailScreen() {
     fetchClips(currentProject.id);
     fetchMembers(currentProject.id);
     fetchComments(currentProject.id);
+    fetchVersions(currentProject.id);
   }, [currentProject?.id]);
 
   // Refresh clips when returning from Upload Video so new server clips show up.
@@ -870,7 +873,7 @@ export default function ProjectDetailScreen() {
     },
     {
       label: "Versions",
-      value: 0,
+      value: versions.length,
       icon: "git-branch-outline",
       onPress: () => navigation.navigate("versionhistory"),
     },

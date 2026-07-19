@@ -3,11 +3,13 @@ import React, {
   useContext,
   useState,
   useEffect,
+  useRef,
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VideoProject,TextOverlay ,VideoClip, BackgroundMusic } from '../types';
 import { CONFIG } from '../config';
+import { buildVersionSnapshot, versionService } from '../services/VersionHistory';
 
 import {
   createTextOverlay,
@@ -64,21 +66,78 @@ const VideoProjectContext = createContext<VideoProjectContextType | undefined>(u
 // ─── Provider ────────────────────────────────────────────────────────────────
 export function VideoProjectProvider({ children }: { children: ReactNode }) {
   const [currentVideoProject, setCurrentVideoProjectState] = useState<VideoProject | null>(null);
+  const projectRef = useRef<VideoProject | null>(null);
+  const lastAutoFingerprint = useRef<string>('');
+
   // ── Rehydrate on launch so the last-edited video survives an app restart ──
   useEffect(() => {
     const rehydrate = async () => {
       try {
         const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT);
-        if (cached) setCurrentVideoProjectState(JSON.parse(cached));
+        if (cached) {
+          const parsed = JSON.parse(cached) as VideoProject;
+          setCurrentVideoProjectState(parsed);
+          projectRef.current = parsed;
+        }
       } catch (e) {
         console.log('Video project rehydration failed', e);
       }
     };
     rehydrate();
   }, []);
+
+  useEffect(() => {
+    projectRef.current = currentVideoProject;
+  }, [currentVideoProject]);
+
+  // CapCut-style autosave: every 2 minutes when the timeline has clips.
+  useEffect(() => {
+    const tick = async () => {
+      const proj = projectRef.current;
+      if (!proj?.projectId || !proj.clips?.length) return;
+
+      // Honor per-project autoSave pref when present (default true).
+      try {
+        const raw = await AsyncStorage.getItem(
+          `${CONFIG.ASYNC_STORAGE_KEYS.PROJECT_PREFS_PREFIX}${proj.projectId}`
+        );
+        if (raw) {
+          const prefs = JSON.parse(raw);
+          if (prefs?.autoSave === false) return;
+        }
+      } catch {
+        // ignore pref read errors — still autosave
+      }
+
+      const fingerprint = `${proj.updatedAt}|${proj.clips.length}|${proj.totalDurationMs}`;
+      if (fingerprint === lastAutoFingerprint.current) return;
+
+      try {
+        await versionService.createVersion(proj.projectId, {
+          kind: 'auto',
+          changeSummary: 'Auto-save',
+          thumbnailUrl: proj.coverThumbnailUri,
+          snapshot: buildVersionSnapshot(proj),
+        });
+        lastAutoFingerprint.current = fingerprint;
+      } catch (e) {
+        console.log('Version auto-save skipped', e);
+      }
+    };
+
+    const id = setInterval(tick, 2 * 60 * 1000);
+    // Also try once shortly after edits land (quiet period).
+    const debounce = setTimeout(tick, 45_000);
+    return () => {
+      clearInterval(id);
+      clearTimeout(debounce);
+    };
+  }, [currentVideoProject?.updatedAt, currentVideoProject?.projectId]);
+
   // Wraps the setter so every call also persists to (or clears) AsyncStorage.
   const setCurrentVideoProject = (project: VideoProject | null) => {
     setCurrentVideoProjectState(project);
+    projectRef.current = project;
     if (project) {
       AsyncStorage.setItem(
         CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,

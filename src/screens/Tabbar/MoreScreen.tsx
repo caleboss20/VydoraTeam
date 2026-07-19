@@ -79,7 +79,7 @@ export default function MoreScreen({ navigation }: Props) {
     if (key === 'media') navigation?.navigate('MediaLibrary');
     if (key === 'export') navigation?.navigate('Export');
     if (key === 'comments') navigation?.navigate('Comments');
-    if (key === 'history') navigation?.navigate('VersionHistory');
+    if (key === 'history') navigation?.navigate('versionhistory');
     if (key === 'activity') navigation?.navigate('Activity');
   }
   return (
