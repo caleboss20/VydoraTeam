@@ -26,6 +26,9 @@ type AuthResponseDto = {
   userId: string;
   name: string;
   email: string;
+  initials?: string | null;
+  color?: string | null;
+  avatarUrl?: string | null;
 };
 
 function sessionFromAuthResponse(data: AuthResponseDto): AuthSession {
@@ -50,12 +53,15 @@ export const authService = {
     const data = await apiRequest<AuthResponseDto>('/auth/login', {
       method: 'POST',
       skipAuth: true,
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        password,
+      }),
     });
     return sessionFromAuthResponse(data);
   },
 
-  /** Register — returns the same token pair as login. */
+  /** Register — persists the user in Postgres via Spring, returns JWT pair. */
   register: async (
     name: string,
     email: string,
@@ -67,7 +73,11 @@ export const authService = {
     const data = await apiRequest<AuthResponseDto>('/auth/register', {
       method: 'POST',
       skipAuth: true,
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+      }),
     });
     return sessionFromAuthResponse(data);
   },
@@ -99,5 +109,77 @@ export const authService = {
     }
     const data = await apiRequest<AuthResponseDto>('/auth/me');
     return mapAuthUser(data);
+  },
+
+  /**
+   * Persist profile fields on the server — `PATCH /auth/me`.
+   * Pass only fields that changed. For avatars, upload via uploadService first,
+   * then send the CDN `avatarUrl`.
+   */
+  updateProfile: async (updates: {
+    name?: string;
+    avatarUrl?: string;
+  }): Promise<User> => {
+    if (CONFIG.USE_MOCK) {
+      throw new Error('Mock auth is disabled.');
+    }
+    const body: { name?: string; avatarUrl?: string } = {};
+    if (updates.name !== undefined) body.name = updates.name.trim();
+    if (updates.avatarUrl !== undefined) body.avatarUrl = updates.avatarUrl;
+    const data = await apiRequest<AuthResponseDto>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    return mapAuthUser(data);
+  },
+
+  /** Request a 4-digit reset OTP emailed to the account (public). */
+  forgotPassword: async (email: string): Promise<string> => {
+    if (CONFIG.USE_MOCK) {
+      throw new Error('Mock auth is disabled.');
+    }
+    const data = await apiRequest<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      skipAuth: true,
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+    return data.message;
+  },
+
+  /** Verify OTP → short-lived resetToken for the set-password step (public). */
+  verifyResetOtp: async (
+    email: string,
+    otp: string
+  ): Promise<{ resetToken: string; email: string }> => {
+    if (CONFIG.USE_MOCK) {
+      throw new Error('Mock auth is disabled.');
+    }
+    return apiRequest<{ resetToken: string; email: string }>(
+      '/auth/verify-reset-otp',
+      {
+        method: 'POST',
+        skipAuth: true,
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          otp: otp.trim(),
+        }),
+      }
+    );
+  },
+
+  /** Set a new password using the resetToken from verifyResetOtp (public). */
+  resetPassword: async (
+    resetToken: string,
+    newPassword: string
+  ): Promise<string> => {
+    if (CONFIG.USE_MOCK) {
+      throw new Error('Mock auth is disabled.');
+    }
+    const data = await apiRequest<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      skipAuth: true,
+      body: JSON.stringify({ resetToken, newPassword }),
+    });
+    return data.message;
   },
 };

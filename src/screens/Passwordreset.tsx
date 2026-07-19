@@ -14,11 +14,18 @@ import React, { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
+import {
+  useNavigation,
+  NavigationProp,
+  useRoute,
+  RouteProp,
+} from "@react-navigation/native";
+import { authService } from "./services/authservice";
 // ── Types ─────────────────────────────────────────────────────────
 type RootStackParamList = {
-  VerifyEmail: undefined;
-  PasswordSuccess: undefined;
+  verifyemail: { email: string };
+  passwordreset: { email: string; resetToken: string };
+  passwordsuccess: undefined;
 };
 interface PasswordErrors {
   newPassword?: string;
@@ -56,6 +63,9 @@ const validatePasswords = (
 };
 function PasswordReset(){
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "passwordreset">>();
+  const resetToken = route.params?.resetToken || "";
+  const email = route.params?.email || "";
   const [newPassword, setNewPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
   const [showNew, setShowNew] = useState<boolean>(false);
@@ -63,6 +73,7 @@ function PasswordReset(){
   const [errors, setErrors] = useState<PasswordErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
   const [loading, setLoading] = useState<boolean>(false);
+  const [apiError, setApiError] = useState<string>("");
   const hasError = (field: keyof PasswordErrors): boolean =>
     !!(touched[field] && errors[field]);
   const isFieldValid = (field: keyof PasswordErrors): boolean =>
@@ -87,16 +98,24 @@ function PasswordReset(){
       setErrors(e);
     }
   };
-  const handleSave = (): void => {
+  const handleSave = async (): Promise<void> => {
     setTouched({ newPassword: true, confirmPassword: true });
     const e = validatePasswords(newPassword, confirmPassword);
     setErrors(e);
-    if (Object.keys(e).length === 0) {
-      setLoading(true);
-      setTimeout(() => {
-        setLoading(false);
-        navigation.navigate("passwordsuccess");
-      }, 2000);
+    setApiError("");
+    if (Object.keys(e).length !== 0) return;
+    if (!resetToken) {
+      setApiError("Reset session expired. Request a new code.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await authService.resetPassword(resetToken, newPassword);
+      navigation.navigate("passwordsuccess");
+    } catch (err: any) {
+      setApiError(err?.message || "Could not reset password. Try again.");
+    } finally {
+      setLoading(false);
     }
   };
   return (
@@ -114,10 +133,11 @@ function PasswordReset(){
           {/* Back */}
           <Pressable
             style={styles.backBtn}
-            onPress={() => navigation.navigate("verifyemail")}
+            onPress={() =>
+              navigation.navigate("verifyemail", { email: email || "" })
+            }
           >
             <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
-            {/* <Text style={styles.backText}>Back</Text> */}
           </Pressable>
           {/* Heading */}
           <Text style={styles.heading}>Create{"\n"}New password</Text>
@@ -125,6 +145,7 @@ function PasswordReset(){
           <Text style={styles.subText}>
             Your new password must be different{"\n"}from previously used password
           </Text>
+          {apiError ? <Text style={styles.errorText}>{apiError}</Text> : null}
           {/* New Password */}
           <View
             style={[

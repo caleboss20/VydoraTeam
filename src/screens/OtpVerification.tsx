@@ -6,37 +6,45 @@ import {
   StatusBar,
   ActivityIndicator,
   Animated,
+  TextInput,
 } from "react-native";
 import React, { useState, useRef, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
-import { TextInput } from "react-native";
-// ── Types ─────────────────────────────────────────────────────────
+import {
+  useNavigation,
+  NavigationProp,
+  useRoute,
+  RouteProp,
+} from "@react-navigation/native";
+import { authService } from "./services/authservice";
+
 type RootStackParamList = {
-  ForgotPassword: undefined;
-  CreateNewPassword: undefined;
+  forgotpassword: undefined;
+  verifyemail: { email: string };
+  passwordreset: { email: string; resetToken: string };
 };
-// ── Helper: generate 4 digit OTP ─────────────────────────────────
-const generateOTP = (): string => {
-  const code = Math.floor(1000 + Math.random() * 9000).toString();
-  console.log("🔐 DEV OTP CODE:", code); // dev only
-  return code;
-};
+
 function VerifyEmail() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "verifyemail">>();
+  const email = (route.params?.email || "").trim().toLowerCase();
+
   const [otp, setOtp] = useState<string[]>(["", "", "", ""]);
-  const [code, setCode] = useState<string>(()=>generateOTP());
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [resendTimer, setResendTimer] = useState<number>(30);
   const [canResend, setCanResend] = useState<boolean>(false);
-  // refs for each input box
   const inputRefs = useRef<Array<TextInput | null>>([null, null, null, null]);
-  // shake animation
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  // ── Resend countdown ────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!email) {
+      navigation.navigate("forgotpassword");
+    }
+  }, [email, navigation]);
+
   useEffect(() => {
     if (resendTimer === 0) {
       setCanResend(true);
@@ -45,7 +53,7 @@ function VerifyEmail() {
     const timer = setTimeout(() => setResendTimer((t) => t - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendTimer]);
-  // ── Shake animation ─────────────────────────────────────────────
+
   const triggerShake = (): void => {
     shakeAnim.setValue(0);
     Animated.sequence([
@@ -56,19 +64,18 @@ function VerifyEmail() {
       Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
     ]).start();
   };
-  // ── OTP input handlers ──────────────────────────────────────────
+
   const handleChange = (value: string, index: number): void => {
-    // only allow digits
     if (value && !/^\d$/.test(value)) return;
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
     setError("");
-    // move to next box
     if (value && index < 3) {
       inputRefs.current[index + 1]?.focus();
     }
   };
+
   const handleKeyPress = (key: string, index: number): void => {
     if (key === "Backspace" && !otp[index] && index > 0) {
       const newOtp = [...otp];
@@ -77,61 +84,63 @@ function VerifyEmail() {
       inputRefs.current[index - 1]?.focus();
     }
   };
-  // ── Resend ──────────────────────────────────────────────────────
-  const handleResend = (): void => {
-    if (!canResend) return;
-    const newCode = generateOTP();
-    setCode(newCode);
-    setOtp(["", "", "", ""]);
-    setError("");
-    setCanResend(false);
-    setResendTimer(30);
-    inputRefs.current[0]?.focus();
+
+  const handleResend = async (): Promise<void> => {
+    if (!canResend || !email) return;
+    try {
+      setError("");
+      await authService.forgotPassword(email);
+      setOtp(["", "", "", ""]);
+      setCanResend(false);
+      setResendTimer(30);
+      inputRefs.current[0]?.focus();
+    } catch (e: any) {
+      setError(e?.message || "Could not resend code.");
+    }
   };
-  // ── Verify ──────────────────────────────────────────────────────
-  const handleVerify = (): void => {
+
+  const handleVerify = async (): Promise<void> => {
     const entered = otp.join("");
-    // check all boxes filled
     if (entered.length < 4) {
       setError("Please enter the 4 digit code");
       triggerShake();
       return;
     }
-    // check code match
-    if (entered !== code) {
-      setError("Incorrect code. Please try again");
+    if (!email) {
+      setError("Missing email. Go back and try again.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      const { resetToken } = await authService.verifyResetOtp(email, entered);
+      navigation.navigate("passwordreset", { email, resetToken });
+    } catch (e: any) {
+      setError(e?.message || "Incorrect code. Please try again");
       triggerShake();
       setOtp(["", "", "", ""]);
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
-      return;
-    }
-    // correct — load and navigate
-    setError("");
-    setLoading(true);
-    setTimeout(() => {
+    } finally {
       setLoading(false);
-      navigation.navigate("passwordreset");
-    }, 2000);
+    }
   };
+
   const enteredFull = otp.every((d) => d !== "");
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#13151A" />
-      {/* Back */}
       <Pressable
         style={styles.backBtn}
         onPress={() => navigation.navigate("forgotpassword")}
       >
         <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
-        {/* <Text style={styles.backText}>Back</Text> */}
       </Pressable>
-      {/* Heading */}
       <Text style={styles.heading}>Verify{"\n"}Your Email</Text>
-      {/* Subtext */}
       <Text style={styles.subText}>
-        Please enter the 4 digit code{"\n"}Sent to your email
+        Please enter the 4 digit code{"\n"}
+        Sent to {email || "your email"}
       </Text>
-      {/* OTP Boxes */}
       <Animated.View
         style={[styles.otpRow, { transform: [{ translateX: shakeAnim }] }]}
       >
@@ -156,9 +165,7 @@ function VerifyEmail() {
           />
         ))}
       </Animated.View>
-      {/* Error */}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {/* Resend */}
       <Pressable
         style={styles.resendWrap}
         onPress={handleResend}
@@ -168,11 +175,10 @@ function VerifyEmail() {
           {canResend ? "Resend Code" : `Resend Code in ${resendTimer}s`}
         </Text>
       </Pressable>
-      {/* Verify Button */}
       <Pressable
         style={[styles.cta, (!enteredFull || loading) && styles.ctaDisabled]}
         onPress={handleVerify}
-        disabled={loading}
+        disabled={loading || !enteredFull}
       >
         {loading ? (
           <ActivityIndicator size="small" color="#1A0E00" />
@@ -182,15 +188,16 @@ function VerifyEmail() {
       </Pressable>
     </SafeAreaView>
   );
-};
+}
+
 export default VerifyEmail;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#13151c",
     paddingHorizontal: s(24),
   },
-  // Back
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -198,11 +205,6 @@ const styles = StyleSheet.create({
     marginTop: vs(10),
     marginBottom: vs(32),
   },
-  backText: {
-    fontSize: ms(14),
-    color: "#FFFFFF",
-  },
-  // Heading
   heading: {
     fontSize: s(32),
     color: "#ffffff",
@@ -210,15 +212,12 @@ const styles = StyleSheet.create({
     lineHeight: s(40),
     marginBottom: vs(14),
   },
-  // Subtext
   subText: {
-   color:"#ccc",
-   marginBottom:s(30),
-   lineHeight:s(21),
-   fontSize:s(13),
-
+    color: "#ccc",
+    marginBottom: s(30),
+    lineHeight: s(21),
+    fontSize: s(13),
   },
-  // OTP
   otpRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -241,14 +240,12 @@ const styles = StyleSheet.create({
   otpBoxError: {
     borderColor: "#eb4343",
   },
-  // Error
   errorText: {
     fontSize: ms(11),
     color: "#eb4343",
     marginBottom: vs(10),
     marginLeft: s(4),
   },
-  // Resend
   resendWrap: {
     alignItems: "center",
     marginBottom: vs(32),
@@ -262,14 +259,12 @@ const styles = StyleSheet.create({
   resendDisabled: {
     color: "#ccc",
   },
-  // CTA
   cta: {
     backgroundColor: "#F5A623",
     borderRadius: s(50),
     paddingVertical: vs(11),
     alignItems: "center",
     marginBottom: vs(16),
-    // alignSelf:'center',
   },
   ctaDisabled: {
     opacity: 0.5,

@@ -58,7 +58,25 @@ async function clearPersistedSession() {
     AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN),
     AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.REFRESH_TOKEN),
     AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.USER),
+    // Legacy unscoped caches (pre user-keyed) — never leave these for the next login.
+    AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.PROJECTS),
+    AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.CURRENT_PROJECT),
   ]);
+}
+
+/** Drop domain caches when switching accounts so the next user starts clean. */
+async function clearDomainCachesForUser(userId: string | null | undefined) {
+  const jobs: Promise<unknown>[] = [
+    AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.PROJECTS),
+    AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.CURRENT_PROJECT),
+  ];
+  if (userId) {
+    jobs.push(
+      AsyncStorage.removeItem(`${CONFIG.ASYNC_STORAGE_KEYS.PROJECTS}:${userId}`),
+      AsyncStorage.removeItem(`${CONFIG.ASYNC_STORAGE_KEYS.CURRENT_PROJECT}:${userId}`)
+    );
+  }
+  await Promise.all(jobs);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -129,13 +147,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoadingAuth(true);
       setError(null);
-      const result = await authService.login(email, password);
+      // Clear previous account domain data before installing the new session.
+      await clearDomainCachesForUser(user?.id);
+      const result = await authService.login(email.trim(), password);
       setUser(result.user);
       setToken(result.token);
       setRefreshToken(result.refreshToken);
       await persistSession(result.user, result.token, result.refreshToken);
     } catch (e: any) {
       setError(e.message);
+      // Re-throw so signup/signin screens know the API call failed.
+      throw e;
     } finally {
       setIsLoadingAuth(false);
     }
@@ -145,19 +167,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoadingAuth(true);
       setError(null);
-      const result = await authService.register(name, email, password);
+      await clearDomainCachesForUser(user?.id);
+      const result = await authService.register(name.trim(), email.trim(), password);
       setUser(result.user);
       setToken(result.token);
       setRefreshToken(result.refreshToken);
       await persistSession(result.user, result.token, result.refreshToken);
     } catch (e: any) {
       setError(e.message);
+      throw e;
     } finally {
       setIsLoadingAuth(false);
     }
   };
 
   const logout = async () => {
+    const previousUserId = user?.id;
     try {
       if (token && refreshToken) {
         await authService.logout(token, refreshToken);
@@ -170,18 +195,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(null);
       setRefreshToken(null);
       await clearPersistedSession();
+      await clearDomainCachesForUser(previousUserId);
     }
   };
 
   /**
-   * Local profile patch (name/avatar for UI).
-   * Backend has no update-profile endpoint yet — only AsyncStorage is updated.
+   * Persist name/avatar via PATCH /auth/me, then mirror into local state + AsyncStorage.
+   * For photo changes, callers should upload with uploadService first and pass the CDN URL.
    */
   const updateUser = async (updates: Partial<User>) => {
     if (!user) return;
     try {
       setError(null);
-      const updatedUser = { ...user, ...updates };
+      const payload: { name?: string; avatarUrl?: string } = {};
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.avatarUrl !== undefined) payload.avatarUrl = updates.avatarUrl;
+
+      let updatedUser: User;
+      if (payload.name !== undefined || payload.avatarUrl !== undefined) {
+        updatedUser = await authService.updateProfile(payload);
+      } else {
+        updatedUser = { ...user, ...updates };
+      }
+
       setUser(updatedUser);
       await AsyncStorage.setItem(
         CONFIG.ASYNC_STORAGE_KEYS.USER,
@@ -189,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
     } catch (e: any) {
       setError(e.message);
+      throw e;
     }
   };
 

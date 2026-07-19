@@ -14,9 +14,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, NavigationProp } from "@react-navigation/native";
+import { authService } from "./services/authservice";
 type RootStackParamList = {
   signin: undefined;
-  CheckEmail: undefined;
+  verifyemail: { email: string };
 };
 function ForgotPassword(){
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -49,7 +50,7 @@ function ForgotPassword(){
     setTouched(true);
     setError(validateEmail(email));
   };
-  const handleSend = (): void => {
+  const handleSend = async (): Promise<void> => {
     setTouched(true);
     const validationError = validateEmail(email);
     if (validationError) {
@@ -57,18 +58,23 @@ function ForgotPassword(){
       setSuccess(false);
       return;
     }
-    // valid — show loading + reduced opacity
     setError("");
     setLoading(true);
     setSuccess(false);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await authService.forgotPassword(email.trim());
       setSuccess(true);
-      // wait briefly so user sees success message then navigate
       setTimeout(() => {
-        navigation.navigate("verifyemail");
-      }, 800);
-    }, 3000);
+        navigation.navigate("verifyemail", {
+          email: email.trim().toLowerCase(),
+        });
+      }, 600);
+    } catch (e: any) {
+      setError(e?.message || "Could not send reset code. Try again.");
+      setSuccess(false);
+    } finally {
+      setLoading(false);
+    }
   };
   const isEmailValid = validateEmail(email) === "";
   
@@ -128,7 +134,8 @@ function ForgotPassword(){
           {/* Success message */}
           {success && (
             <Text style={styles.successText}>
-              Password reset link sent! Check your inbox.
+              If an account exists, a 4-digit code was sent. Check your inbox
+              (or backend logs if email isn’t configured).
             </Text>
           )}
         </View>

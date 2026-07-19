@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 } from "react-native";
 
 import { Modal, TextInput, KeyboardAvoidingView, Platform,} from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { moderateScale, verticalScale, scale } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
@@ -600,6 +600,14 @@ export default function ProjectDetailScreen() {
     fetchMembers(currentProject.id);
     fetchComments(currentProject.id);
   }, [currentProject?.id]);
+
+  // Refresh clips when returning from Upload Video so new server clips show up.
+  useFocusEffect(
+    useCallback(() => {
+      if (!currentProject?.id) return;
+      fetchClips(currentProject.id);
+    }, [currentProject?.id])
+  );
   if (!currentProject) {
     return (
       <SafeAreaView style={styles.safe} edges={["top"]}>

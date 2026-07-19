@@ -7,20 +7,25 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
+  Alert,
+  RefreshControl,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { ms, s, vs } from 'react-native-size-matters'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import { useNotification } from '../Contexts/notificatinContext'
+import { useProject } from '../Contexts/projectContext'
+import { useAuth } from '../Contexts/Authcontext'
+import { projectService } from '../services/projectservice'
 import { Notification, NotificationType } from '../types'
-// ─── Palette ────────────────────────────────────────────────────────────────
+
+// Matches the Notifications Figma: dark feed, yellow accents, real events only.
 const C = {
   bg: '#111111',
-  surface: '#1A1A1A',
   accent: '#F5C518',
   textPrimary: '#FFFFFF',
   textSecondary: '#888888',
-  textLink: '#F5C518',
   divider: '#2A2A2A',
   filterActive: '#F5C518',
   filterActiveTxt: '#000000',
@@ -28,142 +33,278 @@ const C = {
   filterInactiveTxt: '#CCCCCC',
   unreadDot: '#F5C518',
 } as const
-// ─── Filter Tabs (mapped to real NotificationType) ──────────────────────────
-type FilterTab = 'All' | 'Comments' | 'Invites' | 'Clips'
-const FILTER_TABS: FilterTab[] = ['All', 'Comments', 'Invites', 'Clips']
-const FILTER_TO_TYPE: Record<FilterTab, NotificationType | null> = {
-  All: null,
-  Comments: 'comment',
-  Invites: 'invite',
-  Clips: 'clip_upload',
-}
-// ─── Icon + color per real notification type ────────────────────────────────
-const TYPE_ICON: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
+
+/** Design filters — Mentions reserved until @mentions exist (stays empty). */
+type FilterTab = 'All' | 'Mentions' | 'Comments' | 'Invites'
+const FILTER_TABS: FilterTab[] = ['All', 'Mentions', 'Comments', 'Invites']
+
+const AVATAR_COLORS = [
+  '#E05C5C',
+  '#3DBFBF',
+  '#9B59B6',
+  '#E0A95C',
+  '#4CAF50',
+  '#5C7CE0',
+]
+
+const TYPE_PROJECT_ICON: Record<
+  NotificationType,
+  keyof typeof Ionicons.glyphMap
+> = {
   comment: 'chatbubble-outline',
-  invite: 'person-add-outline',
+  invite: 'people-outline',
   clip_upload: 'cloud-upload-outline',
-  role_change: 'swap-horizontal-outline',
+  role_change: 'checkmark-circle-outline',
 }
-const TYPE_COLOR: Record<NotificationType, string> = {
-  comment: '#3DBFBF',
-  invite: '#9B59B6',
-  clip_upload: '#E0A95C',
-  role_change: '#E05C5C',
+
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
-// ─── Helper: relative time ───────────────────────────────────────────────────
+
+function colorFromName(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash + name.charCodeAt(i) * 17) % 997
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
 function timeAgo(dateStr: string): string {
-  // TWEAK: createdAt currently mock string like "2h ago" already —
-  // if backend sends ISO date later, replace this with real diffing logic
-  return dateStr
+  const ts = Date.parse(dateStr)
+  if (Number.isNaN(ts)) return ''
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000))
+  if (diffSec < 60) return 'just now'
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`
+  if (diffSec < 86400) {
+    const h = Math.floor(diffSec / 3600)
+    return h === 1 ? '1 hr ago' : `${h} hr ago`
+  }
+  if (diffSec < 86400 * 2) return 'Yesterday'
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`
+  return new Date(ts).toLocaleDateString()
 }
-// ─── Sub-component ───────────────────────────────────────────────────────────
+
+function matchesFilter(n: Notification, tab: FilterTab): boolean {
+  if (tab === 'All') return true
+  // Mentions: no backend type yet — never invent rows.
+  if (tab === 'Mentions') return false
+  if (tab === 'Comments') return n.type === 'comment'
+  if (tab === 'Invites') return n.type === 'invite'
+  return true
+}
+
 const NotifCard: React.FC<{
   item: Notification
   onPress: () => void
-}> = ({ item, onPress }) => (
-  <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-    <View style={styles.avatarCol}>
-      <View style={[styles.unreadDot, { opacity: item.read ? 0 : 1 }]} />
-      <View style={[styles.avatar, { backgroundColor: TYPE_COLOR[item.type] }]}>
-        <Ionicons name={TYPE_ICON[item.type]} size={ms(16)} color="#fff" />
+}> = ({ item, onPress }) => {
+  const name = item.title?.trim() || 'Someone'
+  const initials = initialsFromName(name)
+  const avatarBg = colorFromName(name)
+  const projectLabel = item.projectName?.trim()
+
+  return (
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.avatarCol}>
+        <View style={[styles.unreadDot, { opacity: item.read ? 0 : 1 }]} />
+        <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
+          <Text style={styles.avatarInitials}>{initials}</Text>
+        </View>
       </View>
-    </View>
-    <View style={styles.cardContent}>
-      <View style={styles.cardTopRow}>
-        <Text style={styles.nameText}>{item.title}</Text>
-        <Text style={styles.timeText}>{timeAgo(item.createdAt)}</Text>
+
+      <View style={styles.cardContent}>
+        <View style={styles.cardTopRow}>
+          <Text style={styles.nameText} numberOfLines={1}>
+            {name}
+          </Text>
+          <Text style={styles.timeText}>{timeAgo(item.createdAt)}</Text>
+        </View>
+
+        <Text style={styles.actionText}>{item.message}</Text>
+
+        {!!projectLabel && (
+          <View style={styles.projectRow}>
+            <Ionicons
+              name={TYPE_PROJECT_ICON[item.type]}
+              size={ms(13)}
+              color={C.accent}
+            />
+            <Text style={styles.projectLink} numberOfLines={1}>
+              {projectLabel}
+            </Text>
+          </View>
+        )}
       </View>
-      <Text style={styles.actionText}>{item.message}</Text>
-    </View>
-  </TouchableOpacity>
-)
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+    </TouchableOpacity>
+  )
+}
+
 const ActivityScreen: React.FC = () => {
+  const navigation = useNavigation<any>()
+  const { token } = useAuth()
+  const { projects, setCurrentProject } = useProject()
   const {
     notifications,
     isLoading,
     markAsRead,
     markAllAsRead,
+    fetchNotifications,
   } = useNotification()
   const [activeFilter, setActiveFilter] = React.useState<FilterTab>('All')
-  const filtered = notifications.filter((n) => {
-    const wantedType = FILTER_TO_TYPE[activeFilter]
-    if (wantedType === null) return true
-    return n.type === wantedType
-  })
-  const handleCardPress = (notification: Notification) => {
-    if (!notification.read) {
-      markAsRead(notification.id)
+  const [refreshing, setRefreshing] = React.useState(false)
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchNotifications()
+    }, [fetchNotifications])
+  )
+
+  // Strictly API rows — no placeholders, demos, or invented activity.
+  const filtered = notifications.filter((n) => matchesFilter(n, activeFilter))
+
+  const openProject = async (projectId: string, preferTeam = false) => {
+    try {
+      let project = projects.find((p) => p.id === projectId)
+      if (!project && token) {
+        project = await projectService.getProjectById(projectId, token)
+      }
+      if (!project) {
+        Alert.alert('Project unavailable', 'This project could not be opened.')
+        return
+      }
+      setCurrentProject(project)
+      if (preferTeam) {
+        navigation.navigate('teammember', { projectId: project.id })
+      } else {
+        navigation.navigate('projectdetail')
+      }
+    } catch (e: any) {
+      Alert.alert('Couldn’t open', e?.message || 'Try again from Projects.')
     }
-    // TWEAK: navigate to notification.projectId once project navigation
-    // from notifications is wired (e.g. navigation.navigate('projectdetail', { id: notification.projectId }))
   }
+
+  const handleCardPress = async (notification: Notification) => {
+    if (!notification.read) {
+      await markAsRead(notification.id)
+    }
+    if (!notification.projectId) return
+    const preferTeam =
+      notification.type === 'invite' || notification.type === 'role_change'
+    await openProject(notification.projectId, preferTeam)
+  }
+
+  const onRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await fetchNotifications()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const showEmpty = !isLoading && filtered.length === 0
+
   return (
     <SafeAreaView style={styles.container}>
-      <View>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        {/* ── Header ── */}
+
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Notifications</Text>
-          <TouchableOpacity onPress={markAllAsRead}>
-            <Text style={styles.markAllRead}>Mark all read</Text>
+          <TouchableOpacity
+            onPress={markAllAsRead}
+            disabled={notifications.length === 0}
+          >
+            <Text
+              style={[
+                styles.markAllRead,
+                notifications.length === 0 && styles.markAllReadDisabled,
+              ]}
+            >
+              Mark all read
+            </Text>
           </TouchableOpacity>
         </View>
         <View style={styles.headerDivider} />
-        {/* ── Filter Pills ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-        >
-          {FILTER_TABS.map((tab) => {
-            const isActive = activeFilter === tab
-            return (
-              <TouchableOpacity
-                key={tab}
-                onPress={() => setActiveFilter(tab)}
-                style={[
-                  styles.filterPill,
-                  {
-                    backgroundColor: isActive
-                      ? C.filterActive
-                      : C.filterInactive,
-                  },
-                ]}
-                activeOpacity={0.8}
-              >
-                <Text
+
+        {/* Fixed-height strip — horizontal ScrollView must not stretch tall */}
+        <View style={styles.filterWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterScroll}
+            contentContainerStyle={styles.filterRow}
+          >
+            {FILTER_TABS.map((tab) => {
+              const isActive = activeFilter === tab
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  onPress={() => setActiveFilter(tab)}
                   style={[
-                    styles.filterText,
+                    styles.filterPill,
                     {
-                      color: isActive ? C.filterActiveTxt : C.filterInactiveTxt,
-                      fontWeight: isActive ? '700' : '500',
+                      backgroundColor: isActive
+                        ? C.filterActive
+                        : C.filterInactive,
                     },
                   ]}
+                  activeOpacity={0.8}
                 >
-                  {tab}
-                </Text>
-              </TouchableOpacity>
-            )
-          })}
-        </ScrollView>
-        {/* ── Notification List ── */}
+                  <Text
+                    style={[
+                      styles.filterText,
+                      {
+                        color: isActive
+                          ? C.filterActiveTxt
+                          : C.filterInactiveTxt,
+                        fontWeight: isActive ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    {tab}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </ScrollView>
+        </View>
+
         <ScrollView
+          style={styles.listScroll}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={C.accent}
+            />
+          }
         >
           {isLoading && notifications.length === 0 && (
-            <Text style={styles.emptyText}>Loading notifications...</Text>
+            <Text style={styles.emptyText}>Loading…</Text>
           )}
-          {!isLoading && filtered.length === 0 && (
+
+          {showEmpty && (
             <View style={styles.emptyState}>
-              <Ionicons name="notifications-off-outline" size={ms(40)} color={C.textSecondary} />
-              <Text style={styles.emptyTitle}>No notifications yet</Text>
+              <Ionicons
+                name="notifications-off-outline"
+                size={ms(40)}
+                color={C.textSecondary}
+              />
+              <Text style={styles.emptyTitle}>
+                {activeFilter === 'All'
+                  ? 'No notifications yet'
+                  : `No ${activeFilter.toLowerCase()} yet`}
+              </Text>
               <Text style={styles.emptySubtitle}>
-                You'll see comments, invites and updates here as they happen
+                When teammates invite you, comment, or upload clips, it shows up
+                here.
               </Text>
             </View>
           )}
+
           {filtered.map((item, index) => (
             <View key={item.id}>
               <NotifCard item={item} onPress={() => handleCardPress(item)} />
@@ -175,14 +316,14 @@ const ActivityScreen: React.FC = () => {
     </SafeAreaView>
   )
 }
+
 export default ActivityScreen
-// ─── Styles ──────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: C.bg,
   },
-  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -202,92 +343,92 @@ const styles = StyleSheet.create({
     fontSize: ms(13),
     fontWeight: '600',
   },
+  markAllReadDisabled: {
+    opacity: 0.35,
+  },
   headerDivider: {
     height: 1,
     backgroundColor: C.divider,
-    marginHorizontal: s(0),
+    marginBottom: vs(12),
   },
-  // Filter pills
+  filterWrap: {
+    height: vs(44),
+    marginBottom: vs(4),
+  },
+  filterScroll: {
+    flexGrow: 0,
+  },
   filterRow: {
     flexDirection: 'row',
-    paddingHorizontal: s(16),
-    paddingVertical: vs(14),
-    gap: s(18),
-    marginBottom:s(20),
+    alignItems: 'center',
+    paddingHorizontal: s(18),
+    gap: s(8),
+    height: vs(44),
   },
   filterPill: {
-    paddingHorizontal: s(16),
-    paddingVertical: vs(7),
-    borderRadius: ms(20),
+    height: vs(32),
+    paddingHorizontal: s(14),
+    borderRadius: ms(16),
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
   },
   filterText: {
-    fontSize: ms(13),
+    fontSize: ms(12),
+    lineHeight: ms(16),
   },
-  emptyText:{
-
+  listScroll: {
+    flex: 1,
   },
-  // List
   listContent: {
-    paddingHorizontal: s(16),
-    paddingBottom: vs(24),
-    gap:s(20),
+    paddingHorizontal: s(18),
+    paddingBottom: vs(40),
+    flexGrow: 1,
   },
-  // Card
   card: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     paddingVertical: vs(14),
-    gap: s(14),
+    gap: s(12),
   },
   avatarCol: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: s(6),
+    width: s(44),
   },
   unreadDot: {
-    width: ms(7),
-    height: ms(7),
-    borderRadius: ms(4),
+    width: s(6),
+    height: s(6),
+    borderRadius: s(3),
     backgroundColor: C.unreadDot,
+    marginBottom: vs(4),
   },
   avatar: {
-    width: ms(40),
-    height: ms(40),
-    borderRadius: ms(20),
+    width: s(40),
+    height: s(40),
+    borderRadius: s(20),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
+  avatarInitials: {
     color: '#fff',
     fontSize: ms(13),
     fontWeight: '700',
   },
-  typeBadge: {
-    position: 'absolute',
-    bottom: -ms(2),
-    right: -ms(2),
-    width: ms(16),
-    height: ms(16),
-    borderRadius: ms(8),
-    backgroundColor: '#333333',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: C.bg,
-  },
   cardContent: {
     flex: 1,
-    gap: vs(3),
+    paddingRight: s(2),
   },
   cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: vs(3),
+    gap: s(8),
   },
   nameText: {
     color: C.textPrimary,
     fontSize: ms(14),
     fontWeight: '700',
+    flex: 1,
   },
   timeText: {
     color: C.textSecondary,
@@ -295,36 +436,47 @@ const styles = StyleSheet.create({
   },
   actionText: {
     color: C.textSecondary,
-    fontSize: ms(12),
+    fontSize: ms(13),
     lineHeight: ms(18),
   },
+  projectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: s(6),
+    marginTop: vs(6),
+  },
   projectLink: {
-    color: C.textLink,
-    fontWeight: '500',
+    color: C.accent,
+    fontSize: ms(13),
+    fontWeight: '600',
+    flex: 1,
   },
   divider: {
     height: 1,
     backgroundColor: C.divider,
+    marginLeft: s(56),
   },
-
-  //empty state//
-   emptyState: {
+  emptyState: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: vs(100),
-    paddingHorizontal: s(32),
+    paddingTop: vs(72),
+    paddingHorizontal: s(28),
   },
   emptyTitle: {
     color: C.textPrimary,
-    fontSize: ms(23),
-    fontWeight: '600',
-    marginTop: vs(12),
+    fontSize: ms(16),
+    fontWeight: '700',
+    marginTop: vs(14),
   },
   emptySubtitle: {
     color: C.textSecondary,
     fontSize: ms(13),
     textAlign: 'center',
-    marginTop: vs(10),
-    lineHeight: ms(19),
+    marginTop: vs(6),
+    lineHeight: ms(18),
+  },
+  emptyText: {
+    color: C.textSecondary,
+    textAlign: 'center',
+    marginTop: vs(40),
   },
 })

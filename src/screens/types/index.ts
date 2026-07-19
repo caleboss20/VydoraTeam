@@ -30,6 +30,8 @@ export interface Clip {
   resolution: string;
   uploadedAt: string;
   uploadedBy: string;
+  /** CDN URL from upload — used for playback / teammate sync */
+  videoUrl?: string;
   thumbnailUrl?: string;
 }
 // ─── Member ──────────────────────────────────────────────────────────────────
@@ -72,11 +74,15 @@ export type NotificationType = 'invite' | 'comment' | 'clip_upload' | 'role_chan
 export interface Notification {
   id: string;
   type: NotificationType;
+  /** Actor display name (e.g. "Maya Alvarez") */
   title: string;
+  /** Action phrase (e.g. "commented on your clip at 0:24") */
   message: string;
   read: boolean;
   createdAt: string;
   projectId?: string;
+  /** Project label for the yellow link row — only when a real project is attached */
+  projectName?: string;
 }
 // ─── Video Project (editor domain) ────────────────────────────────────────────
 export type TextAnimationType = 'fade' | 'slideUp' | 'slideDown' | 'zoom' | 'none'|'typewriter'|'pop'|'bounce'|'spin'|'flip'|'wave'|'glitch'|'sparkle'|'pulse'|'shake'|'jiggle'|'float'|'swing'|'rubberBand'|'tada'|'flash'|'hinge';

@@ -74,13 +74,17 @@ export function mapAuthUser(data: {
   userId: string;
   name: string;
   email: string;
+  initials?: string | null;
+  color?: string | null;
+  avatarUrl?: string | null;
 }): User {
   return {
     id: data.userId,
     name: data.name,
     email: data.email,
-    initials: initialsFromName(data.name),
-    color: colorFromId(data.userId),
+    initials: data.initials?.trim() || initialsFromName(data.name),
+    color: data.color?.trim() || colorFromId(data.userId),
+    avatarUrl: data.avatarUrl || undefined,
   };
 }
 
@@ -225,6 +229,7 @@ export function mapClipFromApi(c: ApiClip): Clip {
     resolution: '1080p',
     uploadedAt: c.createdAt,
     uploadedBy: c.uploadedBy,
+    videoUrl: c.videoUrl || undefined,
     thumbnailUrl: c.thumbnailUrl || undefined,
   };
 }
