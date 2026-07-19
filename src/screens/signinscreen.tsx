@@ -34,6 +34,7 @@ type RootStackParamList = {
   forgotpassword: undefined;
   signin: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
   AcceptInvite: { token: string };
+  onboarding: undefined;
   projects: undefined;
 };
 interface ValidationFields {
@@ -94,6 +95,14 @@ export default function SignInscreen() {
         (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
       if (pendingToken) {
         navigation.navigate("AcceptInvite", { token: pendingToken });
+        return;
+      }
+      const onboardingDone = await AsyncStorage.getItem("vydora:onboarding:done");
+      if (!onboardingDone) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "onboarding" }],
+        });
         return;
       }
       navigation.reset({

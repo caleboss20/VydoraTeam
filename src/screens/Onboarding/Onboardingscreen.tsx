@@ -14,9 +14,11 @@ import { s, vs, ms } from "react-native-size-matters";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../Contexts/Authcontext';
 type RootStackParamList = {
   home: undefined;
   signin: undefined;
+  projects: undefined;
 };
 interface Slide {
   id: string;
@@ -47,6 +49,7 @@ const slides: Slide[] = [
 ];
 function Onboarding() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const { user } = useAuth();
   const flatListRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -70,7 +73,18 @@ function Onboarding() {
     } else {
       // mark onboarding as done so splash never shows it again
       await AsyncStorage.setItem('vydora:onboarding:done', 'true');
-      navigation.navigate('signin');
+      // After signup → signin → onboarding, user is logged in → dashboard.
+      if (user) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'projects' }],
+        });
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'signin' }],
+        });
+      }
     }
   };
   const renderSlide = ({ item }: { item: Slide }) => (

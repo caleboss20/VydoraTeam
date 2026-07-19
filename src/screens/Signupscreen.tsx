@@ -57,7 +57,7 @@ interface TouchedFields {
 export default function Signupscreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "signup">>();
-  const { register, isLoadingAuth, error } = useAuth();
+  const { register, logout, isLoadingAuth, error } = useAuth();
   const [fullName, setFullName] = useState<string>("");
   // Prefilled with the invited email address, if this screen was reached
   // via an invite link — reduces the chance of signing up with a
@@ -112,9 +112,11 @@ export default function Signupscreen() {
         navigation.navigate("AcceptInvite", { token: pendingToken });
         return;
       }
+      // Account created — send them to Sign In, then onboarding after login.
+      await logout();
       navigation.reset({
         index: 0,
-        routes: [{ name: "projects" }],
+        routes: [{ name: "signin", params: { prefillEmail: email.trim() } }],
       });
     }
   };
