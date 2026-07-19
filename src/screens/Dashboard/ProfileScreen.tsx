@@ -12,6 +12,8 @@ import {
   Platform,
   Alert,
   Image,
+  Linking,
+  Share,
 } from "react-native";
 
 import {
@@ -30,21 +32,28 @@ import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../Contexts/Authcontext";
 import { useProject } from "../Contexts/projectContext";
 import { useExport } from "../Contexts/exportContext";
+import { Project } from "../types";
 // ─── Static content (not user data — these don't need a context) ──────────────
-const ACCOUNT_ITEMS = [
-  { icon: "person-outline", label: "Personal info" },
-  { icon: "lock-closed-outline", label: "Privacy & security" },
-  { icon: "notifications-outline", label: "Notifications" },
-  { icon: "people-outline", label: "Teams & roles" },
+type ProfileAction =
+  | "personal"
+  | "privacy"
+  | "notifications"
+  | "teams"
+  | "help";
+
+const ACCOUNT_ITEMS: { icon: string; label: string; action: ProfileAction }[] = [
+  { icon: "person-outline", label: "Personal info", action: "personal" },
+  { icon: "lock-closed-outline", label: "Privacy & security", action: "privacy" },
+  { icon: "notifications-outline", label: "Notifications", action: "notifications" },
+  { icon: "people-outline", label: "Teams & roles", action: "teams" },
 ];
-const SUPPORT_ITEMS = [
-  { icon: "chatbubble-outline", label: "Help & feedback" },
+const SUPPORT_ITEMS: { icon: string; label: string; action: ProfileAction }[] = [
+  { icon: "chatbubble-outline", label: "Help & feedback", action: "help" },
 ];
-// Static until a billing context exists — banner is tappable but the
-// numbers shown are not real plan data yet.
+// Plan banner uses live project count; storage is still a product placeholder.
 const PLAN_PLACEHOLDER = {
   name: "Pro plan",
-  detail: "200 GB storage · 5 active projects",
+  detailPrefix: "200 GB storage",
 };
 // ─── Theme ────────────────────────────────────────────────────────────────────
 const C = {
@@ -74,8 +83,20 @@ function getInitials(name: string | undefined): string {
 const SectionLabel = ({ title }: { title: string }) => (
   <Text style={styles.sectionLabel}>{title}</Text>
 );
-const SettingRow = ({ icon, label }: { icon: string; label: string }) => (
-  <TouchableOpacity style={styles.settingRow} activeOpacity={0.65}>
+const SettingRow = ({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  onPress?: () => void;
+}) => (
+  <TouchableOpacity
+    style={styles.settingRow}
+    activeOpacity={0.65}
+    onPress={onPress}
+  >
     <View style={styles.settingIconWrap}>
       <Ionicons
         name={icon as any}
@@ -93,9 +114,9 @@ const SettingRow = ({ icon, label }: { icon: string; label: string }) => (
 );
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { user, logout, updateUser } = useAuth();
-  const { projects } = useProject();
+  const { projects, setCurrentProject } = useProject();
   const { exports: exportsList } = useExport();
   const initials = useMemo(() => getInitials(user?.name), [user?.name]);
   // Edit-name bottom sheet state
@@ -109,9 +130,9 @@ export default function ProfileScreen() {
     nameInput.trim().length > 0 &&
     nameInput.trim() !== (user?.name ?? "").trim();
   
-    const handleConfirmName = () => {
+    const handleConfirmName = async () => {
     if (!isValidName) return;
-    updateUser({ name: nameInput.trim() });
+    await updateUser({ name: nameInput.trim() });
     setEditVisible(false);
   };
 
@@ -133,30 +154,146 @@ const handleChangeAvatar = async () => {
   });
 
   if (!result.canceled && result.assets?.[0]?.uri) {
-    updateUser({ avatarUrl: result.assets[0].uri });
+    await updateUser({ avatarUrl: result.assets[0].uri });
   }
 };
 
-
-
-
-
-  // Only Projects + Exports are backed by real contexts right now.
-  // Teams has no context yet, so it's omitted rather than shown as a fake number.
-  const stats = [
-    { label: "Projects", value: projects.length },
-    { label: "Exports", value: exportsList.length },
-  ];
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "signin" }],
+    });
   };
 
+  const openTeamMembers = (project: Project) => {
+    setCurrentProject(project);
+    navigation.navigate("teammember", { projectId: project.id });
+  };
+
+  const handleTeamsAndRoles = () => {
+    if (projects.length === 0) {
+      Alert.alert(
+        "No projects yet",
+        "Create a project first, then manage team members and roles.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "New project",
+            onPress: () => navigation.navigate("newproject"),
+          },
+        ]
+      );
+      return;
+    }
+    if (projects.length === 1) {
+      openTeamMembers(projects[0]);
+      return;
+    }
+    Alert.alert(
+      "Teams & roles",
+      "Choose a project to manage members",
+      [
+        ...projects.slice(0, 5).map((p) => ({
+          text: p.name,
+          onPress: () => openTeamMembers(p),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ]
+    );
+  };
+
+  const handlePrivacy = () => {
+    Alert.alert("Privacy & security", "Manage your account security", [
+      {
+        text: "Change password",
+        onPress: () => navigation.navigate("forgotpassword"),
+      },
+      {
+        text: "App settings",
+        onPress: () => navigation.navigate("settings"),
+      },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: handleLogout,
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const handleHelp = () => {
+    Alert.alert("Help & feedback", "How can we help?", [
+      {
+        text: "Email support",
+        onPress: async () => {
+          const url =
+            "mailto:support@vydora.app?subject=Vydora%20feedback&body=Hi%20Vydora%20team%2C%0A%0A";
+          const can = await Linking.canOpenURL(url);
+          if (can) await Linking.openURL(url);
+          else Alert.alert("Email", "Could not open your mail app.");
+        },
+      },
+      {
+        text: "Share app feedback",
+        onPress: async () => {
+          try {
+            await Share.share({
+              message:
+                "Feedback for Vydora: I’m using the app and wanted to share…",
+            });
+          } catch {
+            /* user dismissed */
+          }
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const handleAccountAction = (action: ProfileAction) => {
+    switch (action) {
+      case "personal":
+        openEditSheet();
+        break;
+      case "privacy":
+        handlePrivacy();
+        break;
+      case "notifications":
+        navigation.navigate("Activity");
+        break;
+      case "teams":
+        handleTeamsAndRoles();
+        break;
+      case "help":
+        handleHelp();
+        break;
+    }
+  };
+
+  // Only Projects + Exports are backed by real contexts right now.
+  const stats = [
+    {
+      label: "Projects",
+      value: projects.length,
+      onPress: () => navigation.navigate("projects"),
+    },
+    {
+      label: "Exports",
+      value: exportsList.length,
+      onPress: () => navigation.navigate("export"),
+    },
+  ];
+
+  const planDetail = `${PLAN_PLACEHOLDER.detailPrefix} · ${projects.length} active project${
+    projects.length === 1 ? "" : "s"
+  }`;
 
   
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       {/* Header */}
-      <View style={styles.header}>``
+      <View style={styles.header}>
         <TouchableOpacity
         onPress={()=>navigation.navigate("projects")}
         >
@@ -216,15 +353,19 @@ const handleChangeAvatar = async () => {
         <View style={styles.statsRow}>
           {stats.map((stat, i) => (
             <React.Fragment key={stat.label}>
-              <View style={styles.statItem}>
+              <TouchableOpacity
+                style={styles.statItem}
+                activeOpacity={0.7}
+                onPress={stat.onPress}
+              >
                 <Text style={styles.statValue}>{stat.value}</Text>
                 <Text style={styles.statLabel}>{stat.label}</Text>
-              </View>
+              </TouchableOpacity>
               {i < stats.length - 1 && <View style={styles.statDivider} />}
             </React.Fragment>
           ))}
         </View>
-        {/* Pro plan banner — tappable, but data is placeholder until billing context exists */}
+        {/* Pro plan banner */}
         <TouchableOpacity
         onPress={()=>navigation.navigate("proscreen")}
          style={styles.planBanner} activeOpacity={0.8}>
@@ -238,7 +379,7 @@ const handleChangeAvatar = async () => {
           
             style={styles.planText}>
               <Text style={styles.planName}>{PLAN_PLACEHOLDER.name}</Text>
-              <Text style={styles.planDetail}>{PLAN_PLACEHOLDER.detail}</Text>
+              <Text style={styles.planDetail}>{planDetail}</Text>
             </View>
           </View>
           <Text style={styles.planManage}>Manage</Text>
@@ -251,7 +392,11 @@ const handleChangeAvatar = async () => {
         <View style={styles.card}>
           {ACCOUNT_ITEMS.map((item, i) => (
             <React.Fragment key={item.label}>
-              <SettingRow icon={item.icon} label={item.label} />
+              <SettingRow
+                icon={item.icon}
+                label={item.label}
+                onPress={() => handleAccountAction(item.action)}
+              />
               {i < ACCOUNT_ITEMS.length - 1 && (
                 <View style={styles.rowDivider} />
               )}
@@ -263,7 +408,11 @@ const handleChangeAvatar = async () => {
         <View style={styles.card}>
           {SUPPORT_ITEMS.map((item, i) => (
             <React.Fragment key={item.label}>
-              <SettingRow icon={item.icon} label={item.label} />
+              <SettingRow
+                icon={item.icon}
+                label={item.label}
+                onPress={() => handleAccountAction(item.action)}
+              />
               {i < SUPPORT_ITEMS.length - 1 && (
                 <View style={styles.rowDivider} />
               )}
