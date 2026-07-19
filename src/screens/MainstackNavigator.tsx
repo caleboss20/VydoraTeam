@@ -14,7 +14,6 @@ import Dashboardtabbar from "./Tabbar/DashboardTabbar";
 import NewProjectScreen from "./Dashboard/NewProject";
 import InviteMemberScreen from "./Dashboard/InviteMember";
 import UploadVideoScreen from "./Dashboard/UploadVideo";
-import { Settings } from "react-native";
 import SettingsScreen from "./Dashboard/Settings";
 import ProjectDetailScreen from "./Project/ProjectDetail";
 import ActivityScreen from "./Dashboard/ActivityScreen";

@@ -142,7 +142,7 @@ export type VideoClip = {
   textOverlays?: TextOverlay[];
   trimStartMs?: number; // ADDED: defaults to 0 if unset
   trimEndMs?: number;   // ADDED: defaults to durationMs if unset
- segments?:VideoSegment;
+ segments?: VideoSegment[];
   volume?:number;
   speed?:number;
   filterId?:string;

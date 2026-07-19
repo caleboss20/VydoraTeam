@@ -24,7 +24,7 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 
 import { useVideoProject } from "../Contexts/VideoProjectContext";
 import { useProject } from "../Contexts/projectContext";
-import { VideoClip, TextOverlay } from "../types";
+import { VideoClip, TextOverlay, VideoSegment } from "../types";
 import BottomToolbar from "../Tabbar/editTools";
 import { useComment } from "../Contexts/commentContext";
 import EditToolPanel from "./EditToolPanel";
@@ -424,6 +424,7 @@ const projectId = project?.id;
     removeTextOverlay,
     updateClipFilter,
     updateClipCrop,
+    updateClipSegments,
     setBackgroundMusic,
     updateBackgroundMusic,
     removeBackgroundMusic,

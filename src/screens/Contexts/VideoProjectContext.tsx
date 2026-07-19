@@ -7,7 +7,7 @@ import React, {
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { VideoProject,TextOverlay ,VideoClip, BackgroundMusic } from '../types';
+import { VideoProject, TextOverlay, VideoClip, BackgroundMusic, VideoSegment } from '../types';
 import { CONFIG } from '../config';
 import { buildVersionSnapshot, versionService } from '../services/VersionHistory';
 
@@ -38,6 +38,7 @@ interface VideoProjectContextType {
   updateClipVolume: (clipId: string, volume: number) => void;
   updateClipSpeed: (clipId: string, speed: number) => void;
   updateClipFilter: (clipId: string, filterId: string) => void;
+  updateClipSegments: (clipId: string, segments: VideoSegment[]) => void;
 
   setBackgroundMusic: (uri: string, durationMs: number) => void;
 updateBackgroundMusic: (changes: Partial<BackgroundMusic>) => void;
@@ -345,6 +346,25 @@ const updateClipFilter = (clipId: string, filterId: string) => {
   });
 };
 
+const updateClipSegments = (clipId: string, segments: VideoSegment[]) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? { ...c, segments } : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist segment update', e));
+    return updated;
+  });
+};
+
 // to update the crop ratio/position/zoom applied to a clip.
 // Accepts a partial object so callers can update just the ratio (from the
 // picker panel) or just offset/zoom (from CropOverlay's drag/pinch gestures)
@@ -516,6 +536,7 @@ const removeBackgroundMusic = () => {
         updateTextOverlay,   // ADD
         removeTextOverlay, 
          updateClipFilter,
+        updateClipSegments,
         updateClipCrop,
         setBackgroundMusic,
         updateBackgroundMusic,
