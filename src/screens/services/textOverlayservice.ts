@@ -1,7 +1,12 @@
 import { VideoClip, TextOverlay } from '../types';
-// ─── Text Overlay Service ─────────────────────────────────────────────────────
-// Pure functions only — no state, no persistence. The context calls these
-// and handles setState + AsyncStorage, same pattern as updateClipVolume etc.
+
+/**
+ * Pure helpers for clip-scoped text overlays (no React state).
+ * Context owns setState + AsyncStorage; this file only builds / mutates objects.
+ *
+ * Defaults match CapCut-ish on-video text: centered white glyphs, ready for
+ * a background pill once the user picks a Background swatch in the Text tool.
+ */
 export function createTextOverlay(
   clipId: string,
   text: string,
@@ -14,12 +19,13 @@ export function createTextOverlay(
     clipId,
     startMs,
     durationMs,
-    x: 0.5,
+    x: 0.5, // center of preview
     y: 0.5,
     fontSize: 24,
     fontWeight: 'normal',
     align: 'center',
     color: '#FFFFFF',
+    // No pill until user picks a Background color (undefined = transparent).
     backgroundColor: undefined,
     backgroundOpacity: 0.6,
     backgroundRadius: 8,
@@ -53,7 +59,8 @@ export function removeOverlayFromClip(clip: VideoClip, overlayId: string): Video
     textOverlays: (clip.textOverlays ?? []).filter((o) => o.id !== overlayId),
   };
 }
-// Returns overlay(s) visible at a given local clip time (ms).
+
+/** Overlays whose [start, start+duration] window contains local clip time. */
 export function getActiveOverlays(clip: VideoClip, localTimeMs: number): TextOverlay[] {
   return (clip.textOverlays ?? []).filter(
     (o) => localTimeMs >= o.startMs && localTimeMs <= o.startMs + o.durationMs

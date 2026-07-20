@@ -25,7 +25,13 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 
 import { useVideoProject } from "../Contexts/VideoProjectContext";
 import { useProject } from "../Contexts/projectContext";
-import { VideoClip, TextOverlay, VideoSegment } from "../types";
+import {
+  VideoClip,
+  TextOverlay,
+  VideoSegment,
+  MediaOverlay,
+  MediaOverlayType,
+} from "../types";
 import BottomToolbar from "../Tabbar/editTools";
 import { useComment } from "../Contexts/commentContext";
 import { useMessage } from "../Contexts/messageContext";
@@ -40,6 +46,7 @@ import CropRatioPanel from "./cropRatioPanel";
 import MusicToolPanel from "./MusicToolPanel"; // panel for picking/adjusting background music
 import TransitionPanel from "./TransitionPanel"; // CapCut-style transition picker between clips
 import CaptionsToolPanel from "./CaptionsToolPanel"; // AI auto-captions (Whisper)
+import OverlayToolPanel from "./OverlayToolPanel"; // multi-track PiP/stickers/GIFs + keyframes
 import { captionService } from "../services/captionService";
 import { CROP_RATIO_PRESETS } from '../services/cropService';
 
@@ -382,6 +389,7 @@ function DraggableOverlay({
           fontSize: scale(overlay.fontSize ?? 24),
           fontWeight: overlay.fontWeight === "bold" ? "700" : "400",
           textAlign: overlay.align ?? "center",
+          // CapCut-style pill: #RRGGBB + 2-digit hex alpha from backgroundOpacity.
           backgroundColor: overlay.backgroundColor
             ? `${overlay.backgroundColor}${Math.round((overlay.backgroundOpacity ?? 0.6) * 255)
                 .toString(16)
@@ -401,6 +409,170 @@ function DraggableOverlay({
 
 
 
+
+// ── Media overlays: keyframe interpolation ──
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/**
+ * Transform of an overlay at a given timeline time. With no keyframes this is
+ * the base transform; with keyframes we interpolate between the two that
+ * bracket `timeMs` (clamped to the first/last outside that range).
+ */
+function sampleOverlayTransform(o: MediaOverlay, timeMs: number) {
+  const kfs = o.keyframes ?? [];
+  if (kfs.length === 0) {
+    return { x: o.x, y: o.y, scale: o.scale, rotation: o.rotation, opacity: o.opacity };
+  }
+  if (timeMs <= kfs[0].timeMs) return kfs[0];
+  const last = kfs[kfs.length - 1];
+  if (timeMs >= last.timeMs) return last;
+  for (let i = 0; i < kfs.length - 1; i++) {
+    const a = kfs[i];
+    const b = kfs[i + 1];
+    if (timeMs >= a.timeMs && timeMs <= b.timeMs) {
+      const t = (timeMs - a.timeMs) / Math.max(1, b.timeMs - a.timeMs);
+      return {
+        x: lerp(a.x, b.x, t),
+        y: lerp(a.y, b.y, t),
+        scale: lerp(a.scale, b.scale, t),
+        rotation: lerp(a.rotation, b.rotation, t),
+        opacity: lerp(a.opacity, b.opacity, t),
+      };
+    }
+  }
+  return last;
+}
+
+// Base content size per overlay type — scaled/rotated via the transform.
+const OVERLAY_SIZES: Record<MediaOverlayType, { w: number; h: number }> = {
+  emoji: { w: scale(56), h: scale(56) },
+  image: { w: scale(110), h: scale(110) },
+  video: { w: scale(140), h: scale(84) },
+};
+
+function DraggableMediaOverlay({
+  overlay,
+  previewSize,
+  timelineMs,
+  isSelected,
+  pipPlayer,
+  onTap,
+  onDragEnd,
+}: {
+  overlay: MediaOverlay;
+  previewSize: { width: number; height: number };
+  timelineMs: number;
+  isSelected: boolean;
+  /** Shared PiP player — only passed for the active video overlay. */
+  pipPlayer: ReturnType<typeof useVideoPlayer> | null;
+  onTap: () => void;
+  /** Normalized 0–1 center after drag; caller persists via updateMediaOverlay. */
+  onDragEnd: (x: number, y: number) => void;
+}) {
+  // Selected → base transform so drag/sliders feel live (ignore keyframe lerp).
+  // Deselected → sampleOverlayTransform drives CapCut-style keyframe playback.
+  const t = isSelected
+    ? { x: overlay.x, y: overlay.y, scale: overlay.scale, rotation: overlay.rotation, opacity: overlay.opacity }
+    : sampleOverlayTransform(overlay, timelineMs);
+
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const pos = dragPos ?? { x: t.x * previewSize.width, y: t.y * previewSize.height };
+
+  // Refs so the once-created PanResponder always sees fresh values.
+  const posRef = useRef(pos);
+  posRef.current = pos;
+  const previewRef = useRef(previewSize);
+  previewRef.current = previewSize;
+  const cbRef = useRef({ onTap, onDragEnd });
+  cbRef.current = { onTap, onDragEnd };
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const movedRef = useRef(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        dragStartRef.current = posRef.current;
+        movedRef.current = false;
+      },
+      onPanResponderMove: (_, g) => {
+        if (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4) movedRef.current = true;
+        setDragPos({
+          x: Math.max(0, Math.min(previewRef.current.width, dragStartRef.current.x + g.dx)),
+          y: Math.max(0, Math.min(previewRef.current.height, dragStartRef.current.y + g.dy)),
+        });
+      },
+      onPanResponderRelease: () => {
+        if (movedRef.current) {
+          const p = posRef.current;
+          cbRef.current.onDragEnd(
+            p.x / previewRef.current.width,
+            p.y / previewRef.current.height,
+          );
+        } else {
+          cbRef.current.onTap();
+        }
+        setDragPos(null);
+      },
+    })
+  ).current;
+
+  const { w, h } = OVERLAY_SIZES[overlay.type];
+
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={{
+        position: "absolute",
+        left: pos.x,
+        top: pos.y,
+        width: w,
+        height: h,
+        marginLeft: -w / 2,
+        marginTop: -h / 2,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: t.opacity,
+        transform: [{ rotate: `${t.rotation}deg` }, { scale: t.scale }],
+        zIndex: 12,
+        borderWidth: isSelected ? 1.5 : 0,
+        borderColor: COLORS.yellow,
+        borderStyle: "dashed",
+        borderRadius: scale(10),
+      }}
+    >
+      {overlay.type === "emoji" ? (
+        <Text style={{ fontSize: scale(42) }}>{overlay.uri}</Text>
+      ) : overlay.type === "image" ? (
+        <Image
+          source={{ uri: overlay.uri }}
+          style={{ width: "100%", height: "100%", borderRadius: scale(8) }}
+          resizeMode="contain"
+        />
+      ) : pipPlayer ? (
+        <VideoView
+          player={pipPlayer}
+          style={{ width: "100%", height: "100%", borderRadius: scale(10), overflow: "hidden" }}
+          contentFit="cover"
+          nativeControls={false}
+        />
+      ) : (
+        <View
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius: scale(10),
+            backgroundColor: "rgba(0,0,0,0.6)",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="videocam" size={scale(22)} color="#FFFFFF" />
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function EditorScreen() {
   const navigation = useNavigation<any>();
@@ -434,6 +606,11 @@ const projectId = project?.id;
     updateClipCrop,
     updateClipSegments,
     updateClipTransition,
+    addMediaOverlay,
+    updateMediaOverlay,
+    removeMediaOverlay,
+    addOverlayKeyframe,
+    clearOverlayKeyframes,
     setBackgroundMusic,
     updateBackgroundMusic,
     removeBackgroundMusic,
@@ -533,6 +710,12 @@ const handleExportConfirm = () => {
 const [cropOverlayVisible, setCropOverlayVisible] = useState(false);
 const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original');
 
+  //--------for media overlays (multi-track PiP/stickers/GIFs)-------------//
+  const mediaOverlays = project?.overlays ?? [];
+  const [selectedMediaOverlayId, setSelectedMediaOverlayId] = useState<string | null>(null);
+  const selectedMediaOverlay =
+    mediaOverlays.find((o) => o.id === selectedMediaOverlayId) ?? null;
+
   //--------for clip transitions-------------//
   // Which clip's outgoing transition is being edited (tap the circle between clips).
   const [transitionClipId, setTransitionClipId] = useState<string | null>(null);
@@ -591,6 +774,15 @@ useEffect(() => {
   const [isPlaying, setIsPlaying] = useState(player.playing ?? false);
   useEventListener(player, "playingChange", (payload) => {
     setIsPlaying(payload.isPlaying);
+  });
+
+  // ── PiP video overlay playback ──
+  // One shared secondary player drives the first video overlay (muted, looping,
+  // follows main play/pause). Keeps things to a single extra decoder instance.
+  const pipOverlay = mediaOverlays.find((o) => o.type === "video") ?? null;
+  const pipPlayer = useVideoPlayer(pipOverlay?.uri ?? null, (p: any) => {
+    p.loop = true;
+    p.muted = true;
   });
 
   const [currentTime, setCurrentTime] = useState(player.currentTime ?? 0);
@@ -769,6 +961,33 @@ const togglePlayback = () => {
     return marks;
   }, [totalSeconds]);
 
+  // ── Media overlays visible right now (selected ones always shown for editing) ──
+  const activeMediaOverlays = useMemo(() => {
+    return mediaOverlays.filter(
+      (o) =>
+        o.id === selectedMediaOverlayId ||
+        (currentPositionMs >= o.startMs &&
+          currentPositionMs <= o.startMs + o.durationMs),
+    );
+  }, [mediaOverlays, currentPositionMs, selectedMediaOverlayId]);
+
+  // Keep the PiP video's play state following the main player + its window.
+  useEffect(() => {
+    if (!pipOverlay) return;
+    const visible =
+      currentPositionMs >= pipOverlay.startMs &&
+      currentPositionMs <= pipOverlay.startMs + pipOverlay.durationMs;
+    try {
+      if (isPlaying && visible) {
+        if (!pipPlayer.playing) pipPlayer.play();
+      } else if (pipPlayer.playing) {
+        pipPlayer.pause();
+      }
+    } catch (e) {
+      console.log("PiP sync failed", e);
+    }
+  }, [isPlaying, currentPositionMs, pipOverlay?.id]);
+
   // ── Broadcast our own cursor (playhead + selected clip + tool) ──
   // Throttled to ~5/sec while moving, plus a 3s heartbeat so idle editors'
   // markers don't expire on teammates' screens.
@@ -934,6 +1153,49 @@ const togglePlayback = () => {
   const closeToolPanel = () => {
     setActiveToolLabel(null);
     setSelectedOverlayId(null);
+    setSelectedMediaOverlayId(null);
+  };
+
+  // ── Media overlay handlers ──
+  const handleAddMediaOverlay = (type: MediaOverlayType, uri: string) => {
+    // Drop the overlay at the playhead, defaulting to a 4s window (clamped
+    // so it never starts beyond the end of the timeline).
+    const startMs = Math.max(
+      0,
+      Math.min(Math.round(currentPositionMs), Math.max(0, totalDurationMs - 1500)),
+    );
+    const remaining = totalDurationMs - startMs;
+    const durationMs = remaining > 0 ? Math.min(4000, remaining) : 4000;
+    const id = addMediaOverlay({
+      type,
+      uri,
+      startMs,
+      durationMs,
+      x: 0.5,
+      y: 0.35,
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+    });
+    setSelectedMediaOverlayId(id);
+  };
+
+  const handleAddOverlayKeyframe = () => {
+    if (!selectedMediaOverlay) return;
+    addOverlayKeyframe(selectedMediaOverlay.id, {
+      timeMs: Math.round(currentPositionMs),
+      x: selectedMediaOverlay.x,
+      y: selectedMediaOverlay.y,
+      scale: selectedMediaOverlay.scale,
+      rotation: selectedMediaOverlay.rotation,
+      opacity: selectedMediaOverlay.opacity,
+    });
+  };
+
+  const handleDeleteMediaOverlay = () => {
+    if (!selectedMediaOverlayId) return;
+    removeMediaOverlay(selectedMediaOverlayId);
+    setSelectedMediaOverlayId(null);
   };
 
 const handleSelectCropRatio = (ratioId: string) => {
@@ -1160,6 +1422,23 @@ const handleGenerateCaptions = async (): Promise<number> => {
       />
       ))}
 
+      {/* Media overlays — PiP video, images/GIFs, emoji stickers (multi-track) */}
+      {activeMediaOverlays.map((o) => (
+        <DraggableMediaOverlay
+          key={o.id}
+          overlay={o}
+          previewSize={previewSize}
+          timelineMs={currentPositionMs}
+          isSelected={o.id === selectedMediaOverlayId}
+          pipPlayer={o.type === "video" && o.id === pipOverlay?.id ? pipPlayer : null}
+          onTap={() => {
+            setSelectedMediaOverlayId(o.id);
+            setActiveToolLabel("Overlay");
+          }}
+          onDragEnd={(x, y) => updateMediaOverlay(o.id, { x, y })}
+        />
+      ))}
+
           <View style={styles.videoTopBar} />
           <View style={styles.timestampOverlay}>
             <Text style={styles.timestampText}>
@@ -1351,6 +1630,60 @@ const handleGenerateCaptions = async (): Promise<number> => {
               </View>
             </View>
 
+            {/* 5. Media Overlay Track — PiP video, stickers, GIFs */}
+            {mediaOverlays.length > 0 && (
+              <View
+                style={{
+                  height: verticalScale(22),
+                  position: "relative",
+                  width: totalSeconds * PX_PER_SECOND,
+                  marginTop: verticalScale(6),
+                }}
+              >
+                {mediaOverlays.map((o) => {
+                  const left = (o.startMs / 1000) * PX_PER_SECOND;
+                  const width = Math.max(
+                    scale(24),
+                    (o.durationMs / 1000) * PX_PER_SECOND,
+                  );
+                  const isSel = o.id === selectedMediaOverlayId;
+                  return (
+                    <TouchableOpacity
+                      key={o.id}
+                      style={[
+                        styles.overlayTrackBlock,
+                        { left, width },
+                        isSel && styles.overlayTrackBlockSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedMediaOverlayId(o.id);
+                        setActiveToolLabel("Overlay");
+                      }}
+                    >
+                      <Text style={styles.overlayTrackLabel} numberOfLines={1}>
+                        {o.type === "emoji" ? o.uri : o.type === "video" ? "PiP" : "IMG"}
+                      </Text>
+                      {/* Keyframe diamonds at their timeline positions */}
+                      {(o.keyframes ?? []).map((kf, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.overlayKeyframeDot,
+                            {
+                              left: Math.max(
+                                2,
+                                ((kf.timeMs - o.startMs) / 1000) * PX_PER_SECOND - scale(3),
+                              ),
+                            },
+                          ]}
+                        />
+                      ))}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
             {/* Teammates' live cursors — colored playheads with name tags */}
             {remoteCursors.map((c) => (
               <View
@@ -1425,6 +1758,25 @@ const handleGenerateCaptions = async (): Promise<number> => {
     onClose={closeToolPanel}
   />
 
+) : activeToolLabel === 'Overlay' ? (
+  // Multi-track overlays — PiP video, images/GIFs, emoji stickers + keyframes
+  <OverlayToolPanel
+    visible={true}
+    overlays={mediaOverlays}
+    selectedOverlay={selectedMediaOverlay}
+    onAdd={handleAddMediaOverlay}
+    onSelectOverlay={setSelectedMediaOverlayId}
+    onChange={(changes) =>
+      selectedMediaOverlayId && updateMediaOverlay(selectedMediaOverlayId, changes)
+    }
+    onAddKeyframe={handleAddOverlayKeyframe}
+    onClearKeyframes={() =>
+      selectedMediaOverlayId && clearOverlayKeyframes(selectedMediaOverlayId)
+    }
+    onDelete={handleDeleteMediaOverlay}
+    onClose={closeToolPanel}
+  />
+
 ) : (
   /*for the edit tool panel  */
         <EditToolPanel
@@ -1448,6 +1800,18 @@ const handleGenerateCaptions = async (): Promise<number> => {
             activeClip &&
             selectedOverlayId &&
             updateTextOverlay(activeClip.id, selectedOverlayId, { color })
+          }
+          // CapCut-style bg pill: pick a swatch → semi-opaque box; None clears it.
+          // Same fields are sent in the export timeline (bgColor / bgOpacity).
+          backgroundColor={activeOverlay?.backgroundColor}
+          onBackgroundColorChange={(backgroundColor) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, {
+              backgroundColor,
+              backgroundOpacity: backgroundColor ? 0.7 : 0,
+              backgroundRadius: backgroundColor ? 6 : 0,
+            })
           }
           fontSize={activeOverlay?.fontSize ?? 24}
           onFontSizeChange={(fontSize) =>
@@ -1909,6 +2273,37 @@ const styles = StyleSheet.create({
     position: "absolute",
     transform: [{ translateX: -scale(60) }, { translateY: -verticalScale(15) }],
     maxWidth: "80%",
+  },
+
+  // ── Media overlay track (timeline blocks) ──
+  overlayTrackBlock: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    borderRadius: scale(6),
+    backgroundColor: "rgba(16, 185, 129, 0.25)",
+    borderWidth: 1,
+    borderColor: COLORS.tealAccent,
+    justifyContent: "center",
+    paddingHorizontal: scale(6),
+    overflow: "hidden",
+  },
+  overlayTrackBlockSelected: {
+    backgroundColor: "rgba(245, 197, 24, 0.25)",
+    borderColor: COLORS.yellow,
+  },
+  overlayTrackLabel: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(8),
+    fontWeight: "700",
+  },
+  overlayKeyframeDot: {
+    position: "absolute",
+    top: verticalScale(2),
+    width: scale(6),
+    height: scale(6),
+    backgroundColor: COLORS.yellow,
+    transform: [{ rotate: "45deg" }],
   },
 
   // ── Live cursors (teammates' playheads) ──

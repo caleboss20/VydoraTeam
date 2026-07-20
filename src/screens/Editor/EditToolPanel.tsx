@@ -1,3 +1,15 @@
+/**
+ * Inline bottom panel for Audio / Speed / Text tools.
+ *
+ * Text tool (CapCut-style):
+ *   - Live draft input; Done commits add-or-update on the selected overlay
+ *   - Text color swatches → overlay.color (drawn on the video preview)
+ *   - Background swatches (+ "None") → overlay.backgroundColor pill behind text
+ *   - Font-size slider; Delete when editing an existing overlay
+ *
+ * Color/background changes apply to the currently selected text overlay —
+ * add text first, then tap it on the preview to restyle.
+ */
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +24,10 @@ const COLORS = {
   textSecondary: '#8F9BB3',
 };
 const SPEED_PRESETS = [0.5, 0.75, 0.9, 1,1.2, 1.5];
+/** Glyph colors shown as round swatches under "Text color". */
 const TEXT_COLORS = ['#FFFFFF', '#e7e55c', '#FF4D6D', '#4DA6FF', '#4DFF88', '#000000'];
+/** Pill fill colors under "Background". Ban icon = no pill (undefined). */
+const TEXT_BG_COLORS = ['#000000', '#FFFFFF', '#F5C518', '#FF4D6D', '#4DA6FF', '#10B981'];
 
 
 interface EditToolPanelProps {
@@ -23,13 +38,17 @@ interface EditToolPanelProps {
   onVolumeChange: (v: number) => void;
   speed: number;
   onSpeedChange: (s: number) => void;
-  // ── ADDED for text tool ──
+  // ── Text tool (selected overlay or new) ──
   textValue?: string;
   onTextChange?: (text: string) => void;
   textColor?: string;
   onTextColorChange?: (color: string) => void;
+  /** CapCut-style pill behind the glyphs; undefined = transparent. */
+  backgroundColor?: string | undefined;
+  onBackgroundColorChange?: (color: string | undefined) => void;
   fontSize?: number;
   onFontSizeChange?: (size: number) => void;
+  /** Called when Done is pressed and we're creating (not editing) text. */
   onAddText?: (text: string) => void;
   isEditingExistingOverlay?: boolean;
   onDeleteOverlay?: () => void;
@@ -46,6 +65,8 @@ export default function EditToolPanel({
   onTextChange,
   textColor = '#FFFFFF',
   onTextColorChange,
+  backgroundColor,
+  onBackgroundColorChange,
   fontSize = 24,
   onFontSizeChange,
   onAddText,
@@ -124,6 +145,7 @@ export default function EditToolPanel({
               multiline
               maxLength={120}
             />
+            <Text style={styles.rowLabel}>Text color</Text>
             <View style={styles.colorRow}>
               {TEXT_COLORS.map((c) => (
                 <TouchableOpacity
@@ -133,6 +155,32 @@ export default function EditToolPanel({
                     styles.colorSwatch,
                     { backgroundColor: c },
                     textColor === c && styles.colorSwatchActive,
+                  ]}
+                />
+              ))}
+            </View>
+
+            <Text style={styles.rowLabel}>Background</Text>
+            <View style={styles.colorRow}>
+              {/* "None" — removes the background pill entirely */}
+              <TouchableOpacity
+                onPress={() => onBackgroundColorChange?.(undefined)}
+                style={[
+                  styles.colorSwatch,
+                  styles.noneSwatch,
+                  !backgroundColor && styles.colorSwatchActive,
+                ]}
+              >
+                <Ionicons name="ban-outline" size={scale(14)} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+              {TEXT_BG_COLORS.map((c) => (
+                <TouchableOpacity
+                  key={c}
+                  onPress={() => onBackgroundColorChange?.(c)}
+                  style={[
+                    styles.colorSwatch,
+                    { backgroundColor: c },
+                    backgroundColor === c && styles.colorSwatchActive,
                   ]}
                 />
               ))}
@@ -212,7 +260,18 @@ const styles = StyleSheet.create({
     minHeight: verticalScale(60),
     textAlignVertical: 'top',
   },
-  colorRow: { flexDirection: 'row', marginTop: verticalScale(12), gap: scale(10) },
+  rowLabel: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(10),
+    marginTop: verticalScale(12),
+    letterSpacing: 0.4,
+  },
+  colorRow: { flexDirection: 'row', marginTop: verticalScale(8), gap: scale(10) },
+  noneSwatch: {
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   colorSwatch: {
     width: scale(28),
     height: scale(28),

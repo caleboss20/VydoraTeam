@@ -34,6 +34,10 @@ const tools: Tool[] = [
     label: "Captions",
   },
   {
+    icon: "images-outline",
+    label: "Overlay",
+  },
+  {
     icon: "volume-high-outline",
     label: "Audio",
     

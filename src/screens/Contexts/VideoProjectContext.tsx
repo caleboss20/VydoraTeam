@@ -7,7 +7,7 @@ import React, {
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { VideoProject, TextOverlay, VideoClip, BackgroundMusic, VideoSegment, ClipTransition } from '../types';
+import { VideoProject, TextOverlay, VideoClip, BackgroundMusic, VideoSegment, ClipTransition, MediaOverlay, OverlayKeyframe } from '../types';
 import { CONFIG } from '../config';
 import { buildVersionSnapshot, versionService } from '../services/VersionHistory';
 import { publishState as publishEditorState } from '../socket/editorSync';
@@ -47,6 +47,15 @@ interface VideoProjectContextType {
   updateClipSegments: (clipId: string, segments: VideoSegment[]) => void;
   /** Set/replace the transition into the NEXT clip; pass undefined to remove. */
   updateClipTransition: (clipId: string, transition: ClipTransition | undefined) => void;
+
+  // ── Media overlays (multi-track PiP / stickers / GIFs) ──
+  /** Adds an overlay to the project's overlay track; returns its id. */
+  addMediaOverlay: (overlay: Omit<MediaOverlay, 'id'>) => string;
+  updateMediaOverlay: (overlayId: string, changes: Partial<Omit<MediaOverlay, 'id'>>) => void;
+  removeMediaOverlay: (overlayId: string) => void;
+  /** Records/replaces a keyframe at kf.timeMs (keyframes kept sorted). */
+  addOverlayKeyframe: (overlayId: string, kf: OverlayKeyframe) => void;
+  clearOverlayKeyframes: (overlayId: string) => void;
 
   setBackgroundMusic: (uri: string, durationMs: number) => void;
 updateBackgroundMusic: (changes: Partial<BackgroundMusic>) => void;
@@ -402,6 +411,88 @@ const updateClipTransition = (clipId: string, transition: ClipTransition | undef
   });
 };
 
+// ── Media overlays (multi-track: PiP video, images/GIFs, emoji stickers) ──
+// Project-level track above clips. Every mutator persists to AsyncStorage and
+// rides the same collab broadcast as other edits (last-write-wins sync).
+const persistOverlayUpdate = (
+  prev: VideoProject,
+  overlays: MediaOverlay[],
+  logLabel: string
+): VideoProject => {
+  const updated = { ...prev, overlays, updatedAt: new Date().toISOString() };
+  AsyncStorage.setItem(
+    CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+    JSON.stringify(updated)
+  ).catch((e) => console.log(`Failed to persist ${logLabel}`, e));
+  return updated;
+};
+
+/** Adds a layer; returns the new overlay id for immediate selection in the UI. */
+const addMediaOverlay = (overlay: Omit<MediaOverlay, 'id'>): string => {
+  const id = `moverlay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    return persistOverlayUpdate(
+      prev,
+      [...(prev.overlays ?? []), { ...overlay, id }],
+      'add media overlay'
+    );
+  });
+  return id;
+};
+
+const updateMediaOverlay = (
+  overlayId: string,
+  changes: Partial<Omit<MediaOverlay, 'id'>>
+) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const overlays = (prev.overlays ?? []).map((o) =>
+      o.id === overlayId ? { ...o, ...changes } : o
+    );
+    return persistOverlayUpdate(prev, overlays, 'media overlay update');
+  });
+};
+
+const removeMediaOverlay = (overlayId: string) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const overlays = (prev.overlays ?? []).filter((o) => o.id !== overlayId);
+    return persistOverlayUpdate(prev, overlays, 'media overlay removal');
+  });
+};
+
+/**
+ * Records a keyframe at kf.timeMs. Keyframes within 100ms are replaced so
+ * repeated "Add Keyframe" at the same playhead doesn't stack duplicates.
+ * List stays sorted by timeMs for lerp in preview + export.
+ */
+const addOverlayKeyframe = (overlayId: string, kf: OverlayKeyframe) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const overlays = (prev.overlays ?? []).map((o) => {
+      if (o.id !== overlayId) return o;
+      const kept = (o.keyframes ?? []).filter(
+        (k) => Math.abs(k.timeMs - kf.timeMs) > 100
+      );
+      const keyframes = [...kept, kf].sort((a, b) => a.timeMs - b.timeMs);
+      return { ...o, keyframes };
+    });
+    return persistOverlayUpdate(prev, overlays, 'overlay keyframe');
+  });
+};
+
+/** Drops all keyframes; overlay falls back to its base x/y/scale/rotation/opacity. */
+const clearOverlayKeyframes = (overlayId: string) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const overlays = (prev.overlays ?? []).map((o) =>
+      o.id === overlayId ? { ...o, keyframes: undefined } : o
+    );
+    return persistOverlayUpdate(prev, overlays, 'overlay keyframe clear');
+  });
+};
+
 const updateClipSegments = (clipId: string, segments: VideoSegment[]) => {
   setCurrentVideoProjectState((prev) => {
     if (!prev) return prev;
@@ -595,6 +686,11 @@ const removeBackgroundMusic = () => {
          updateClipFilter,
         updateClipSegments,
         updateClipTransition,
+        addMediaOverlay,
+        updateMediaOverlay,
+        removeMediaOverlay,
+        addOverlayKeyframe,
+        clearOverlayKeyframes,
         updateClipCrop,
         setBackgroundMusic,
         updateBackgroundMusic,

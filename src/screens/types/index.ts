@@ -106,16 +106,24 @@ export type TextOverlay = {
   id: string;
   text: string;
   clipId: string;
+  /** Clip-local start (ms); export maps this through trim + speed. */
   startMs: number;
   durationMs: number;
+  /** Glyph fill — Text tool "Text color" swatches. */
   color?: string;
   isAiGenerated?: boolean; // powers the sparkles icon e.g. "Emotions"
+  /** 0–1 normalized center in the preview (drag to reposition). */
   x?:number;
   y?:number;
   fontSize?:number;
   fontWeight?:'normal'|'bold';
   align?:'left'|'center'|'right';
+  /**
+   * CapCut-style pill behind the text. Undefined / omit = no background.
+   * Baked on export via FFmpeg drawtext box=1.
+   */
   backgroundColor?:string;
+  /** 0–1; used with backgroundColor in preview + export. */
   backgroundOpacity?:number;
   backgroundRadius?:number;
   strokeColor?:string|undefined;
@@ -146,6 +154,13 @@ export interface ClipTransition {
   durationMs: number;
 }
 
+// ─── Speed curves (CapCut-style variable speed presets) ───────────────────────
+/**
+ * Identifier of a curve preset (see services/speedCurves.ts for the actual
+ * segment definitions). 'none' / undefined = constant `speed` applies.
+ */
+export type SpeedCurveId = 'none' | 'montage' | 'hero' | 'bullet' | 'jumpcut';
+
 export type VideoClip = {
   id: string;
   uri: string;
@@ -160,6 +175,13 @@ export type VideoClip = {
  segments?: VideoSegment[];
   volume?:number;
   speed?:number;
+  /**
+   * Variable-speed preset. Preview plays at the curve's average speed;
+   * the export bakes the real per-segment speeds (slow-fast-slow etc).
+   */
+  speedCurve?: SpeedCurveId;
+  /** Play the clip backwards. Baked on export; preview plays forward. */
+  reversed?: boolean;
   filterId?:string;
   cropRatioId?: string;   // references CropRatioPreset.id; undefined = uncropped/original
   cropOffsetX?: number;   // 0 to 1, horizontal position of the crop box within the frame
@@ -167,6 +189,54 @@ export type VideoClip = {
   cropZoom?: number;      // 1 = no zoom, >1 = zoomed in, used with offsets to pan around
   transitionOut?: ClipTransition;
 
+};
+
+// ─── Media overlays (multi-track: PiP video, images/GIFs, emoji stickers) ────
+export type MediaOverlayType = 'image' | 'video' | 'emoji';
+
+/**
+ * A recorded transform at a point on the project timeline. With 2+ keyframes,
+ * playback interpolates position/scale/rotation/opacity between them
+ * (CapCut-style keyframe animation).
+ */
+export type OverlayKeyframe = {
+  timeMs: number;    // project-timeline time this keyframe applies at
+  x: number;         // 0–1 normalized center position in the preview
+  y: number;
+  scale: number;     // 1 = base size
+  rotation: number;  // degrees
+  opacity: number;   // 0–1
+};
+
+// ─── Voiceover (narration recorded over the timeline) ─────────────────────────
+/** One recorded narration take, positioned on the project timeline. */
+export type VoiceoverClip = {
+  id: string;
+  /** Local recording file URI (uploaded to a remote URL at export time). */
+  uri: string;
+  /** Where on the project timeline this narration starts. */
+  startMs: number;
+  durationMs: number;
+  /** 0–2 (1 = recorded level). */
+  volume: number;
+};
+
+/** An overlay element living on its own timeline track above the video. */
+export type MediaOverlay = {
+  id: string;
+  type: MediaOverlayType;
+  /** Image/video URI. For 'emoji' this is the emoji character itself. */
+  uri: string;
+  /** Visibility window on the project timeline. */
+  startMs: number;
+  durationMs: number;
+  x: number;         // 0–1 normalized (base transform when no keyframes)
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+  /** Kept sorted by timeMs. */
+  keyframes?: OverlayKeyframe[];
 };
 
 export type VideoProject = {
@@ -179,6 +249,10 @@ export type VideoProject = {
   coverThumbnailUri?: string;
   totalDurationMs: number;
   backgroundMusic?: BackgroundMusic;
+  /** Multi-track media overlays (PiP video, images/GIFs, emoji stickers). */
+  overlays?: MediaOverlay[];
+  /** Recorded narration takes on their own timeline track. */
+  voiceovers?: VoiceoverClip[];
 };
 
 export interface VideoFilter{
