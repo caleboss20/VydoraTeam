@@ -22,6 +22,21 @@ const WS_BASE =
   process.env.EXPO_PUBLIC_WS_BASE?.replace(/\/$/, '') ||
   'http://localhost:8080/ws';
 
+/**
+ * Raw-WebSocket STOMP broker URL for the Expo client.
+ * Derived from WS_BASE: http(s)://host:8080/ws  →  ws(s)://host:8080/ws-native
+ * (the backend exposes a non-SockJS endpoint at /ws-native so React Native can
+ * connect over the platform WebSocket without SockJS polyfills).
+ */
+function toBrokerUrl(base: string): string {
+  let url = base.replace(/^http/i, 'ws'); // http→ws, https→wss
+  url = url.replace(/\/ws(-native)?$/i, '/ws-native');
+  return url;
+}
+
+const WS_BROKER_URL =
+  process.env.EXPO_PUBLIC_WS_BROKER_URL?.replace(/\/$/, '') || toBrokerUrl(WS_BASE);
+
 export const CONFIG = {
   /** REST base URL for the Spring Boot API. */
   API_BASE,
@@ -31,6 +46,9 @@ export const CONFIG = {
    * Connect with JWT on the STOMP CONNECT frame: `Authorization: Bearer <accessToken>`.
    */
   WS_BASE,
+
+  /** Raw-WebSocket STOMP broker URL (ws://host:8080/ws-native) for @stomp/stompjs. */
+  WS_BROKER_URL,
 
   ASYNC_STORAGE_KEYS: {
     USER: 'vydora:user',

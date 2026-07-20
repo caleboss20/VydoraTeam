@@ -22,6 +22,8 @@ interface MemberContextType {
   removeMember: (projectId: string, memberId: string) => Promise<void>;
   getMembersForProject: (projectId: string) => Member[];
   setMemberOnline: (projectId: string, userId: string, online: boolean) => void;
+  /** Replace the full online set for a project (from WebSocket presence broadcast). */
+  setOnlineMembers: (projectId: string, onlineUserIds: string[]) => void;
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const MemberContext = createContext<MemberContextType | undefined>(undefined);
@@ -144,6 +146,24 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     setMembers(next);
     persist(next).catch(e => console.log('Member presence persist failed', e));
   };
+  // Called by the WebSocket presence broadcast: the backend sends the full set
+  // of userIds currently online in the project. Everyone else is offline.
+  const setOnlineMembers = (projectId: string, onlineUserIds: string[]) => {
+    const onlineSet = new Set(onlineUserIds);
+    setMembers(prev => {
+      const list = prev[projectId] || [];
+      let changed = false;
+      const updated = list.map(m => {
+        const online = onlineSet.has(m.userId);
+        if (m.online !== online) changed = true;
+        return online === m.online ? m : { ...m, online };
+      });
+      if (!changed) return prev;
+      const next = { ...prev, [projectId]: updated };
+      persist(next).catch(e => console.log('Member presence persist failed', e));
+      return next;
+    });
+  };
   return (
     <MemberContext.Provider value={{
       members,
@@ -155,6 +175,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       removeMember,
       getMembersForProject,
       setMemberOnline,
+      setOnlineMembers,
     }}>
       {children}
     </MemberContext.Provider>

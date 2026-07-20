@@ -69,6 +69,21 @@ export interface Comment {
   timecodeMs?: number;
   timecodeLabel?: string;
 }
+// ─── Chat message (project-wide group chat) ───────────────────────────────────
+export interface ChatMessage {
+  id: string;
+  projectId: string;
+  userId: string;
+  author: string;
+  initials: string;
+  color: string;
+  avatarUrl?: string;
+  text: string;
+  /** Relative label for display, e.g. "2m ago". */
+  timestamp: string;
+  /** ISO creation time from the backend — used for ordering. */
+  createdAt: string;
+}
 // ─── Notification ────────────────────────────────────────────────────────────
 export type NotificationType = 'invite' | 'comment' | 'clip_upload' | 'role_change';
 export interface Notification {

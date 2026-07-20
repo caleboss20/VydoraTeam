@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { useMember } from '../Contexts/memberContext';
 import { useComment } from '../Contexts/commentContext';
+import { useMessage } from '../Contexts/messageContext';
 import { useAuth } from '../Contexts/Authcontext';
 const COLORS = {
   background: '#0B0D13',
@@ -30,49 +31,6 @@ const COLORS = {
 };
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SIDEBAR_WIDTH = SCREEN_WIDTH * 0.86;
-// ─── Local type — move to global types.ts once backend activity logging exists ───
-interface ActivityEvent {
-  id: string;
-  actorName: string;
-  action: string;
-  timestamp: string;
-}
-const MOCK_ACTIONS = [
-  'adjusted playback speed to 2x',
-  'changed crop format to 1:1',
-  'changed crop format to 16:9',
-  'added a text overlay',
-  'trimmed a clip',
-];
-// ─── Simulated presence hook — swap internals for real socket payload later ───
-function useSimulatedPresence(projectId: string, members: any[]) {
-  const { setMemberOnline } = useMember();
-  const [activity, setActivity] = useState<ActivityEvent[]>([]);
-  useEffect(() => {
-    if (!members.length) return;
-    const interval = setInterval(() => {
-      const target = members[Math.floor(Math.random() * members.length)];
-      if (!target) return;
-      // flip presence occasionally
-      if (Math.random() > 0.6) {
-        setMemberOnline(projectId, target.userId, !target.online);
-      }
-      // drop a fake activity event
-      const action = MOCK_ACTIONS[Math.floor(Math.random() * MOCK_ACTIONS.length)];
-      setActivity((prev) => [
-        {
-          id: `${Date.now()}`,
-          actorName: target.name,
-          action,
-          timestamp: 'Just now',
-        },
-        ...prev,
-      ].slice(0, 20));
-    }, 6000);
-    return () => clearInterval(interval);
-  }, [members, projectId]);
-  return activity;
-}
 interface CollaborationSidebarProps {
   visible: boolean;
   onClose: () => void;
@@ -86,14 +44,23 @@ export default function CollaborationSidebar({
   clipId,
 }: CollaborationSidebarProps) {
   const { getMembersForProject } = useMember();
-  const { getCommentsForClip, addComment } = useComment();
+  const { getCommentsForProject } = useComment();
+  const {
+    getMessagesForProject,
+    fetchMessages,
+    sendMessage,
+    markProjectRead,
+  } = useMessage();
   const { user } = useAuth();
   const members = getMembersForProject(projectId);
-  const comments = clipId ? getCommentsForClip(projectId, clipId) : [];
-  const activity = useSimulatedPresence(projectId, members);
+  // Chat = project-wide group chat; Activity = real clip comments/feedback.
+  const messages = getMessagesForProject(projectId);
+  const comments = getCommentsForProject(projectId);
   const [tab, setTab] = useState<'chat' | 'activity'>('chat');
   const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
   const slideAnim = useRef(new Animated.Value(SIDEBAR_WIDTH)).current;
+  const chatScrollRef = useRef<ScrollView>(null);
   useEffect(() => {
     Animated.timing(slideAnim, {
       toValue: visible ? 0 : SIDEBAR_WIDTH,
@@ -101,10 +68,36 @@ export default function CollaborationSidebar({
       useNativeDriver: true,
     }).start();
   }, [visible]);
+  // Load history + clear the unread badge whenever the panel opens.
+  useEffect(() => {
+    if (visible && projectId) {
+      fetchMessages(projectId);
+      markProjectRead(projectId);
+    }
+  }, [visible, projectId]);
+  // Clear unread as new messages stream in while the panel is open.
+  useEffect(() => {
+    if (visible && projectId) markProjectRead(projectId);
+  }, [messages.length, visible, projectId]);
+  // Keep the chat pinned to the newest message.
+  useEffect(() => {
+    if (visible && tab === 'chat') {
+      requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true }));
+    }
+  }, [messages.length, visible, tab]);
   const handleSend = async () => {
-    if (!message.trim() || !clipId) return;
-    await addComment(projectId, clipId, message.trim());
+    const text = message.trim();
+    if (!text || sending) return;
     setMessage('');
+    try {
+      setSending(true);
+      await sendMessage(projectId, text);
+    } catch {
+      // Restore the text so the user can retry on failure.
+      setMessage(text);
+    } finally {
+      setSending(false);
+    }
   };
   if (!visible) return null;
   const onlineCount = members.filter((m) => m.online).length;
@@ -179,35 +172,63 @@ export default function CollaborationSidebar({
         </View>
         {/* Body */}
         {tab === 'chat' ? (
-          <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: verticalScale(8) }}>
-            {comments.map((c) => (
-              <View key={c.id} style={styles.activityRow}>
-                <View style={[styles.avatarSmall, { backgroundColor: c.color }]}>
-                  <Text style={styles.avatarTextSmall}>{c.initials}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activityText}>
-                    <Text style={styles.activityActor}>{c.author} </Text>
-                    {c.text}
-                  </Text>
-                  <Text style={styles.activityTime}>{c.timestamp}</Text>
-                </View>
-              </View>
-            ))}
+          <ScrollView
+            ref={chatScrollRef}
+            style={styles.body}
+            contentContainerStyle={{ paddingBottom: verticalScale(8) }}
+            onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: false })}
+          >
+            {messages.length === 0 ? (
+              <Text style={styles.emptyHint}>
+                No messages yet. Say hi to your team.
+              </Text>
+            ) : (
+              messages.map((m) => {
+                const mine = m.userId === user?.id;
+                return (
+                  <View key={m.id} style={styles.activityRow}>
+                    <View style={[styles.avatarSmall, { backgroundColor: m.color }]}>
+                      <Text style={styles.avatarTextSmall}>{m.initials}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.activityText}>
+                        <Text style={styles.activityActor}>
+                          {mine ? 'You' : m.author}{' '}
+                        </Text>
+                        {m.text}
+                      </Text>
+                      <Text style={styles.activityTime}>{m.timestamp}</Text>
+                    </View>
+                  </View>
+                );
+              })
+            )}
           </ScrollView>
         ) : (
           <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: verticalScale(8) }}>
-            {activity.map((a) => (
-              <View key={a.id} style={styles.activityRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activityText}>
-                    <Text style={styles.activityActor}>{a.actorName} </Text>
-                    {a.action}
-                  </Text>
-                  <Text style={styles.activityTime}>{a.timestamp}</Text>
+            {comments.length === 0 ? (
+              <Text style={styles.emptyHint}>
+                No clip feedback yet. Comments on clips show up here.
+              </Text>
+            ) : (
+              comments.map((c) => (
+                <View key={c.id} style={styles.activityRow}>
+                  <View style={[styles.avatarSmall, { backgroundColor: c.color }]}>
+                    <Text style={styles.avatarTextSmall}>{c.initials}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.activityText}>
+                      <Text style={styles.activityActor}>{c.author} </Text>
+                      {c.text}
+                      {c.timecodeLabel ? (
+                        <Text style={styles.activityTime}> @ {c.timecodeLabel}</Text>
+                      ) : null}
+                    </Text>
+                    <Text style={styles.activityTime}>{c.timestamp}</Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              ))
+            )}
           </ScrollView>
         )}
         {/* Chat input — only relevant on chat tab */}
@@ -215,12 +236,20 @@ export default function CollaborationSidebar({
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
-              placeholder="Leave a comment/feedback..."
+              placeholder="Message your team..."
               placeholderTextColor={COLORS.textMuted}
               value={message}
               onChangeText={setMessage}
+              onSubmitEditing={handleSend}
+              returnKeyType="send"
+              editable={!sending}
             />
-            <TouchableOpacity style={styles.sendBtn} onPress={handleSend} hitSlop={8}>
+            <TouchableOpacity
+              style={[styles.sendBtn, sending && { opacity: 0.5 }]}
+              onPress={handleSend}
+              disabled={sending}
+              hitSlop={8}
+            >
               <Ionicons name="send" size={scale(16)} color={COLORS.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -311,6 +340,13 @@ const styles = StyleSheet.create({
   tabText: { color: COLORS.textSecondary, fontSize: moderateScale(12), fontWeight: '600' },
   tabTextActive: { color: COLORS.textPrimary },
   body: { flex: 1, paddingHorizontal: scale(16), paddingTop: verticalScale(10) },
+  emptyHint: {
+    color: COLORS.textMuted,
+    fontSize: moderateScale(12),
+    textAlign: 'center',
+    marginTop: verticalScale(24),
+    paddingHorizontal: scale(16),
+  },
   activityRow: {
     flexDirection: 'row',
     gap: scale(8),

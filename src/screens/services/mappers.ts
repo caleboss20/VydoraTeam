@@ -8,6 +8,7 @@
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import {
+  ChatMessage,
   Clip,
   Comment,
   Export,
@@ -262,6 +263,35 @@ export function mapCommentFromApi(c: ApiComment): Comment {
     timestamp: dayjs(c.createdAt).fromNow(),
     timecodeMs: Math.round((c.timestampSeconds || 0) * 1000),
     timecodeLabel: formatDuration(secs),
+  };
+}
+
+// ─── Chat messages (project-wide group chat) ──────────────────────────────────
+
+export type ApiMessage = {
+  id: string;
+  projectId: string;
+  userId: string;
+  authorName: string;
+  authorInitials?: string | null;
+  authorColor?: string | null;
+  authorAvatarUrl?: string | null;
+  content: string;
+  createdAt: string;
+};
+
+export function mapMessageFromApi(m: ApiMessage): ChatMessage {
+  return {
+    id: m.id,
+    projectId: m.projectId,
+    userId: m.userId,
+    author: m.authorName,
+    initials: m.authorInitials?.trim() || initialsFromName(m.authorName),
+    color: m.authorColor?.trim() || colorFromId(m.userId),
+    avatarUrl: m.authorAvatarUrl || undefined,
+    text: m.content,
+    timestamp: dayjs(m.createdAt).fromNow(),
+    createdAt: m.createdAt,
   };
 }
 

@@ -27,6 +27,9 @@ import { useProject } from "../Contexts/projectContext";
 import { VideoClip, TextOverlay, VideoSegment } from "../types";
 import BottomToolbar from "../Tabbar/editTools";
 import { useComment } from "../Contexts/commentContext";
+import { useMessage } from "../Contexts/messageContext";
+import { useAuth } from "../Contexts/Authcontext";
+import { useProjectSocket } from "../socket/socketconnection";
 import EditToolPanel from "./EditToolPanel";
 import { FILTER_LIST, getFilterById } from "../services/FilterService";
 import FilterToolPanel from "./FilterPanelTool";
@@ -431,6 +434,20 @@ const projectId = project?.id;
   } = useVideoProject();
 
   const { fetchComments } = useComment();
+  const { fetchMessages, markProjectRead, getUnreadForProject } = useMessage();
+  const { user } = useAuth();
+
+  // ── Real-time collaboration ──
+  // Opens a STOMP connection for this project: live group chat, presence
+  // (online avatars), and clip-comment sync. Presence auto-marks this user
+  // online for everyone else on connect.
+  useProjectSocket(projectId ?? "");
+  const unreadCount = projectId ? getUnreadForProject(projectId) : 0;
+
+  const openCollabPanel = () => {
+    setSidebarVisible(true);
+    if (projectId) markProjectRead(projectId);
+  };
 
   //for the video volume//
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
@@ -482,6 +499,12 @@ const handleExportConfirm = () => {
     }
   }, [projectId]);
 
+  useEffect(() => {
+    if (projectId) {
+      fetchMessages(projectId);
+    }
+  }, [projectId]);
+
   const clips: VideoClip[] = project?.clips ?? [];
 
   //--------------for the sidebar--------------//
@@ -490,7 +513,8 @@ const handleExportConfirm = () => {
   const onlineMembers = projectId
     ? getMembersForProject(projectId).filter((m) => m.online)
     : [];
-  console.log("projectId:", projectId, "onlineMembers:", onlineMembers);
+  // Teammates (excluding yourself) currently online — drives the header avatars.
+  const onlineOthers = onlineMembers.filter((m) => m.userId !== user?.id);
 
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0];
@@ -906,30 +930,45 @@ const handleConfirmCrop = (cropData: {
         <View
           style={{ flexDirection: "row", alignItems: "center", gap: scale(10) }}
         >
-          {/* Stacked avatars — replaces the checkmark */}
+          {/* When teammates are online, show their avatars; otherwise a
+              hamburger. Both open the real-time collaboration/message panel. */}
           <TouchableOpacity
-            style={styles.avatarStack}
-            onPress={() => setSidebarVisible(true)}
+            style={styles.collabTrigger}
+            onPress={openCollabPanel}
+            hitSlop={8}
           >
-            {onlineMembers.slice(0, 3).map((m, i) => (
-              <View
-                key={m.id}
-                style={[
-                  styles.stackedAvatar,
-                  {
-                    backgroundColor: m.color,
-                    marginLeft: i === 0 ? 0 : -scale(10),
-                  },
-                ]}
-              >
-                <Text style={styles.stackedAvatarText}>{m.initials}</Text>
+            {onlineOthers.length > 0 ? (
+              <View style={styles.avatarStack}>
+                {onlineOthers.slice(0, 3).map((m, i) => (
+                  <View
+                    key={m.id}
+                    style={[
+                      styles.stackedAvatar,
+                      {
+                        backgroundColor: m.color,
+                        marginLeft: i === 0 ? 0 : -scale(10),
+                      },
+                    ]}
+                  >
+                    <Text style={styles.stackedAvatarText}>{m.initials}</Text>
+                  </View>
+                ))}
+                {/* Green presence pulse on the last avatar */}
+                <View style={styles.onlinePulse} />
               </View>
-            ))}
+            ) : (
+              <Ionicons name="menu" size={scale(24)} color={COLORS.textPrimary} />
+            )}
+
+            {/* Unread message badge */}
+            {unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
-          {/* Hamburger opens the sidebar */}
-          {/* <TouchableOpacity style={styles.headerBtn} onPress={() => setSidebarVisible(true)}>
-      <Ionicons name="menu" size={scale(22)} color={COLORS.textPrimary} />
-    </TouchableOpacity> */}
         </View>
       </View>
       <CollaborationSidebar
@@ -1633,9 +1672,45 @@ const styles = StyleSheet.create({
     zIndex: 30,
   },
   //for the top avatar//
+  collabTrigger: {
+    minWidth: scale(28),
+    height: scale(34),
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
   avatarStack: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  onlinePulse: {
+    width: scale(9),
+    height: scale(9),
+    borderRadius: scale(9),
+    backgroundColor: COLORS.tealAccent,
+    borderWidth: 1.5,
+    borderColor: COLORS.background,
+    marginLeft: -scale(6),
+    alignSelf: "flex-end",
+  },
+  unreadBadge: {
+    position: "absolute",
+    top: -scale(4),
+    right: -scale(6),
+    minWidth: scale(16),
+    height: scale(16),
+    borderRadius: scale(8),
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: scale(3),
+    borderWidth: 1.5,
+    borderColor: COLORS.background,
+  },
+  unreadBadgeText: {
+    color: "#FFFFFF",
+    fontSize: moderateScale(8),
+    fontWeight: "800",
   },
   stackedAvatar: {
     width: scale(33),

@@ -1,137 +1,102 @@
 /**
- * Project WebSocket hook (STOMP over SockJS) — stubbed for the next pass.
+ * Project WebSocket hook (STOMP over a raw WebSocket).
  *
- * Backend (already live on vydora-backend):
- *   Endpoint:  CONFIG.WS_BASE  →  http://localhost:8080/ws
- *   Auth:      CONNECT header  Authorization: Bearer <accessToken>
- *   Subscribe: /topic/project/{id}/comments|members|presence
- *              /user/queue/notifications
- *   Publish:   /app/project/{id}/comment  { clipId, text, timestampSeconds }
+ * Backend (vydora-backend):
+ *   Broker URL: CONFIG.WS_BROKER_URL  →  ws://<host>:8080/ws-native
+ *   Auth:       CONNECT header  Authorization: Bearer <accessToken>
+ *   Subscribe:  /topic/project/{id}/messages   (project group chat)
+ *               /topic/project/{id}/presence   (online userIds — subscribing
+ *                                               also marks THIS user online)
+ *               /topic/project/{id}/comments   (clip comments)
+ *   Publish:    /app/project/{id}/message   { content }   (we use REST instead)
  *
- * Not implemented on the backend yet (leave commented):
- *   /topic/project/{id}/clips|edits  — collaborative timeline sync (editor pass)
- *
- * Call this from ProjectDetail / Editor once SockJS + @stomp/stompjs are added.
- * Do not change UI while enabling — only mount the hook and update contexts.
+ * Mount this from the Editor once per open project. It keeps presence + chat +
+ * comments live and tears the connection down on unmount. UI is unchanged —
+ * this only feeds the existing contexts.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { Client, IMessage } from '@stomp/stompjs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CONFIG } from '../config';
 import { useComment } from '../Contexts/commentContext';
 import { useMember } from '../Contexts/memberContext';
-import { useClip } from '../Contexts/clipContext';
-import { useNotification } from '../Contexts/notificatinContext';
+import { useMessage } from '../Contexts/messageContext';
+import { useAuth } from '../Contexts/Authcontext';
+import { ApiMessage, mapMessageFromApi } from '../services/mappers';
 
 export function useProjectSocket(projectId: string) {
+  const { token } = useAuth();
   const { fetchComments } = useComment();
-  const { fetchMembers, setMemberOnline } = useMember();
-  const { fetchClips } = useClip();
-  const { fetchNotifications } = useNotification();
+  const { setOnlineMembers } = useMember();
+  const { receiveMessage } = useMessage();
+  const clientRef = useRef<Client | null>(null);
+
+  // Keep the latest context callbacks in a ref so ordinary re-renders never
+  // tear down and rebuild the socket (only projectId / auth changes should).
+  const handlersRef = useRef({ fetchComments, setOnlineMembers, receiveMessage });
+  handlersRef.current = { fetchComments, setOnlineMembers, receiveMessage };
+
   useEffect(() => {
-    if (!projectId) return;
-    // ─────────────────────────────────────────────────────────────────────
-    // WEBSOCKET CONNECTION
-    // Connects this phone to Spring Boot's WebSocket server.
-    // Once connected, this phone joins the "room" for this specific project.
-    // Every member who opens this project is in the same room.
-    // ─────────────────────────────────────────────────────────────────────
-    // const socket = new SockJS(`${CONFIG.WS_BASE}`);
-    // const stompClient = Stomp.over(socket);
-    // stompClient.connect({}, () => {
-      // ───────────────────────────────────────────────────────────────────
-      // 1. COMMENTS — Real-time comments
-      // When ANY member adds a comment on any clip inside this project,
-      // Spring Boot broadcasts it here. We refetch all comments so the
-      // new comment appears instantly on everyone's screen without refreshing.
-      // Demo: Person A types comment → Person B sees it appear live.
-      // ───────────────────────────────────────────────────────────────────
-      // stompClient.subscribe(`/topic/project/${projectId}/comments`, () => {
-      //   fetchComments(projectId);
-      // });
-      // ───────────────────────────────────────────────────────────────────
-      // 2. CLIPS — Real-time clip uploads
-      // When ANY member uploads a new clip to this project,
-      // Spring Boot broadcasts it here. The clip list updates live
-      // for everyone without anyone needing to refresh.
-      // Demo: Person A uploads clip → Person B sees it in clip list instantly.
-      // ───────────────────────────────────────────────────────────────────
-      // stompClient.subscribe(`/topic/project/${projectId}/clips`, () => {
-      //   fetchClips(projectId);
-      // });
-      // ───────────────────────────────────────────────────────────────────
-      // 3. MEMBERS — Real-time member changes
-      // When Owner invites a new member OR removes a member OR changes
-      // someone's role, Spring Boot broadcasts it here.
-      // Everyone's member list updates live.
-      // Demo: Owner invites Person B → Person B's app gets the project
-      // added to their list instantly.
-      // ───────────────────────────────────────────────────────────────────
-      // stompClient.subscribe(`/topic/project/${projectId}/members`, () => {
-      //   fetchMembers(projectId);
-      // });
-      // ───────────────────────────────────────────────────────────────────
-      // 4. PRESENCE — Who is online right now
-      // When a member opens this project screen, they broadcast "I'm here".
-      // When they leave, they broadcast "I'm gone".
-      // This powers the green online dot you see next to member avatars.
-      // Demo: Person A opens project → Person B sees green dot appear
-      // next to Person A's avatar in real time.
-      // ───────────────────────────────────────────────────────────────────
-      // stompClient.subscribe(`/topic/project/${projectId}/presence`, (msg) => {
-      //   const { userId, online } = JSON.parse(msg.body);
-      //   setMemberOnline(projectId, userId, online);
-      // });
-      // ───────────────────────────────────────────────────────────────────
-      // 5. COLLABORATIVE EDITING — Real-time timeline/clip edits
-      // When Person A trims, splits, rotates or adjusts a clip,
-      // Spring Boot broadcasts the edit operation here.
-      // Person B's timeline updates live to reflect the change.
-      // This is what makes it a true collaborative video editor.
-      // Note: This is the most complex feature — each edit is an
-      // "operation" (like trim start=00:05, end=00:18) that gets
-      // applied to everyone's timeline in the same order.
-      // Demo: Person A trims clip → Person B sees timeline update live.
-      // ───────────────────────────────────────────────────────────────────
-      // stompClient.subscribe(`/topic/project/${projectId}/edits`, (msg) => {
-      //   const edit = JSON.parse(msg.body);
-      //   // applyEdit(projectId, edit) ← will be handled by EditorContext
-      // });
-      // ───────────────────────────────────────────────────────────────────
-      // 6. NOTIFICATIONS — Real-time notification delivery
-      // When anything happens in the project — new comment, new member,
-      // clip upload, role change — Spring Boot sends a notification here.
-      // The notification bell updates live without polling.
-      // Demo: Person A comments → Person B's notification bell
-      // shows red badge instantly.
-      // ───────────────────────────────────────────────────────────────────
-      // stompClient.subscribe(`/topic/user/notifications`, () => {
-      //   fetchNotifications();
-      // });
-      // ───────────────────────────────────────────────────────────────────
-      // BROADCAST — Tell everyone this user is now online
-      // As soon as connection is established, we tell Spring Boot
-      // "this user is now in this project". Spring Boot then tells
-      // everyone else to show the green dot next to this user's avatar.
-      // ───────────────────────────────────────────────────────────────────
-      // stompClient.send(
-      //   `/app/project/${projectId}/presence`,
-      //   {},
-      //   JSON.stringify({ online: true })
-      // );
-    // });
-    // ─────────────────────────────────────────────────────────────────────
-    // CLEANUP — When user leaves the project screen
-    // We tell Spring Boot this user is offline, so their green dot
-    // disappears for everyone else. Then we disconnect cleanly.
-    // ─────────────────────────────────────────────────────────────────────
-    // return () => {
-    //   stompClient.send(
-    //     `/app/project/${projectId}/presence`,
-    //     {},
-    //     JSON.stringify({ online: false })
-    //   );
-    //   stompClient.disconnect();
-    // };
-    // Hook is intentionally a no-op until SockJS client packages are installed
-    // and CONNECT auth is wired. REST paths already work without this.
-    console.log(`[Socket] Stub active for project ${projectId} — enable STOMP in the collab pass`);
-  }, [projectId]);
+    if (!projectId || !token) return;
+
+    let cancelled = false;
+
+    const client = new Client({
+      brokerURL: CONFIG.WS_BROKER_URL,
+      reconnectDelay: 4000,
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
+      // Always send the freshest token (apiClient rotates it on refresh).
+      beforeConnect: async () => {
+        const stored = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN);
+        client.connectHeaders = { Authorization: `Bearer ${stored ?? token}` };
+      },
+      onConnect: () => {
+        if (cancelled) return;
+
+        // Presence — server pushes the full set of online userIds. Subscribing
+        // to this destination is also what registers THIS user as online.
+        client.subscribe(`/topic/project/${projectId}/presence`, (msg: IMessage) => {
+          try {
+            const ids = JSON.parse(msg.body) as string[];
+            handlersRef.current.setOnlineMembers(projectId, ids);
+          } catch (e) {
+            console.log('[Socket] bad presence payload', e);
+          }
+        });
+
+        // Project group chat
+        client.subscribe(`/topic/project/${projectId}/messages`, (msg: IMessage) => {
+          try {
+            const dto = JSON.parse(msg.body) as ApiMessage;
+            handlersRef.current.receiveMessage(projectId, mapMessageFromApi(dto));
+          } catch (e) {
+            console.log('[Socket] bad message payload', e);
+          }
+        });
+
+        // Clip comments — refetch so existing comment views stay live.
+        client.subscribe(`/topic/project/${projectId}/comments`, () => {
+          handlersRef.current.fetchComments(projectId);
+        });
+
+        console.log(`[Socket] connected to project ${projectId}`);
+      },
+      onStompError: (frame) =>
+        console.log('[Socket] STOMP error', frame.headers['message'], frame.body),
+      onWebSocketError: (e: any) =>
+        console.log('[Socket] WebSocket error', e?.message ?? e),
+    });
+
+    clientRef.current = client;
+    client.activate();
+
+    return () => {
+      cancelled = true;
+      client.deactivate().catch(() => {});
+      clientRef.current = null;
+    };
+  }, [projectId, token]);
+
+  return clientRef;
 }
