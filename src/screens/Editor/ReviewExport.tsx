@@ -1,29 +1,30 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
-  Image,
   StyleSheet,
   Switch,
   ScrollView,
   PanResponder,
+  Image,
 } from "react-native";
 import ConfettiCannon from "react-native-confetti-cannon";
 import * as Sharing from "expo-sharing";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { Video, ResizeMode } from "expo-av";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useVideoProject } from "../Contexts/VideoProjectContext";
+import { useProject } from "../Contexts/projectContext";
 import { useAuth } from "../Contexts/Authcontext";
 import { useExport } from "../Contexts/exportContext";
 import { exportService } from "../services/exportService";
-import { Export } from "../types";
+import { Export, VideoProject } from "../types";
 
 type Resolution = "720p" | "1080p" | "4K";
 type Format = "MP4" | "MOV" | "WebM";
-// Rough bitrate-per-pixel multipliers, just enough to make the size
-// estimate move sensibly when resolution/format/quality change.
 const RESOLUTION_WEIGHT: Record<Resolution, number> = {
   "720p": 1,
   "1080p": 2.2,
@@ -43,6 +44,7 @@ function formatDuration(ms: number) {
 export default function ExportReviewScreen({ navigation }: any) {
   const confettiRef = useRef<any>(null);
   const { currentVideoProject } = useVideoProject();
+  const { currentProject } = useProject();
   const [resolution, setResolution] = useState<Resolution>("1080p");
   const [format, setFormat] = useState<Format>("MP4");
   const [quality, setQuality] = useState(80);
@@ -58,14 +60,74 @@ export default function ExportReviewScreen({ navigation }: any) {
   const [completedExport, setCompletedExport] = useState<Export | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  const exportProject: VideoProject | null = useMemo(() => {
+    const collabId = currentProject?.id;
+    if (
+      currentVideoProject &&
+      (!collabId || currentVideoProject.projectId === collabId)
+    ) {
+      return {
+        ...currentVideoProject,
+        projectId: currentVideoProject.projectId || collabId || "",
+        title: currentVideoProject.title || currentProject?.name || "Project",
+      };
+    }
+    if (collabId) {
+      return {
+        id: `vp-${collabId}`,
+        projectId: collabId,
+        title: currentProject?.name || "Project",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        clips: [],
+        totalDurationMs: 0,
+      };
+    }
+    return null;
+  }, [currentVideoProject, currentProject]);
+
+  const firstClip = exportProject?.clips?.[0];
+  const [clipPreviewUri, setClipPreviewUri] = useState<string | null>(null);
+
+  // Prefer the editor clip frame — never the project create banner.
+  useEffect(() => {
+    let cancelled = false;
+    setClipPreviewUri(null);
+
+    const load = async () => {
+      if (!firstClip?.uri) return;
+      if (firstClip.thumbnailUri) {
+        if (!cancelled) setClipPreviewUri(firstClip.thumbnailUri);
+        return;
+      }
+      try {
+        const timeMs = Math.max(0, firstClip.trimStartMs ?? 0);
+        const { uri } = await VideoThumbnails.getThumbnailAsync(firstClip.uri, {
+          time: timeMs,
+        });
+        if (!cancelled) setClipPreviewUri(uri);
+      } catch (e) {
+        console.log("Export preview thumbnail failed", e);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [firstClip?.uri, firstClip?.thumbnailUri, firstClip?.trimStartMs]);
+
   const handleExport = async () => {
-    if (!currentVideoProject || !token) return;
+    if (!exportProject?.projectId || !token) {
+      setExportError("No project loaded for export.");
+      return;
+    }
     setIsExporting(true);
     setExportProgress(0);
     setExportError(null);
     try {
       const result = await exportService.createExport(
-        currentVideoProject,
+        exportProject,
         {
           resolution,
           format,
@@ -79,13 +141,9 @@ export default function ExportReviewScreen({ navigation }: any) {
       );
 
       setCompletedExport(result);
-      // Push into Export library immediately so the tab isn’t stuck empty/stale.
       await prependExport(result);
       confettiRef.current?.start();
-
-      setTimeout(() => setShowSuccessSheet(true), 1800);
-
-      confettiRef.current?.start();
+      setTimeout(() => setShowSuccessSheet(true), 600);
     } catch (e: any) {
       setExportError(e.message ?? "Export failed");
     } finally {
@@ -93,60 +151,68 @@ export default function ExportReviewScreen({ navigation }: any) {
     }
   };
 
-  // ── Derived display values ──
-  const durationLabel = currentVideoProject
-    ? formatDuration(currentVideoProject.totalDurationMs)
+  const durationLabel = exportProject
+    ? formatDuration(exportProject.totalDurationMs)
     : "0:00";
-  const filename = currentVideoProject
-    ? `${currentVideoProject.title}.mp4`
+  const filename = exportProject
+    ? `${exportProject.title}.${format.toLowerCase()}`
     : "Project.mp4";
-  const posterUri =
-    currentVideoProject?.coverThumbnailUri ??
-    currentVideoProject?.clips[0]?.thumbnailUri;
-  // ── Estimated size/time — recompute only when an input actually changes ──
   const { estimatedSizeMb, estimatedSeconds } = useMemo(() => {
-    if (!currentVideoProject)
+    if (!exportProject)
       return { estimatedSizeMb: 0, estimatedSeconds: 0 };
-    const durationSec = currentVideoProject.totalDurationMs / 1000;
-    const qualityFactor = quality / 80; // 80% is our baseline
-    const baseMbPerSec = 1.8; // baseline MB/sec at 720p, MP4, 80% quality
+    const durationSec = Math.max(1, exportProject.totalDurationMs / 1000);
+    const qualityFactor = quality / 80;
+    const baseMbPerSec = 1.8;
     const sizeMb =
       durationSec *
       baseMbPerSec *
       RESOLUTION_WEIGHT[resolution] *
       FORMAT_WEIGHT[format] *
       qualityFactor;
-    const seconds = Math.max(5, Math.round(sizeMb / 4)); // rough export-speed guess
+    const seconds = Math.max(5, Math.round(sizeMb / 4));
     return { estimatedSizeMb: Math.round(sizeMb), estimatedSeconds: seconds };
-  }, [currentVideoProject, resolution, format, quality]);
-  if (!currentVideoProject) {
+  }, [exportProject, resolution, format, quality]);
+
+  if (!exportProject?.projectId) {
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyText}>No project loaded</Text>
-      </View>
-    );
-  }
-  return (
-    <>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ paddingBottom: verticalScale(40) }}
-      >
-        {/* Header */}
+      <SafeAreaView style={styles.emptyState} edges={["top"]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation?.goBack()}>
-            <Ionicons name="close" size={scale(24)} color="#fff" />
+            <Ionicons name="arrow-back" size={scale(24)} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Export</Text>
           <View style={{ width: scale(24) }} />
         </View>
-        {/* Preview box */}
+        <Text style={styles.emptyText}>No project loaded</Text>
+      </SafeAreaView>
+    );
+  }
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: verticalScale(40) }}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation?.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="arrow-back" size={scale(24)} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Export</Text>
+          <View style={{ width: scale(24) }} />
+        </View>
         <View style={styles.previewBox}>
-          {currentVideoProject.clips[0] ? (
+          {clipPreviewUri ? (
+            <Image
+              source={{ uri: clipPreviewUri }}
+              style={StyleSheet.absoluteFillObject}
+              resizeMode="cover"
+            />
+          ) : firstClip?.uri ? (
             <Video
-              source={{ uri: currentVideoProject.clips[0].uri }}
-              posterSource={posterUri ? { uri: posterUri } : undefined}
-              usePoster={!!posterUri}
+              source={{ uri: firstClip.uri }}
               resizeMode={ResizeMode.COVER}
               style={StyleSheet.absoluteFillObject}
               useNativeControls={false}
@@ -163,7 +229,6 @@ export default function ExportReviewScreen({ navigation }: any) {
           <Text style={styles.durationLabel}>{durationLabel}</Text>
           <Text style={styles.filenameLabel}>{filename}</Text>
         </View>
-        {/* Resolution */}
         <Text style={styles.sectionLabel}>RESOLUTION</Text>
         <View style={styles.pillRow}>
           {(["720p", "1080p", "4K"] as Resolution[]).map((r) => (
@@ -183,7 +248,6 @@ export default function ExportReviewScreen({ navigation }: any) {
             </TouchableOpacity>
           ))}
         </View>
-        {/* Format */}
         <Text style={styles.sectionLabel}>FORMAT</Text>
         <View style={styles.pillRow}>
           {(["MP4", "MOV", "WebM"] as Format[]).map((f) => (
@@ -200,13 +264,11 @@ export default function ExportReviewScreen({ navigation }: any) {
             </TouchableOpacity>
           ))}
         </View>
-        {/* Quality slider */}
         <View style={styles.qualityHeaderRow}>
-          <Text style={styles.sectionLabel}>QUALITY</Text>
+          <Text style={styles.sectionLabelInline}>QUALITY</Text>
           <Text style={styles.qualityValue}>{quality}%</Text>
         </View>
         <QualitySlider value={quality} onChange={setQuality} />
-        {/* Include toggles */}
         <Text style={styles.sectionLabel}>INCLUDE</Text>
         <ToggleRow
           icon="text"
@@ -226,7 +288,6 @@ export default function ExportReviewScreen({ navigation }: any) {
           value={includeWatermark}
           onChange={setIncludeWatermark}
         />
-        {/* Estimate banner */}
         <View style={styles.estimateBanner}>
           <View>
             <Text style={styles.estimateLabel}>Estimated size</Text>
@@ -238,7 +299,6 @@ export default function ExportReviewScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Export button */}
         <TouchableOpacity
           style={[styles.exportButton, isExporting && { opacity: 0.7 }]}
           onPress={handleExport}
@@ -258,7 +318,6 @@ export default function ExportReviewScreen({ navigation }: any) {
         {exportError && <Text style={styles.errorText}>{exportError}</Text>}
       </ScrollView>
 
-      {/**for the success modal sheet  */}
       {showSuccessSheet && completedExport && (
         <View style={styles.sheetBackdrop}>
           <View style={styles.sheetCard}>
@@ -268,32 +327,36 @@ export default function ExportReviewScreen({ navigation }: any) {
             <Text style={styles.sheetTitle}>Export complete</Text>
             <Text style={styles.sheetSubtitle}>
               {completedExport.title}.{completedExport.format.toLowerCase()} ·{" "}
-              {completedExport.sizeMb} MB
+              {completedExport.resolution}
             </Text>
-          
+
             <TouchableOpacity
-            style={styles.sheetPrimaryButton}
-            onPress={async () => {
-                try{
-                    const available=await Sharing.isAvailableAsync();
-                    if(available&& completedExport.fileUrl){
-                        await Sharing.shareAsync(completedExport.fileUrl);
-                    }
-                    else{
-                        console.log('sharing not available on this device');
-                    }
-                }catch(e){
-                    console.log('share failed',e);
+              style={styles.sheetPrimaryButton}
+              onPress={async () => {
+                try {
+                  const available = await Sharing.isAvailableAsync();
+                  if (available && completedExport.fileUrl) {
+                    await Sharing.shareAsync(completedExport.fileUrl);
+                  }
+                } catch (e) {
+                  console.log("share failed", e);
                 }
                 setShowSuccessSheet(false);
-            }}
+              }}
             >
-  <Ionicons name="share-outline" size={scale(16)} color="#111" />
-  <Text style={styles.sheetPrimaryText}>Share</Text>
-</TouchableOpacity>
+              <Ionicons name="share-outline" size={scale(16)} color="#111" />
+              <Text style={styles.sheetPrimaryText}>Share</Text>
+            </TouchableOpacity>
 
-
-
+            <TouchableOpacity
+              style={styles.sheetSecondaryButton}
+              onPress={() => {
+                setShowSuccessSheet(false);
+                navigation?.navigate("export");
+              }}
+            >
+              <Text style={styles.sheetSecondaryText}>View exports</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.sheetSecondaryButton}
               onPress={() => setShowSuccessSheet(false)}
@@ -304,7 +367,6 @@ export default function ExportReviewScreen({ navigation }: any) {
         </View>
       )}
 
-      {/*for the confetti*/}
       {completedExport && (
         <ConfettiCannon
           ref={confettiRef}
@@ -314,13 +376,12 @@ export default function ExportReviewScreen({ navigation }: any) {
           explosionSpeed={350}
           fadeOut
           colors={["#F5C518", "#ffffff"]}
-          //   autoStart={false}
         />
       )}
-    </>
+    </SafeAreaView>
   );
 }
-// ─── Small subcomponents ──────────────────────────────────────────────
+
 function ToggleRow({
   icon,
   label,
@@ -347,6 +408,7 @@ function ToggleRow({
     </View>
   );
 }
+
 const SLIDER_WIDTH = scale(280);
 function QualitySlider({
   value,
@@ -378,20 +440,22 @@ function QualitySlider({
     </View>
   );
 }
-// Approximate left padding of the slider track from screen edge, used to
-// convert an absolute touch X into a position relative to the track.
 
 const SLIDER_X_OFFSET = scale(20);
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#111111" },
+  scroll: { flex: 1 },
   emptyState: {
     flex: 1,
     backgroundColor: "#111111",
-    justifyContent: "center",
-    alignItems: "center",
   },
-  emptyText: { color: "#666", fontSize: moderateScale(14) },
+  emptyText: {
+    color: "#666",
+    fontSize: moderateScale(14),
+    textAlign: "center",
+    marginTop: verticalScale(40),
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -453,6 +517,11 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(8),
     marginHorizontal: scale(16),
   },
+  sectionLabelInline: {
+    color: "#777",
+    fontSize: moderateScale(11),
+    letterSpacing: 0.5,
+  },
   pillRow: {
     flexDirection: "row",
     marginHorizontal: scale(16),
@@ -465,14 +534,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#1c1c1c",
     alignItems: "center",
   },
-  pillActive: { 
-    backgroundColor: "#F5C518" },
-  pillText: { color: "#ccc",
-     fontSize: moderateScale(13), fontWeight: "600" },
+  pillActive: { backgroundColor: "#F5C518" },
+  pillText: {
+    color: "#ccc",
+    fontSize: moderateScale(13),
+    fontWeight: "600",
+  },
   pillTextActive: { color: "#111" },
   qualityHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     marginHorizontal: scale(16),
     marginTop: verticalScale(18),
   },
@@ -545,6 +617,7 @@ const styles = StyleSheet.create({
     color: "#ff5c5c",
     textAlign: "center",
     marginTop: verticalScale(8),
+    marginHorizontal: scale(16),
     fontSize: moderateScale(12),
   },
   sheetBackdrop: {

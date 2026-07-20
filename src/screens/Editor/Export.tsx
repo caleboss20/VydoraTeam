@@ -373,15 +373,19 @@ const styles = StyleSheet.create({
   },
 
   body: { flex: 1 },
-  bodyContent: { paddingHorizontal: s(12), paddingBottom: s(24) },
+  bodyContent: { 
+    paddingHorizontal: s(12), 
+    paddingBottom: s(24)
+   },
   pillRow: {
     flexDirection: "row",
-    gap: s(28),
+    gap: s(13),
     marginBottom: s(16),
+    marginRight:s(10),
   },
 
   pill: {
-    paddingHorizontal: s(14),
+    paddingHorizontal: s(18),
     paddingVertical: s(7),
     borderRadius: s(16),
   },

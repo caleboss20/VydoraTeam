@@ -1,12 +1,11 @@
 /**
  * Upload service — `POST /api/v1/uploads/video` and `/uploads/image`.
  *
- * Multipart field name must be `file` (matches UploadController).
- * Response: { url, publicId, sizeBytes, contentType, durationSeconds }.
+ * - Images (covers, avatars): stored on the backend disk, URL under /files/**
+ * - Videos: Cloudinary CDN (needs CLOUDINARY_* on the backend)
  *
- * Use `url` + `durationSeconds` when creating a clip via clipService.addClip.
- * Editor-local `file://` URIs are fine for on-device preview; anything that
- * must sync across teammates has to go through this upload first.
+ * Multipart field name must be `file`.
+ * Response: { url, publicId, sizeBytes, contentType, durationSeconds }.
  */
 import { CONFIG } from '../config';
 import { apiRequest } from './apiClient';
@@ -19,13 +18,17 @@ export type UploadResult = {
   durationSeconds?: number | null;
 };
 
-async function upload(path: '/uploads/video' | '/uploads/image', uri: string, fileName: string, mimeType: string): Promise<UploadResult> {
+async function upload(
+  path: '/uploads/video' | '/uploads/image',
+  uri: string,
+  fileName: string,
+  mimeType: string
+): Promise<UploadResult> {
   if (CONFIG.USE_MOCK) {
     throw new Error('Uploads require CONFIG.USE_MOCK = false and a running backend.');
   }
 
   const form = new FormData();
-  // React Native FormData file shape
   form.append('file', {
     uri,
     name: fileName,
@@ -39,11 +42,11 @@ async function upload(path: '/uploads/video' | '/uploads/image', uri: string, fi
 }
 
 export const uploadService = {
-  /** Upload a video to Cloudinary via the backend; returns CDN url + duration. */
+  /** Video → Cloudinary via backend. */
   uploadVideo: (uri: string, fileName = 'clip.mp4', mimeType = 'video/mp4') =>
     upload('/uploads/video', uri, fileName, mimeType),
 
-  /** Upload an image (thumbnail / avatar) via the backend. */
+  /** Image → local backend storage (no Cloudinary). */
   uploadImage: (uri: string, fileName = 'image.jpg', mimeType = 'image/jpeg') =>
     upload('/uploads/image', uri, fileName, mimeType),
 };
