@@ -21,20 +21,44 @@ import { CONFIG } from '../config';
 import { useComment } from '../Contexts/commentContext';
 import { useMember } from '../Contexts/memberContext';
 import { useMessage } from '../Contexts/messageContext';
+import { useVideoProject } from '../Contexts/VideoProjectContext';
 import { useAuth } from '../Contexts/Authcontext';
 import { ApiMessage, mapMessageFromApi } from '../services/mappers';
+import {
+  ACTOR_ID,
+  EditEvent,
+  LiveCursor,
+  bindEditorSocket,
+  emitRemoteCursor,
+  unbindEditorSocket,
+  publishHello,
+  publishState,
+} from './editorSync';
 
 export function useProjectSocket(projectId: string) {
   const { token } = useAuth();
   const { fetchComments } = useComment();
   const { setOnlineMembers } = useMember();
   const { receiveMessage } = useMessage();
+  const { applyRemoteProjectState, currentVideoProject } = useVideoProject();
   const clientRef = useRef<Client | null>(null);
 
-  // Keep the latest context callbacks in a ref so ordinary re-renders never
-  // tear down and rebuild the socket (only projectId / auth changes should).
-  const handlersRef = useRef({ fetchComments, setOnlineMembers, receiveMessage });
-  handlersRef.current = { fetchComments, setOnlineMembers, receiveMessage };
+  // Keep the latest context callbacks/state in a ref so ordinary re-renders
+  // never tear down and rebuild the socket (only projectId / auth changes should).
+  const handlersRef = useRef({
+    fetchComments,
+    setOnlineMembers,
+    receiveMessage,
+    applyRemoteProjectState,
+    currentVideoProject,
+  });
+  handlersRef.current = {
+    fetchComments,
+    setOnlineMembers,
+    receiveMessage,
+    applyRemoteProjectState,
+    currentVideoProject,
+  };
 
   useEffect(() => {
     if (!projectId || !token) return;
@@ -80,6 +104,45 @@ export function useProjectSocket(projectId: string) {
           handlersRef.current.fetchComments(projectId);
         });
 
+        // Live collaborative timeline editing — adopt peers' snapshots.
+        client.subscribe(`/topic/project/${projectId}/edits`, (msg: IMessage) => {
+          try {
+            const evt = JSON.parse(msg.body) as EditEvent;
+            if (evt.actorId === ACTOR_ID) return; // ignore our own echo
+
+            if (evt.type === 'full_state' && evt.project) {
+              const mine = handlersRef.current.currentVideoProject;
+              const adopt =
+                !mine ||
+                mine.projectId !== projectId ||
+                (evt.project.updatedAt ?? '') >= (mine.updatedAt ?? '');
+              if (adopt) handlersRef.current.applyRemoteProjectState(evt.project);
+            } else if (evt.type === 'hello') {
+              // A member just joined — send them our current timeline.
+              const mine = handlersRef.current.currentVideoProject;
+              if (mine && mine.projectId === projectId) publishState(mine);
+            }
+          } catch (e) {
+            console.log('[Socket] bad edit payload', e);
+          }
+        });
+
+        // Live cursors — peers' playhead positions on the timeline.
+        client.subscribe(`/topic/project/${projectId}/cursors`, (msg: IMessage) => {
+          try {
+            const cursor = JSON.parse(msg.body) as LiveCursor;
+            if (cursor.actorId === ACTOR_ID) return; // ignore our own echo
+            emitRemoteCursor(cursor);
+          } catch (e) {
+            console.log('[Socket] bad cursor payload', e);
+          }
+        });
+
+        // Let the editor context publish through this client, then ask peers
+        // to hydrate us with the current timeline.
+        bindEditorSocket(client, projectId);
+        publishHello(projectId);
+
         console.log(`[Socket] connected to project ${projectId}`);
       },
       onStompError: (frame) =>
@@ -93,6 +156,7 @@ export function useProjectSocket(projectId: string) {
 
     return () => {
       cancelled = true;
+      unbindEditorSocket();
       client.deactivate().catch(() => {});
       clientRef.current = null;
     };

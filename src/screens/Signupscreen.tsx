@@ -33,7 +33,12 @@ import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere re
 //   after a successful invite-driven signup
 type RootStackParamList = {
   splashscreen: undefined;
-  signin: undefined;
+  signin:
+    | {
+        prefillEmail?: string;
+        needsOnboarding?: boolean;
+      }
+    | undefined;
   onboarding: undefined;
   projects: undefined;
   signup: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
@@ -112,11 +117,17 @@ export default function Signupscreen() {
         navigation.navigate("AcceptInvite", { token: pendingToken });
         return;
       }
-      // Account created — send them to Sign In, then onboarding after login.
+      // New account → Sign In → tutorial (Onboardingscreen) → dashboard.
+      await AsyncStorage.removeItem("vydora:onboarding:done");
       await logout();
       navigation.reset({
         index: 0,
-        routes: [{ name: "signin", params: { prefillEmail: email.trim() } }],
+        routes: [
+          {
+            name: "signin",
+            params: { prefillEmail: email.trim(), needsOnboarding: true },
+          },
+        ],
       });
     }
   };

@@ -7,9 +7,10 @@ import React, {
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { VideoProject, TextOverlay, VideoClip, BackgroundMusic, VideoSegment } from '../types';
+import { VideoProject, TextOverlay, VideoClip, BackgroundMusic, VideoSegment, ClipTransition } from '../types';
 import { CONFIG } from '../config';
 import { buildVersionSnapshot, versionService } from '../services/VersionHistory';
+import { publishState as publishEditorState } from '../socket/editorSync';
 
 import {
   createTextOverlay,
@@ -31,6 +32,11 @@ import { createBackgroundMusic,updateBackgroundMusic as updateBackgroundMusicHel
 interface VideoProjectContextType {
   currentVideoProject: VideoProject | null;
   setCurrentVideoProject: (project: VideoProject | null) => void;
+  /**
+   * Apply a timeline snapshot received from a collaborator over WebSocket.
+   * Unlike the local mutators, this does NOT re-broadcast (prevents echo loops).
+   */
+  applyRemoteProjectState: (project: VideoProject) => void;
   updateClipTrim: (clipId: string, trimStartMs: number, trimEndMs: number) => void; // ADDED
   deleteClip: (clipId: string) => void;
   duplicateClip: (clipId: string) => void;
@@ -39,6 +45,8 @@ interface VideoProjectContextType {
   updateClipSpeed: (clipId: string, speed: number) => void;
   updateClipFilter: (clipId: string, filterId: string) => void;
   updateClipSegments: (clipId: string, segments: VideoSegment[]) => void;
+  /** Set/replace the transition into the NEXT clip; pass undefined to remove. */
+  updateClipTransition: (clipId: string, transition: ClipTransition | undefined) => void;
 
   setBackgroundMusic: (uri: string, durationMs: number) => void;
 updateBackgroundMusic: (changes: Partial<BackgroundMusic>) => void;
@@ -69,6 +77,9 @@ export function VideoProjectProvider({ children }: { children: ReactNode }) {
   const [currentVideoProject, setCurrentVideoProjectState] = useState<VideoProject | null>(null);
   const projectRef = useRef<VideoProject | null>(null);
   const lastAutoFingerprint = useRef<string>('');
+  // When a change originates from a remote collaborator we must NOT broadcast it
+  // back out, or two clients would ping-pong forever.
+  const remoteApplyRef = useRef<boolean>(false);
 
   // ── Rehydrate on launch so the last-edited video survives an app restart ──
   useEffect(() => {
@@ -90,6 +101,31 @@ export function VideoProjectProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     projectRef.current = currentVideoProject;
   }, [currentVideoProject]);
+
+  // ── Live collaborative editing ──
+  // Broadcast the timeline whenever it changes locally. Skips changes that were
+  // themselves applied from a remote peer (remoteApplyRef) so we don't loop.
+  // Debounced so rapid edits (e.g. dragging a trim handle) coalesce into one send.
+  useEffect(() => {
+    if (!currentVideoProject) return;
+    if (remoteApplyRef.current) {
+      remoteApplyRef.current = false;
+      return;
+    }
+    const t = setTimeout(() => publishEditorState(projectRef.current), 150);
+    return () => clearTimeout(t);
+  }, [currentVideoProject?.updatedAt]);
+
+  // Adopt a collaborator's timeline snapshot without re-broadcasting it.
+  const applyRemoteProjectState = (project: VideoProject) => {
+    remoteApplyRef.current = true;
+    setCurrentVideoProjectState(project);
+    projectRef.current = project;
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(project)
+    ).catch((e) => console.log('Failed to persist remote project state', e));
+  };
 
   // CapCut-style autosave: every 2 minutes when the timeline has clips.
   useEffect(() => {
@@ -346,6 +382,26 @@ const updateClipFilter = (clipId: string, filterId: string) => {
   });
 };
 
+// Transition INTO the next clip (CapCut-style transition between two clips).
+const updateClipTransition = (clipId: string, transition: ClipTransition | undefined) => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updatedClips = prev.clips.map((c) =>
+      c.id === clipId ? { ...c, transitionOut: transition } : c
+    );
+    const updated = {
+      ...prev,
+      clips: updatedClips,
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to persist transition update', e));
+    return updated;
+  });
+};
+
 const updateClipSegments = (clipId: string, segments: VideoSegment[]) => {
   setCurrentVideoProjectState((prev) => {
     if (!prev) return prev;
@@ -526,6 +582,7 @@ const removeBackgroundMusic = () => {
       value={{
         currentVideoProject,
         setCurrentVideoProject,
+        applyRemoteProjectState,
         updateClipTrim,
         deleteClip,
         duplicateClip,
@@ -537,6 +594,7 @@ const removeBackgroundMusic = () => {
         removeTextOverlay, 
          updateClipFilter,
         updateClipSegments,
+        updateClipTransition,
         updateClipCrop,
         setBackgroundMusic,
         updateBackgroundMusic,

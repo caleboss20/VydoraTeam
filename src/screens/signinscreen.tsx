@@ -32,7 +32,13 @@ import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere re
 type RootStackParamList = {
   signup: undefined;
   forgotpassword: undefined;
-  signin: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
+  signin:
+    | {
+        prefillEmail?: string;
+        pendingInviteToken?: string;
+        needsOnboarding?: boolean;
+      }
+    | undefined;
   AcceptInvite: { token: string };
   onboarding: undefined;
   projects: undefined;
@@ -97,8 +103,9 @@ export default function SignInscreen() {
         navigation.navigate("AcceptInvite", { token: pendingToken });
         return;
       }
+      // New signups pass needsOnboarding; otherwise show tutorial until marked done.
       const onboardingDone = await AsyncStorage.getItem("vydora:onboarding:done");
-      if (!onboardingDone) {
+      if (route.params?.needsOnboarding || !onboardingDone) {
         navigation.reset({
           index: 0,
           routes: [{ name: "onboarding" }],

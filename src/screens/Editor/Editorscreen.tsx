@@ -10,6 +10,7 @@ import {
   StatusBar,
   Alert,
   PanResponder,
+  Animated,
 } from "react-native";  
 import { useMember } from "../Contexts/memberContext";
 import CollaborationSidebar from "../components/Editorsidebar";
@@ -30,12 +31,16 @@ import { useComment } from "../Contexts/commentContext";
 import { useMessage } from "../Contexts/messageContext";
 import { useAuth } from "../Contexts/Authcontext";
 import { useProjectSocket } from "../socket/socketconnection";
+import { publishCursor, useLiveCursors } from "../socket/editorSync";
 import EditToolPanel from "./EditToolPanel";
 import { FILTER_LIST, getFilterById } from "../services/FilterService";
 import FilterToolPanel from "./FilterPanelTool";
 import CropRatioPanel from "./cropRatioPanel"; 
 // import CropOverlay from "./cropOverlay";
 import MusicToolPanel from "./MusicToolPanel"; // panel for picking/adjusting background music
+import TransitionPanel from "./TransitionPanel"; // CapCut-style transition picker between clips
+import CaptionsToolPanel from "./CaptionsToolPanel"; // AI auto-captions (Whisper)
+import { captionService } from "../services/captionService";
 import { CROP_RATIO_PRESETS } from '../services/cropService';
 
 
@@ -428,6 +433,7 @@ const projectId = project?.id;
     updateClipFilter,
     updateClipCrop,
     updateClipSegments,
+    updateClipTransition,
     setBackgroundMusic,
     updateBackgroundMusic,
     removeBackgroundMusic,
@@ -443,6 +449,9 @@ const projectId = project?.id;
   // online for everyone else on connect.
   useProjectSocket(projectId ?? "");
   const unreadCount = projectId ? getUnreadForProject(projectId) : 0;
+
+  // Figma-style live cursors: teammates' playheads rendered on our timeline.
+  const remoteCursors = useLiveCursors();
 
   const openCollabPanel = () => {
     setSidebarVisible(true);
@@ -523,6 +532,27 @@ const handleExportConfirm = () => {
   //--------for the video cropping state-------------//
 const [cropOverlayVisible, setCropOverlayVisible] = useState(false);
 const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original');
+
+  //--------for clip transitions-------------//
+  // Which clip's outgoing transition is being edited (tap the circle between clips).
+  const [transitionClipId, setTransitionClipId] = useState<string | null>(null);
+  // Quick fade effect over the preview when playback crosses a transition boundary.
+  const transitionFade = useRef(new Animated.Value(0)).current;
+  const runTransitionEffect = (durationMs: number) => {
+    transitionFade.setValue(0);
+    Animated.sequence([
+      Animated.timing(transitionFade, {
+        toValue: 1,
+        duration: Math.max(120, durationMs / 2),
+        useNativeDriver: true,
+      }),
+      Animated.timing(transitionFade, {
+        toValue: 0,
+        duration: Math.max(120, durationMs / 2),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
 
   const activeOverlay =
@@ -618,6 +648,11 @@ useEventListener(player, "timeUpdate", (payload) => {
   if (curTimeMs >= trimEndMs) {
     const activeIdx = clips.findIndex((c) => c.id === activeClip.id);
     if (activeIdx !== -1 && activeIdx + 1 < clips.length) {
+      // Play the outgoing clip's transition effect across the cut.
+      const outgoing = activeClip.transitionOut;
+      if (outgoing && outgoing.type !== "none") {
+        runTransitionEffect(outgoing.durationMs || 500);
+      }
       const nextClip = clips[activeIdx + 1];
       setSelectedClipId(nextClip.id);
       player.pause();
@@ -733,6 +768,38 @@ const togglePlayback = () => {
     for (let s = 0; s <= totalSeconds; s += 5) marks.push(s);
     return marks;
   }, [totalSeconds]);
+
+  // ── Broadcast our own cursor (playhead + selected clip + tool) ──
+  // Throttled to ~5/sec while moving, plus a 3s heartbeat so idle editors'
+  // markers don't expire on teammates' screens.
+  const cursorPayloadRef = useRef<any>(null);
+  const lastCursorSentRef = useRef(0);
+  useEffect(() => {
+    if (!projectId || !user) return;
+    cursorPayloadRef.current = {
+      userId: user.id,
+      name: user.name,
+      initials: user.initials,
+      color: user.color,
+      positionMs: Math.round(currentPositionMs),
+      selectedClipId: selectedClipId ?? undefined,
+      tool: activeToolLabel ?? undefined,
+    };
+    const now = Date.now();
+    if (now - lastCursorSentRef.current < 200) return;
+    lastCursorSentRef.current = now;
+    publishCursor(projectId, cursorPayloadRef.current);
+  }, [projectId, user, currentPositionMs, selectedClipId, activeToolLabel]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const heartbeat = setInterval(() => {
+      if (cursorPayloadRef.current) {
+        publishCursor(projectId, cursorPayloadRef.current);
+      }
+    }, 3000);
+    return () => clearInterval(heartbeat);
+  }, [projectId]);
 
   const timelineScrollRef = useRef<ScrollView>(null);
   const isScrubbingRef = useRef(false);
@@ -886,6 +953,56 @@ const handleConfirmCrop = (cropData: {
   setCropOverlayVisible(false);
 };
 
+// ── AI captions ──
+// Existing AI captions on the active clip (marked isAiGenerated so they can
+// be counted/regenerated/cleared separately from manual text).
+const captionOverlays =
+  activeClip?.textOverlays?.filter((o) => o.isAiGenerated) ?? [];
+
+const handleClearCaptions = () => {
+  if (!activeClip) return;
+  captionOverlays.forEach((o) => removeTextOverlay(activeClip.id, o.id));
+};
+
+const handleGenerateCaptions = async (): Promise<number> => {
+  if (!activeClip) throw new Error("Select a clip first.");
+  const uri = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(uri)) {
+    throw new Error(
+      "Captions need the uploaded clip. Wait for the upload to finish, then try again."
+    );
+  }
+  const segments = await captionService.generateCaptions(uri);
+  if (!segments.length) throw new Error("No speech detected in this clip.");
+
+  // Regenerating replaces previous AI captions instead of stacking them.
+  captionOverlays.forEach((o) => removeTextOverlay(activeClip.id, o.id));
+
+  const clipEnd = activeClip.durationMs;
+  let added = 0;
+  segments.forEach((seg) => {
+    if (seg.startMs >= clipEnd) return;
+    const startMs = Math.max(0, seg.startMs);
+    const durationMs = Math.max(600, Math.min(seg.endMs, clipEnd) - startMs);
+    const id = addTextOverlay(activeClip.id, seg.text, startMs, durationMs);
+    // Caption look: bottom-centered, subtitle-sized, on a soft dark pill.
+    updateTextOverlay(activeClip.id, id, {
+      isAiGenerated: true,
+      x: 0.5,
+      y: 0.82,
+      fontSize: 15,
+      fontWeight: "bold",
+      color: "#FFFFFF",
+      backgroundColor: "#000000",
+      backgroundOpacity: 0.55,
+      backgroundRadius: 6,
+      animationIn: "fade",
+    });
+    added++;
+  });
+  return added;
+};
+
 
 
 
@@ -1019,6 +1136,16 @@ const handleConfirmCrop = (cropData: {
               ]}
             />
           )}
+
+          {/* Transition effect — brief fade as playback crosses a clip boundary */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: "#000", opacity: transitionFade, zIndex: 15 },
+            ]}
+          />
+
    
       
       {activeVisibleOverlays.map((o) => (
@@ -1181,9 +1308,18 @@ const handleConfirmCrop = (cropData: {
                       onTrimEnd={handleTrimEnd}
                     />
                     {index < clips.length - 1 && (
-                      <View style={styles.transitionBtn}>
+                      <TouchableOpacity
+                        style={[
+                          styles.transitionBtn,
+                          clip.transitionOut &&
+                            clip.transitionOut.type !== "none" &&
+                            styles.transitionBtnActive,
+                        ]}
+                        onPress={() => setTransitionClipId(clip.id)}
+                        hitSlop={6}
+                      >
                         <View style={styles.transitionInnerIcon} />
-                      </View>
+                      </TouchableOpacity>
                     )}
                   </React.Fragment>
                 );
@@ -1214,6 +1350,26 @@ const handleConfirmCrop = (cropData: {
                 })}
               </View>
             </View>
+
+            {/* Teammates' live cursors — colored playheads with name tags */}
+            {remoteCursors.map((c) => (
+              <View
+                key={c.actorId}
+                style={[
+                  styles.remoteCursor,
+                  { left: (c.positionMs / 1000) * PX_PER_SECOND },
+                ]}
+                pointerEvents="none"
+              >
+                <View style={[styles.remoteCursorTag, { backgroundColor: c.color }]}>
+                  <Text style={styles.remoteCursorTagText} numberOfLines={1}>
+                    {(c.name || c.initials || "?").split(" ")[0]}
+                    {c.tool ? ` · ${c.tool}` : ""}
+                  </Text>
+                </View>
+                <View style={[styles.remoteCursorLine, { backgroundColor: c.color }]} />
+              </View>
+            ))}
           </View>
         </ScrollView>
       </View>
@@ -1257,6 +1413,15 @@ const handleConfirmCrop = (cropData: {
       removeBackgroundMusic();
       closeToolPanel();
     }}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Captions' ? (
+  // AI auto-captions — Whisper transcription → timed text overlays
+  <CaptionsToolPanel
+    visible={true}
+    captionCount={captionOverlays.length}
+    onGenerate={handleGenerateCaptions}
+    onClearCaptions={handleClearCaptions}
     onClose={closeToolPanel}
   />
 
@@ -1318,6 +1483,16 @@ const handleConfirmCrop = (cropData: {
 )} */}
 
 {/* //for the export modal// */}
+
+{/* Transition picker — opens from the circle between two clips */}
+{transitionClipId && (
+  <TransitionPanel
+    visible={true}
+    transition={clips.find((c) => c.id === transitionClipId)?.transitionOut}
+    onChange={(t) => updateClipTransition(transitionClipId, t)}
+    onClose={() => setTransitionClipId(null)}
+  />
+)}
 
 <ExportConfirmModal
   visible={showExportConfirm}
@@ -1596,6 +1771,9 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
+  transitionBtnActive: {
+    backgroundColor: COLORS.yellow,
+  },
   transitionInnerIcon: {
     width: scale(10),
     height: scale(4),
@@ -1731,5 +1909,32 @@ const styles = StyleSheet.create({
     position: "absolute",
     transform: [{ translateX: -scale(60) }, { translateY: -verticalScale(15) }],
     maxWidth: "80%",
+  },
+
+  // ── Live cursors (teammates' playheads) ──
+  remoteCursor: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    alignItems: "flex-start",
+    zIndex: 90,
+  },
+  remoteCursorLine: {
+    flex: 1,
+    width: 2,
+    borderRadius: 1,
+    opacity: 0.9,
+  },
+  remoteCursorTag: {
+    paddingHorizontal: scale(6),
+    paddingVertical: verticalScale(2),
+    borderRadius: scale(8),
+    marginBottom: verticalScale(2),
+    maxWidth: scale(96),
+  },
+  remoteCursorTagText: {
+    color: "#0B0D13",
+    fontSize: moderateScale(8),
+    fontWeight: "800",
   },
 });
