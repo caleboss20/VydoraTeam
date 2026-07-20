@@ -1,3 +1,4 @@
+import { useTheme } from "../Contexts/ThemeContext";
 
 import React, { useState, useRef } from 'react';
 import {
@@ -16,7 +17,7 @@ import {
 import { SafeAreaView,} from "react-native-safe-area-context"
 import { Ionicons } from '@expo/vector-icons';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const COLORS = {
+let COLORS: Record<string, string> = {
   bg: '#111111',
   surface: '#1C1C1C',
   yellow: '#F5C518',
@@ -28,7 +29,7 @@ const COLORS = {
   border: '#2A2A2A',
   trackBg: '#1A1A1A',
   btnBg: '#1E1E1E',
-} as const;
+};
 const TRACK_HEIGHT = 52;
 const GAP = 16;
 const CLIP_UNIT = 90;
@@ -124,6 +125,30 @@ interface Props {
   navigation?: { goBack: () => void };
 }
 export default function TimelineScreen({ navigation }: Props) {
+  const { colors, isDark } = useTheme();
+  COLORS = {
+    ...COLORS,
+    bg: colors.background,
+    surface: colors.surface,
+    text: colors.text,
+    textPrimary: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    textDim: colors.textMuted,
+    textTertiary: colors.textMuted,
+    border: colors.border,
+    trackBg: colors.surface,
+    btnBg: colors.iconBg,
+    sheet: colors.surface,
+    compareBg: colors.surface,
+    yellow: colors.accent,
+    accent: colors.accent,
+    accentYellow: colors.accent,
+    pillBg: colors.iconBg,
+    trackEmpty: colors.border,
+  };
+  styles = makeStyles();
+
   const [zoom, setZoom] = useState(0.5);
   const [clips, setClips] = useState<Clip[]>([
     // Video — two yellow clips
@@ -269,7 +294,8 @@ export default function TimelineScreen({ navigation }: Props) {
   );
 }
 // ─── Styles ───────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+function makeStyles() {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   // Top bar
   topBar: {
@@ -495,3 +521,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+}
+let styles = makeStyles();

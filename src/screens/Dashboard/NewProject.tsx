@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTheme } from "../Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -20,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useProject } from '../Contexts/projectContext'
 import * as ImagePicker from 'expo-image-picker' // ADDED
 // ─── Palette ────────────────────────────────────────────────────────────────
-const C = {
+let C = {
   bg: '#111111',
   surface: '#1A1A1A',
   card: '#1E1E1E',
@@ -34,7 +35,7 @@ const C = {
   selectedBorder: '#F5C518',
   selectedBg: '#1E1A00',
   divider: '#2A2A2A',
-} as const
+}
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Visibility = 'Private' | 'Team' | 'Public'
 type VisibilityOption = {
@@ -52,6 +53,24 @@ const VISIBILITY_OPTIONS: VisibilityOption[] = [
 const NAME_MAX = 30
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 const NewProjectScreen: React.FC = () => {
+  const { colors, isDark } = useTheme()
+  C = {
+    ...C,
+    bg: colors.background,
+    surface: colors.surface,
+    card: colors.card,
+    accent: colors.accent,
+    accentBg: isDark ? '#2A2200' : '#FFF8E0',
+    textPrimary: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    inputBorder: colors.border,
+    errorRed: colors.danger,
+    selectedBorder: colors.accent,
+    selectedBg: isDark ? '#1E1A00' : '#FFF8E0',
+    divider: colors.border,
+  }
+  styles = makeStyles()
   const navigation = useNavigation<any>()
   const { createProject, error: contextError } = useProject()
   const [projectName, setProjectName] = useState<string>('')
@@ -126,7 +145,7 @@ const NewProjectScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.flex}>
-          <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+          <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={C.bg} />
           {/* ── Top Bar ── */}
           <View style={styles.topBar}>
             <TouchableOpacity
@@ -277,7 +296,8 @@ const NewProjectScreen: React.FC = () => {
 }
 export default NewProjectScreen
 // ─── Styles ─────────────────
-const styles = StyleSheet.create({
+function makeStyles() {
+  return StyleSheet.create({
   flex: {
     flex: 1,
     backgroundColor: C.bg,
@@ -476,4 +496,7 @@ const styles = StyleSheet.create({
     fontSize: ms(15),
     fontWeight: '700',
   },
-})
+});
+}
+let styles = makeStyles()
+

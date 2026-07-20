@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { ClipTransition, ClipTransitionType } from '../types';
+import { useAppPalette } from '../Contexts/ThemeContext';
 
-const COLORS = {
+
+let COLORS: Record<string, string> = {
   background: '#0B0D13',
   surface: '#151821',
   border: '#222633',
@@ -19,13 +21,23 @@ type TransitionPreset = {
   icon: keyof typeof Ionicons.glyphMap;
 };
 
-// CapCut-style transition picker between two clips.
+// CapCut-style transition picker between two clips (maps to FFmpeg xfade).
 const PRESETS: TransitionPreset[] = [
   { id: 'none', label: 'None', icon: 'ban-outline' },
   { id: 'crossfade', label: 'Crossfade', icon: 'contrast-outline' },
+  { id: 'dissolve', label: 'Dissolve', icon: 'water-outline' },
+  { id: 'fadeblack', label: 'Fade black', icon: 'moon-outline' },
+  { id: 'fadewhite', label: 'Flash', icon: 'sunny-outline' },
   { id: 'wipe', label: 'Wipe', icon: 'swap-horizontal-outline' },
   { id: 'slide', label: 'Slide', icon: 'arrow-forward-outline' },
+  { id: 'whip', label: 'Whip', icon: 'flash-outline' },
+  { id: 'smoothleft', label: 'Smooth L', icon: 'chevron-back-outline' },
+  { id: 'smoothright', label: 'Smooth R', icon: 'chevron-forward-outline' },
   { id: 'zoom', label: 'Zoom', icon: 'expand-outline' },
+  { id: 'circle', label: 'Circle', icon: 'ellipse-outline' },
+  { id: 'radial', label: 'Radial', icon: 'radio-button-on-outline' },
+  { id: 'glitch', label: 'Glitch', icon: 'hardware-chip-outline' },
+  { id: 'pixelate', label: 'Pixelate', icon: 'grid-outline' },
 ];
 
 const DURATIONS = [300, 500, 1000];
@@ -43,6 +55,19 @@ export default function TransitionPanel({
   onChange,
   onClose,
 }: TransitionPanelProps) {
+  const __palette = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    background: __palette.background,
+    surface: __palette.surface,
+    border: __palette.border,
+    yellow: __palette.yellow,
+    textPrimary: __palette.textPrimary,
+    textSecondary: __palette.textSecondary,
+    textMuted: __palette.textMuted,
+  };
+  styles = __makeStyles();
+
   if (!visible) return null;
 
   const selectedType: ClipTransitionType = transition?.type ?? 'none';
@@ -131,7 +156,8 @@ export default function TransitionPanel({
   );
 }
 
-const styles = StyleSheet.create({
+function __makeStyles() {
+  return StyleSheet.create({
   wrapper: {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
@@ -216,3 +242,6 @@ const styles = StyleSheet.create({
     color: '#13151c',
   },
 });
+}
+let styles = __makeStyles();
+

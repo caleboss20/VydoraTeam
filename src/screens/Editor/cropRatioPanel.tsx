@@ -3,7 +3,9 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { CropRatioPreset } from '../types';
-const COLORS = {
+import { useAppPalette } from '../Contexts/ThemeContext';
+
+let COLORS: Record<string, string> = {
   background: '#0B0D13',
   surface: '#151821',
   border: '#222633',
@@ -48,6 +50,19 @@ export default function CropRatioPanel({
   onSelectRatio,
   onClose,
 }: CropRatioPanelProps) {
+  const __palette = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    background: __palette.background,
+    surface: __palette.surface,
+    border: __palette.border,
+    yellow: __palette.yellow,
+    textPrimary: __palette.textPrimary,
+    textSecondary: __palette.textSecondary,
+    textMuted: __palette.textMuted,
+  };
+  styles = __makeStyles();
+
   if (!visible) return null;
 
 
@@ -101,7 +116,8 @@ export default function CropRatioPanel({
     </View>
   );
 }
-const styles = StyleSheet.create({
+function __makeStyles() {
+  return StyleSheet.create({
   wrapper: {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
@@ -171,3 +187,5 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(1),
   },
 });
+}
+let styles = __makeStyles();

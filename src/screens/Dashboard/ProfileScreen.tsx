@@ -34,6 +34,7 @@ import { useProject } from "../Contexts/projectContext";
 import { useExport } from "../Contexts/exportContext";
 import { uploadService } from "../services/uploadService";
 import { Project } from "../types";
+import { useTheme } from "../Contexts/ThemeContext";
 // ─── Static content (not user data — these don't need a context) ──────────────
 type ProfileAction =
   | "personal"
@@ -57,17 +58,45 @@ const PLAN_PLACEHOLDER = {
   detailPrefix: "200 GB storage",
 };
 // ─── Theme ────────────────────────────────────────────────────────────────────
-const C = {
+type ProfilePalette = {
+  bg: string;
+  surface: string;
+  border: string;
+  accent: string;
+  accentDim: string;
+  text: string;
+  textMuted: string;
+  textDim: string;
+  iconBg: string;
+};
+
+const DARK_C: ProfilePalette = {
   bg: "#0F0F0F",
   surface: "#1A1A1A",
   border: "#2A2A2A",
-  accent: "#C9A227", // Vydora gold
+  accent: "#C9A227",
   accentDim: "#2A2210",
   text: "#FFFFFF",
   textMuted: "#9A9A9A",
   textDim: "#5A5A5A",
   iconBg: "#222222",
 };
+
+const LIGHT_C: ProfilePalette = {
+  bg: "#F4F4F5",
+  surface: "#FFFFFF",
+  border: "#E4E4E7",
+  accent: "#C9A227",
+  accentDim: "#F5EED4",
+  text: "#111111",
+  textMuted: "#6B6B6B",
+  textDim: "#A1A1AA",
+  iconBg: "#F0F0F2",
+};
+
+let C: ProfilePalette = DARK_C;
+let styles = StyleSheet.create({}) as ReturnType<typeof createProfileStyles>;
+
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -115,6 +144,10 @@ const SettingRow = ({
 );
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
+  const { isDark } = useTheme();
+  C = isDark ? DARK_C : LIGHT_C;
+  styles = createProfileStyles(C);
+
   const navigation = useNavigation<any>();
   const { user, logout, updateUser } = useAuth();
   const { projects, setCurrentProject } = useProject();
@@ -582,7 +615,8 @@ export default function ProfileScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+function createProfileStyles(C: ProfilePalette) {
+  return StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: C.bg,
@@ -913,3 +947,6 @@ const styles = StyleSheet.create({
     borderColor: C.bg,
   },
 });
+}
+
+styles = createProfileStyles(DARK_C);

@@ -4,6 +4,7 @@ import React, {
   useState,
   ReactNode,
   useEffect,
+  useRef,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Member, MemberRole } from '../types';
@@ -17,7 +18,11 @@ interface MemberContextType {
   error: string | null;
   fetchMembers: (projectId: string) => Promise<void>;
   /** `role` accepts Title-Case MemberRole or InviteMember keys (editor/viewer/admin). */
-  inviteMember: (projectId: string, email: string, role: MemberRole | string) => Promise<void>;
+  inviteMember: (
+    projectId: string,
+    email: string,
+    role: MemberRole | string
+  ) => Promise<Member>;
   changeRole: (projectId: string, memberId: string, role: MemberRole | string) => Promise<void>;
   removeMember: (projectId: string, memberId: string) => Promise<void>;
   getMembersForProject: (projectId: string) => Member[];
@@ -27,21 +32,41 @@ interface MemberContextType {
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const MemberContext = createContext<MemberContextType | undefined>(undefined);
+
+/** Apply cached presence ids onto a member list (REST always returns online:false). */
+function withPresence(list: Member[], onlineIds: Set<string> | undefined): Member[] {
+  if (!onlineIds || onlineIds.size === 0) {
+    return list.map((m) => (m.online ? { ...m, online: false } : m));
+  }
+  return list.map((m) => {
+    const online = onlineIds.has(m.userId);
+    return m.online === online ? m : { ...m, online };
+  });
+}
+
 // ─── Provider ────────────────────────────────────────────────────────────────
 export function MemberProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const [members, setMembers] = useState<{ [projectId: string]: Member[] }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live presence from WebSocket — kept separate so a REST refetch can't wipe
+  // "you're online" back to 0 when members reload with online:false.
+  const onlineByProjectRef = useRef<{ [projectId: string]: Set<string> }>({});
   // ── Rehydrate the whole { [projectId]: Member[] } map from AsyncStorage ──
-  // Note: online/offline status gets cached too, so on cold start a member
-  // may briefly show as "online" from a stale snapshot until the next real
-  // fetch or WebSocket presence update corrects it.
+  // Presence is NOT trusted from cache — start everyone offline until WS says so.
   useEffect(() => {
     const rehydrate = async () => {
       try {
         const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.MEMBERS);
-        if (cached) setMembers(JSON.parse(cached));
+        if (cached) {
+          const parsed = JSON.parse(cached) as { [projectId: string]: Member[] };
+          const cleared: { [projectId: string]: Member[] } = {};
+          for (const [pid, list] of Object.entries(parsed)) {
+            cleared[pid] = (list || []).map((m) => ({ ...m, online: false }));
+          }
+          setMembers(cleared);
+        }
       } catch (e) {
         console.log('Member rehydration failed', e);
       }
@@ -56,9 +81,12 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       setError(null);
       const data = await memberService.getMembers(projectId, token!);
-      const next = { ...members, [projectId]: data };
-      setMembers(next);
-      await persist(next);
+      const merged = withPresence(data, onlineByProjectRef.current[projectId]);
+      setMembers((prev) => {
+        const next = { ...prev, [projectId]: merged };
+        persist(next).catch((e) => console.log('Member persist failed', e));
+        return next;
+      });
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -69,18 +97,23 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     projectId: string,
     email: string,
     role: MemberRole | string
-  ) => {
+  ): Promise<Member> => {
     try {
       setIsLoading(true);
       setError(null);
       // role may arrive as Title-Case or InviteMember’s lowercase keys — mapper handles both.
       const newMember = await memberService.inviteMember(projectId, email, role, token!);
-      const next = {
-        ...members,
-        [projectId]: [...(members[projectId] || []), newMember],
-      };
-      setMembers(next);
-      await persist(next);
+      // Host-approval requests are not roster rows yet — Owners admit first.
+      if (newMember.status !== 'PENDING_APPROVAL') {
+        setMembers((prev) => {
+          const list = [...(prev[projectId] || []), newMember];
+          const merged = withPresence(list, onlineByProjectRef.current[projectId]);
+          const next = { ...prev, [projectId]: merged };
+          persist(next).catch((e) => console.log('Member persist failed', e));
+          return next;
+        });
+      }
+      return newMember;
     } catch (e: any) {
       setError(e.message);
       // Re-throw so InviteMemberScreen can show its Alert on failure.
@@ -97,12 +130,18 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       const updated = await memberService.changeRole(projectId, memberId, role, token!);
-      const next = {
-        ...members,
-        [projectId]: (members[projectId] || []).map(m => (m.id === memberId ? updated : m)),
-      };
-      setMembers(next);
-      await persist(next);
+      setMembers((prev) => {
+        const next = {
+          ...prev,
+          [projectId]: (prev[projectId] || []).map((m) =>
+            m.id === memberId ? updated : m
+          ),
+        };
+        const merged = withPresence(next[projectId], onlineByProjectRef.current[projectId]);
+        const out = { ...next, [projectId]: merged };
+        persist(out).catch((e) => console.log('Member persist failed', e));
+        return out;
+      });
     } catch (e: any) {
       setError(e.message);
       throw e;
@@ -112,12 +151,14 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       await memberService.removeMember(projectId, memberId, token!);
-      const next = {
-        ...members,
-        [projectId]: (members[projectId] || []).filter(m => m.id !== memberId),
-      };
-      setMembers(next);
-      await persist(next);
+      setMembers((prev) => {
+        const next = {
+          ...prev,
+          [projectId]: (prev[projectId] || []).filter((m) => m.id !== memberId),
+        };
+        persist(next).catch((e) => console.log('Member persist failed', e));
+        return next;
+      });
     } catch (e: any) {
       setError(e.message);
       throw e;
@@ -127,40 +168,44 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     return members[projectId] || [];
   };
   // Called by WebSocket when member comes online/offline.
-  // Fire-and-forget persist here — not awaited because this fires rapidly
-  // on every presence event and shouldn't block the caller. Worth knowing:
-  // a crash between setMembers and the AsyncStorage write would lose this
-  // particular presence flip on next cold start, which is an acceptable
-  // tradeoff for presence data (it'll just refetch/resync from the server).
   const setMemberOnline = (
     projectId: string,
     userId: string,
     online: boolean
   ) => {
-    const next = {
-      ...members,
-      [projectId]: (members[projectId] || []).map(m =>
-        m.userId === userId ? { ...m, online } : m
-      ),
-    };
-    setMembers(next);
-    persist(next).catch(e => console.log('Member presence persist failed', e));
+    const set = onlineByProjectRef.current[projectId] ?? new Set<string>();
+    if (online) set.add(userId);
+    else set.delete(userId);
+    onlineByProjectRef.current[projectId] = set;
+    setMembers((prev) => {
+      const list = prev[projectId] || [];
+      const updated = withPresence(list, set);
+      const next = { ...prev, [projectId]: updated };
+      persist(next).catch((e) => console.log('Member presence persist failed', e));
+      return next;
+    });
   };
   // Called by the WebSocket presence broadcast: the backend sends the full set
   // of userIds currently online in the project. Everyone else is offline.
   const setOnlineMembers = (projectId: string, onlineUserIds: string[]) => {
-    const onlineSet = new Set(onlineUserIds);
-    setMembers(prev => {
+    const onlineSet = new Set(
+      (onlineUserIds || []).map((id) => String(id)).filter(Boolean)
+    );
+    onlineByProjectRef.current[projectId] = onlineSet;
+    setMembers((prev) => {
       const list = prev[projectId] || [];
+      if (!list.length) return prev; // presence cached; applied on next fetchMembers
+      const updated = withPresence(list, onlineSet);
       let changed = false;
-      const updated = list.map(m => {
-        const online = onlineSet.has(m.userId);
-        if (m.online !== online) changed = true;
-        return online === m.online ? m : { ...m, online };
-      });
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].online !== updated[i].online) {
+          changed = true;
+          break;
+        }
+      }
       if (!changed) return prev;
       const next = { ...prev, [projectId]: updated };
-      persist(next).catch(e => console.log('Member presence persist failed', e));
+      persist(next).catch((e) => console.log('Member presence persist failed', e));
       return next;
     });
   };

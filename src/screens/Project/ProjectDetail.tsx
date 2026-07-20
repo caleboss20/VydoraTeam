@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -32,12 +33,12 @@ import { uploadService } from "../services/uploadService";
 import { CONFIG } from "../config";
 import { Clip, Member, Comment } from "../types";
 // ─── Constants ────────────────────────────────────────────────────────────────
-const YELLOW = "#F5C518";
-const BG = "#111111";
-const CARD = "#1C1C1C";
-const BORDER = "#2A2A2A";
-const TEXT_PRIMARY = "#FFFFFF";
-const TEXT_MUTED = "#888888";
+let YELLOW = "#F5C518";
+let BG = "#111111";
+let CARD = "#1C1C1C";
+let BORDER = "#2A2A2A";
+let TEXT_PRIMARY = "#FFFFFF";
+let TEXT_MUTED = "#888888";
 const ROLE_COLORS: Record<string, string> = {
   Owner: "#F5C518",
   Editor: "#4CAF50",
@@ -50,11 +51,25 @@ const Avatar = ({
   initials,
   color,
   size = 38,
+  avatarUrl,
 }: {
   initials: string;
   color: string;
   size?: number;
-}) => (
+  avatarUrl?: string;
+}) =>
+  avatarUrl ? (
+    <Image
+      source={{ uri: avatarUrl }}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 1.5,
+        borderColor: color,
+      }}
+    />
+  ) : (
   <View
     style={[
       styles.avatar,
@@ -76,7 +91,7 @@ const Avatar = ({
       {initials}
     </Text>
   </View>
-);
+  );
 
 
 // ─── Clips Tab ────────────────────────────────────────//
@@ -198,6 +213,7 @@ const MembersTab = ({
   onInvite: () => void;
 }) => {
   const { changeRole, removeMember } = useMember();
+  const { user } = useAuth();
   const navigation=useNavigation<any>();
   const handleMemberAction = (member: Member) => {
     Alert.alert(member.name, "What would you like to do?", [
@@ -246,10 +262,18 @@ const MembersTab = ({
     );
   return (
     <View>
-      {members.map((member) => (
+      {members.map((member) => {
+        const photoUri =
+          member.avatarUrl ||
+          (member.userId === user?.id ? user?.avatarUrl : undefined);
+        return (
         <View key={member.id} style={styles.memberRow}>
           <View>
-            <Avatar initials={member.initials} color={member.color} />
+            <Avatar
+              initials={member.initials}
+              color={member.color}
+              avatarUrl={photoUri}
+            />
             {member.online && <View style={styles.onlineDot} />}
           </View>
           <View style={styles.memberInfo}>
@@ -273,7 +297,8 @@ const MembersTab = ({
             </TouchableOpacity>
           )}
         </View>
-      ))}
+        );
+      })}
       
       <TouchableOpacity
       
@@ -604,6 +629,15 @@ const SettingsTab = ({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProjectDetailScreen() {
+  const { colors } = useTheme();
+  BG = colors.background;
+  CARD = colors.card;
+  BORDER = colors.border;
+  TEXT_PRIMARY = colors.text;
+  TEXT_MUTED = colors.textMuted;
+  YELLOW = colors.accent;
+  styles = makeProjectStyles();
+
 
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -1155,7 +1189,8 @@ export default function ProjectDetailScreen() {
 
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+function makeProjectStyles() {
+  return StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: BG,
@@ -1665,4 +1700,5 @@ textAlign:'center',
 
 
 });
-
+}
+let styles = makeProjectStyles();

@@ -14,7 +14,8 @@
 //      in case the app gets killed mid-flow, e.g. during email verification).
 //   4. If they ARE logged in: tapping Accept calls acceptInvite() for real
 //      and drops them straight into the project.
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -37,6 +38,8 @@ type AcceptInviteRouteParams = {
   AcceptInvite: { token: string };
 };
 export default function AcceptInviteScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const route = useRoute<RouteProp<AcceptInviteRouteParams, 'AcceptInvite'>>();
   const navigation = useNavigation<any>();
   const { fetchProjects } = useProject();
@@ -118,7 +121,7 @@ async function handleAccept() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
-          <Ionicons name="alert-circle-outline" size={ms(48)} color="#8A8A8A" />
+          <Ionicons name="alert-circle-outline" size={ms(48)} color={colors.textSecondary} />
           <Text style={styles.errorText}>This invite link is invalid or has expired.</Text>
         </View>
       </SafeAreaView>
@@ -148,7 +151,7 @@ async function handleAccept() {
         </View>
         {currentInvite.message ? (
           <View style={styles.messageBox}>
-            <Ionicons name="chatbubble-ellipses-outline" size={ms(18)} color="#8A8A8A" />
+            <Ionicons name="chatbubble-ellipses-outline" size={ms(18)} color={colors.textSecondary} />
             <Text style={styles.messageText}>{currentInvite.message}</Text>
           </View>
         ) : null}
@@ -220,7 +223,8 @@ async function handleAccept() {
 
 
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
@@ -320,3 +324,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+}

@@ -19,7 +19,8 @@ import {
   NavigationProp,
   RouteProp,
 } from "@react-navigation/native";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useTheme, ThemeColors } from "./Contexts/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
@@ -60,6 +61,8 @@ interface TouchedFields {
   password?: boolean;
 }
 export default function Signupscreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "signup">>();
   const { register, logout, isLoadingAuth, error } = useAuth();
@@ -135,7 +138,7 @@ export default function Signupscreen() {
     !!(touched[field] && errors[field]);
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#13151A" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -151,17 +154,17 @@ export default function Signupscreen() {
             activeOpacity={0.7}
             onPress={() => navigation.navigate("splashscreen")}
           >
-            <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={ms(20)} color={colors.text} />
           </TouchableOpacity>
           {/* Heading */}
           <Text style={styles.heading}>Create your{"\n"}Account</Text>
           {/* Full Name Input */}
           <View style={[styles.inputRow, hasError("fullName") && styles.inputError]}>
-            <Ionicons name="person-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />
+            <Ionicons name="person-outline" size={ms(18)} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Full Name"
-              placeholderTextColor="#cccccc"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="words"
               value={fullName}
               onChangeText={(v: string) => {
@@ -177,11 +180,11 @@ export default function Signupscreen() {
           {hasError("fullName") && <Text style={styles.errorText}>{errors.fullName}</Text>}
           {/* Email Input */}
           <View style={[styles.inputRow, hasError("email") && styles.inputError]}>
-            <Ionicons name="mail-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />
+            <Ionicons name="mail-outline" size={ms(18)} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Email"
-              placeholderTextColor="#cccccc"
+              placeholderTextColor={colors.textMuted}
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
@@ -198,11 +201,11 @@ export default function Signupscreen() {
           {hasError("email") && <Text style={styles.errorText}>{errors.email}</Text>}
           {/* Password Input */}
           <View style={[styles.inputRow, hasError("password") && styles.inputError]}>
-            <Ionicons name="lock-closed-outline" size={ms(18)} color="#ccc" style={styles.inputIcon} />
+            <Ionicons name="lock-closed-outline" size={ms(18)} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Password"
-              placeholderTextColor="#cccccc"
+              placeholderTextColor={colors.textMuted}
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={(v: string) => {
@@ -218,7 +221,7 @@ export default function Signupscreen() {
               <Ionicons
                 name={showPassword ? "eye-outline" : "eye-off-outline"}
                 size={ms(18)}
-                color="#ccc"
+                color={colors.textMuted}
               />
             </TouchableOpacity>
           </View>
@@ -233,7 +236,7 @@ export default function Signupscreen() {
             disabled={isLoadingAuth}
           >
             {isLoadingAuth ? (
-              <ActivityIndicator size="small" color="#1A0E00" />
+              <ActivityIndicator size="small" color={colors.accentOn} />
             ) : (
               <Text style={styles.ctaText}>Sign Up</Text>
             )}
@@ -249,7 +252,7 @@ export default function Signupscreen() {
               <Image style={styles.logo} source={require("../../assets/google.png")} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
-              <Ionicons name="logo-apple" size={ms(22)} color="#FFFFFF" />
+              <Ionicons name="logo-apple" size={ms(22)} color={colors.text} />
             </TouchableOpacity>
           </View>
           {/* Sign In */}
@@ -268,10 +271,11 @@ export default function Signupscreen() {
 
 
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#13151c",
+    backgroundColor: c.background,
   },
   scroll: {
     paddingHorizontal: s(20),
@@ -282,7 +286,7 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: s(32),
     marginTop: vs(0),
-    color: "#ffffff",
+    color: c.text,
     fontWeight: "600",
     marginBottom: vs(35),
     lineHeight: s(46),
@@ -290,7 +294,7 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1e1e1e",
+    backgroundColor: c.surface,
     borderRadius: s(10),
     paddingHorizontal: s(12),
     paddingVertical: vs(12),
@@ -300,7 +304,7 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   inputError: {
-    borderColor: "#eb4343",
+    borderColor: c.danger,
   },
   inputIcon: {
     width: s(20),
@@ -308,12 +312,12 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: ms(14),
-    color: "#FFFFFF",
+    color: c.text,
     padding: 0,
   },
   errorText: {
     fontSize: ms(11),
-    color: "#FF4D4D",
+    color: c.danger,
     marginBottom: s(10),
     marginLeft: s(4),
   },
@@ -322,21 +326,21 @@ const styles = StyleSheet.create({
     height: s(16),
     borderRadius: s(5),
     borderWidth: 2,
-    borderColor: "#F5A623",
+    borderColor: c.accent,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
   },
   checkboxActive: {
-    backgroundColor: "#F5A623",
-    borderColor: "#F5A623",
+    backgroundColor: c.accent,
+    borderColor: c.accent,
   },
   rememberText: {
     fontSize: ms(13),
-    color: "#AAAAAA",
+    color: c.textSecondary,
   },
   cta: {
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     borderRadius: s(50),
     paddingVertical: vs(11),
     alignItems: "center",
@@ -349,19 +353,19 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: ms(14),
     fontWeight: "700",
-    color: "#1A0E00",
+    color: c.accentOn,
   },
   forgotWrap: {
     alignItems: "center",
   },
   forgotText: {
     fontSize: ms(13),
-    color: "#F5A623",
+    color: c.accent,
   },
   orText: {
     marginTop: vs(20),
     fontSize: ms(13),
-    color: "#ccc",
+    color: c.textMuted,
     textAlign: "center",
     marginBottom: vs(16),
   },
@@ -373,7 +377,7 @@ const styles = StyleSheet.create({
   socialIconBtn: {
     width: s(60),
     height: s(48),
-    backgroundColor: "#1e1e1e",
+    backgroundColor: c.surface,
     borderRadius: s(12),
     alignItems: "center",
     justifyContent: "center",
@@ -391,11 +395,12 @@ const styles = StyleSheet.create({
   },
   signupMuted: {
     fontSize: ms(13),
-    color: "#666666",
+    color: c.textMuted,
   },
   signupLink: {
     fontSize: ms(13),
-    color: "#F5A623",
+    color: c.accent,
     fontWeight: "700",
   },
 });
+}

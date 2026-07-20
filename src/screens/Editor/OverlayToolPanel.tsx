@@ -23,8 +23,12 @@ import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import Slider from '@react-native-community/slider';
 import * as ImagePicker from 'expo-image-picker';
 import { MediaOverlay, MediaOverlayType } from '../types';
+import { useAppPalette } from '../Contexts/ThemeContext';
 
-const COLORS = {
+
+const CHROMA_COLORS = ['#00FF00', '#00FF55', '#0000FF', '#00B140'];
+
+let COLORS: Record<string, string> = {
   background: '#0B0D13',
   surface: '#151821',
   border: '#222633',
@@ -52,6 +56,8 @@ interface OverlayToolPanelProps {
   onAddKeyframe: () => void;
   onClearKeyframes: () => void;
   onDelete: () => void;
+  /** Jump to CapCut-style Mask tool for the selected media overlay. */
+  onOpenMask?: () => void;
   onClose: () => void;
 }
 
@@ -65,8 +71,22 @@ export default function OverlayToolPanel({
   onAddKeyframe,
   onClearKeyframes,
   onDelete,
+  onOpenMask,
   onClose,
 }: OverlayToolPanelProps) {
+  const __palette = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    background: __palette.background,
+    surface: __palette.surface,
+    border: __palette.border,
+    yellow: __palette.yellow,
+    textPrimary: __palette.textPrimary,
+    textSecondary: __palette.textSecondary,
+    textMuted: __palette.textMuted,
+  };
+  styles = __makeStyles();
+
   if (!visible) return null;
 
   const pickMedia = async (kind: 'image' | 'video') => {
@@ -151,6 +171,152 @@ export default function OverlayToolPanel({
             />
             <Text style={styles.sliderValue}>{Math.round(selectedOverlay.opacity * 100)}%</Text>
           </View>
+
+          <View style={styles.flipRow}>
+            <TouchableOpacity
+              style={[styles.flipChip, selectedOverlay.flipH && styles.flipChipOn]}
+              onPress={() => onChange({ flipH: !selectedOverlay.flipH })}
+            >
+              <Ionicons
+                name="swap-horizontal"
+                size={scale(14)}
+                color={selectedOverlay.flipH ? COLORS.yellow : COLORS.textSecondary}
+              />
+              <Text style={styles.flipText}>Flip H</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.flipChip, selectedOverlay.flipV && styles.flipChipOn]}
+              onPress={() => onChange({ flipV: !selectedOverlay.flipV })}
+            >
+              <Ionicons
+                name="swap-vertical"
+                size={scale(14)}
+                color={selectedOverlay.flipV ? COLORS.yellow : COLORS.textSecondary}
+              />
+              <Text style={styles.flipText}>Flip V</Text>
+            </TouchableOpacity>
+          </View>
+
+          {selectedOverlay.type !== 'emoji' && onOpenMask && (
+            <TouchableOpacity style={styles.maskEntry} onPress={onOpenMask} activeOpacity={0.85}>
+              <Ionicons name="scan-outline" size={scale(16)} color={COLORS.yellow} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.maskEntryTitle}>
+                  {selectedOverlay.mask?.enabled && selectedOverlay.mask.shape !== 'none'
+                    ? `Mask · ${selectedOverlay.mask.shape}`
+                    : 'Mask'}
+                </Text>
+                <Text style={styles.maskEntryHint}>
+                  Shape, feather, split & follow — CapCut-style
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={scale(16)} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          )}
+
+          {selectedOverlay.type !== 'emoji' && (
+            <View style={styles.chromaBlock}>
+              <View style={styles.chromaHeader}>
+                <Text style={styles.chromaTitle}>Green screen</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.chromaToggle,
+                    selectedOverlay.chromaKey?.enabled && styles.chromaToggleOn,
+                  ]}
+                  onPress={() =>
+                    onChange({
+                      chromaKey: selectedOverlay.chromaKey?.enabled
+                        ? { ...selectedOverlay.chromaKey, enabled: false }
+                        : {
+                            enabled: true,
+                            color: '#00FF00',
+                            similarity: 0.32,
+                            blend: 0.12,
+                            backgroundUri: selectedOverlay.chromaKey?.backgroundUri,
+                          },
+                    })
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.chromaToggleText,
+                      selectedOverlay.chromaKey?.enabled && styles.chromaToggleTextOn,
+                    ]}
+                  >
+                    {selectedOverlay.chromaKey?.enabled ? 'On' : 'Off'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {selectedOverlay.chromaKey?.enabled && (
+                <>
+                  <Text style={styles.keyframeHint}>
+                    Keys out the screen color on export — plate shows in preview.
+                  </Text>
+                  <View style={styles.chromaColors}>
+                    {CHROMA_COLORS.map((c) => (
+                      <TouchableOpacity
+                        key={c}
+                        style={[
+                          styles.chromaSwatch,
+                          { backgroundColor: c },
+                          selectedOverlay.chromaKey?.color === c && styles.chromaSwatchOn,
+                        ]}
+                        onPress={() =>
+                          onChange({
+                            chromaKey: { ...selectedOverlay.chromaKey!, color: c },
+                          })
+                        }
+                      />
+                    ))}
+                  </View>
+                  <View style={styles.sliderRow}>
+                    <Text style={styles.sliderLabel}>Cut</Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0.08}
+                      maximumValue={0.7}
+                      value={selectedOverlay.chromaKey.similarity}
+                      onValueChange={(similarity) =>
+                        onChange({
+                          chromaKey: { ...selectedOverlay.chromaKey!, similarity },
+                        })
+                      }
+                      minimumTrackTintColor={COLORS.yellow}
+                      maximumTrackTintColor={COLORS.border}
+                      thumbTintColor={COLORS.yellow}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={styles.addBtn}
+                    onPress={async () => {
+                      try {
+                        const result = await ImagePicker.launchImageLibraryAsync({
+                          mediaTypes: ['images'],
+                          quality: 0.9,
+                        });
+                        if (result.canceled || !result.assets?.[0]?.uri) return;
+                        onChange({
+                          chromaKey: {
+                            ...selectedOverlay.chromaKey!,
+                            backgroundUri: result.assets[0].uri,
+                          },
+                        });
+                      } catch (e) {
+                        Alert.alert('Could not pick plate', String(e));
+                      }
+                    }}
+                  >
+                    <Ionicons name="images-outline" size={scale(16)} color={COLORS.yellow} />
+                    <Text style={styles.addBtnText}>
+                      {selectedOverlay.chromaKey.backgroundUri
+                        ? 'Change background plate'
+                        : 'Add background plate'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
 
           {/* Keyframe controls — record transform at the playhead, then play to animate */}
           <View style={styles.keyframeRow}>
@@ -243,7 +409,8 @@ export default function OverlayToolPanel({
   );
 }
 
-const styles = StyleSheet.create({
+function __makeStyles() {
+  return StyleSheet.create({
   wrapper: {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
@@ -404,4 +571,98 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(9),
     marginTop: verticalScale(8),
   },
+  flipRow: {
+    flexDirection: 'row',
+    gap: scale(8),
+    marginTop: verticalScale(8),
+  },
+  flipChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(7),
+    borderRadius: scale(10),
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  flipChipOn: {
+    borderColor: COLORS.yellow,
+    backgroundColor: 'rgba(245,197,24,0.1)',
+  },
+  flipText: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(11),
+    fontWeight: '600',
+  },
+  maskEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(10),
+    marginTop: verticalScale(10),
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(12),
+    borderRadius: scale(12),
+    backgroundColor: 'rgba(245,197,24,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,197,24,0.25)',
+  },
+  maskEntryTitle: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+  },
+  maskEntryHint: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(10),
+    marginTop: 2,
+  },
+  chromaBlock: {
+    marginTop: verticalScale(10),
+    paddingTop: verticalScale(8),
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    gap: verticalScale(8),
+  },
+  chromaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chromaTitle: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+  },
+  chromaToggle: {
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(5),
+    borderRadius: scale(12),
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  chromaToggleOn: {
+    backgroundColor: COLORS.yellow,
+    borderColor: COLORS.yellow,
+  },
+  chromaToggleText: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+  },
+  chromaToggleTextOn: { color: '#0B0D13' },
+  chromaColors: { flexDirection: 'row', gap: scale(8) },
+  chromaSwatch: {
+    width: scale(28),
+    height: scale(28),
+    borderRadius: scale(14),
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  chromaSwatchOn: { borderColor: '#FFFFFF' },
 });
+}
+let styles = __makeStyles();
+

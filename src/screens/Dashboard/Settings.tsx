@@ -1,5 +1,4 @@
-
-import React, { FC, useCallback, useEffect, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -21,16 +20,7 @@ import {
   verticalScale,
 } from 'react-native-size-matters';
 import { CONFIG } from '../config';
-
-const COLORS = {
-  background: '#000000',
-  card: '#111111',
-  border: '#262626',
-  text: '#FFFFFF',
-  secondary: '#8A8A8A',
-  yellow: '#FFD400',
-  iconBackground: '#1E1E1E',
-};
+import { useTheme, ThemeColors } from '../Contexts/ThemeContext';
 
 export type AppSettings = {
   darkMode: boolean;
@@ -78,7 +68,10 @@ interface SettingItemProps {
   switchValue?: boolean;
   onSwitch?: (value: boolean) => void;
   onPress?: () => void;
+  colors: ThemeColors;
+  styles: ReturnType<typeof makeStyles>;
 }
+
 const SettingItem: FC<SettingItemProps> = ({
   icon,
   title,
@@ -88,6 +81,8 @@ const SettingItem: FC<SettingItemProps> = ({
   switchValue,
   onSwitch,
   onPress,
+  colors,
+  styles,
 }) => {
   return (
     <TouchableOpacity
@@ -98,7 +93,7 @@ const SettingItem: FC<SettingItemProps> = ({
     >
       <View style={styles.leftContainer}>
         <View style={styles.iconContainer}>
-          <Ionicons name={icon} size={20} color="#FFFFFF" />
+          <Ionicons name={icon} size={20} color={colors.text} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{title}</Text>
@@ -110,13 +105,13 @@ const SettingItem: FC<SettingItemProps> = ({
           value={switchValue}
           onValueChange={onSwitch}
           trackColor={{
-            false: '#555',
-            true: COLORS.yellow,
+            false: colors.border,
+            true: colors.accent,
           }}
-          thumbColor="#000"
+          thumbColor={colors.surface}
         />
       ) : showArrow ? (
-        <Ionicons name="chevron-forward" size={20} color="#666" />
+        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
       ) : rightText ? (
         <Text style={styles.rightText}>{rightText}</Text>
       ) : null}
@@ -126,12 +121,16 @@ const SettingItem: FC<SettingItemProps> = ({
 
 const SettingsScreen: FC = () => {
   const navigation = useNavigation<any>();
+  const { isDark, colors, setDarkMode } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [prefs, setPrefs] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [cacheHint, setCacheHint] = useState('Local cache on this device');
 
   useEffect(() => {
-    loadAppSettings().then(setPrefs);
-  }, []);
+    loadAppSettings().then((loaded) => {
+      setPrefs({ ...loaded, darkMode: isDark });
+    });
+  }, [isDark]);
 
   const patch = useCallback(async (partial: Partial<AppSettings>) => {
     setPrefs((prev) => {
@@ -140,6 +139,12 @@ const SettingsScreen: FC = () => {
       return next;
     });
   }, []);
+
+  const handleThemeToggle = () => {
+    const nextDark = !isDark;
+    setDarkMode(nextDark);
+    void patch({ darkMode: nextDark });
+  };
 
   // Keep in sync with app.json expo.version
   const appVersion = '1.0.0';
@@ -209,7 +214,7 @@ const SettingsScreen: FC = () => {
       >
         <View style={styles.header}>
           <Pressable onPress={() => navigation.navigate('projects')}>
-            <Ionicons name="arrow-back" size={26} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={26} color={colors.text} />
           </Pressable>
           <Text style={styles.headerTitle}>Settings</Text>
         </View>
@@ -219,22 +224,33 @@ const SettingsScreen: FC = () => {
           <View style={styles.themeRow}>
             <View style={styles.leftContainer}>
               <View style={styles.iconContainer}>
-                <Ionicons name="sunny-outline" size={20} color="#FFFFFF" />
+                <Ionicons
+                  name={isDark ? 'moon-outline' : 'sunny-outline'}
+                  size={20}
+                  color={colors.text}
+                />
               </View>
-              <Text style={styles.title}>Theme</Text>
+              <View>
+                <Text style={styles.title}>Theme</Text>
+                <Text style={styles.subtitle}>
+                  {isDark ? 'Dark mode' : 'Light mode'}
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() => patch({ darkMode: !prefs.darkMode })}
+              onPress={handleThemeToggle}
               style={styles.themeButton}
             >
               <Text style={styles.themeText}>
-                {prefs.darkMode ? 'Dark' : 'Light'}
+                {isDark ? 'Dark' : 'Light'}
               </Text>
             </TouchableOpacity>
           </View>
           <View style={styles.divider} />
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="globe-outline"
             title="Language"
             rightText={prefs.language}
@@ -243,6 +259,8 @@ const SettingsScreen: FC = () => {
           />
           <View style={styles.divider} />
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="archive-outline"
             title="Storage"
             subtitle={cacheHint}
@@ -254,6 +272,8 @@ const SettingsScreen: FC = () => {
         <Text style={styles.section}>EDITING</Text>
         <View style={styles.card}>
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="save-outline"
             title="Auto-save"
             switchValue={prefs.autoSave}
@@ -261,6 +281,8 @@ const SettingsScreen: FC = () => {
           />
           <View style={styles.divider} />
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="film-outline"
             title="Default export quality"
             rightText={prefs.exportQuality}
@@ -269,6 +291,8 @@ const SettingsScreen: FC = () => {
           />
           <View style={styles.divider} />
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="wifi-outline"
             title="Proxy editing on cellular"
             switchValue={prefs.proxyEditing}
@@ -279,6 +303,8 @@ const SettingsScreen: FC = () => {
         <Text style={styles.section}>COLLABORATION</Text>
         <View style={styles.card}>
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="notifications-outline"
             title="Push notifications"
             switchValue={prefs.notifications}
@@ -286,6 +312,8 @@ const SettingsScreen: FC = () => {
           />
           <View style={styles.divider} />
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="eye-outline"
             title="Show presence to others"
             switchValue={prefs.presence}
@@ -296,12 +324,16 @@ const SettingsScreen: FC = () => {
         <Text style={styles.section}>ABOUT</Text>
         <View style={styles.card}>
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="information-circle-outline"
             title="Version"
             rightText={appVersion}
           />
           <View style={styles.divider} />
           <SettingItem
+            colors={colors}
+            styles={styles}
             icon="document-text-outline"
             title="Terms & privacy policy"
             showArrow
@@ -314,93 +346,97 @@ const SettingsScreen: FC = () => {
 };
 export default SettingsScreen;
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  content: {
-    paddingHorizontal: scale(20),
-    paddingBottom: verticalScale(40),
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: verticalScale(10),
-    marginBottom: verticalScale(25),
-  },
-  headerTitle: {
-    color: COLORS.text,
-    fontSize: moderateScale(28),
-    fontWeight: '700',
-    marginLeft: scale(18),
-  },
-  section: {
-    color: '#666',
-    fontSize: moderateScale(12),
-    fontWeight: '700',
-    marginTop: verticalScale(24),
-    marginBottom: verticalScale(12),
-  },
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: moderateScale(10),
-    paddingHorizontal: scale(18),
-  },
-  item: {
-    minHeight: verticalScale(52),
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    justifyContent: 'space-between',
-  },
-  leftContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  iconContainer: {
-    width: scale(42),
-    height: scale(42),
-    borderRadius: scale(21),
-    backgroundColor: COLORS.iconBackground,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: scale(14),
-  },
-  title: {
-    color: COLORS.text,
-    fontSize: moderateScale(16),
-    fontWeight: '500',
-  },
-  subtitle: {
-    color: COLORS.secondary,
-    fontSize: moderateScale(13),
-    marginTop: verticalScale(3),
-  },
-  rightText: {
-    color: COLORS.secondary,
-    fontSize: moderateScale(15),
-  },
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  themeRow: {
-    minHeight: verticalScale(80),
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  themeButton: {
-    backgroundColor: COLORS.yellow,
-    paddingHorizontal: scale(28),
-    paddingVertical: verticalScale(5),
-    borderRadius: scale(30),
-  },
-  themeText: {
-    color: '#000',
-    fontSize: moderateScale(15),
-    fontWeight: '700',
-  },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      paddingHorizontal: scale(20),
+      paddingBottom: verticalScale(40),
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: verticalScale(10),
+      marginBottom: verticalScale(25),
+    },
+    headerTitle: {
+      color: colors.text,
+      fontSize: moderateScale(28),
+      fontWeight: '700',
+      marginLeft: scale(18),
+    },
+    section: {
+      color: colors.textMuted,
+      fontSize: moderateScale(12),
+      fontWeight: '700',
+      marginTop: verticalScale(24),
+      marginBottom: verticalScale(12),
+    },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: moderateScale(10),
+      paddingHorizontal: scale(18),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    item: {
+      minHeight: verticalScale(52),
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 15,
+      justifyContent: 'space-between',
+    },
+    leftContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    iconContainer: {
+      width: scale(42),
+      height: scale(42),
+      borderRadius: scale(21),
+      backgroundColor: colors.iconBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: scale(14),
+    },
+    title: {
+      color: colors.text,
+      fontSize: moderateScale(16),
+      fontWeight: '500',
+    },
+    subtitle: {
+      color: colors.textSecondary,
+      fontSize: moderateScale(13),
+      marginTop: verticalScale(3),
+    },
+    rightText: {
+      color: colors.textSecondary,
+      fontSize: moderateScale(15),
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.border,
+    },
+    themeRow: {
+      minHeight: verticalScale(80),
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    themeButton: {
+      backgroundColor: colors.accent,
+      paddingHorizontal: scale(28),
+      paddingVertical: verticalScale(5),
+      borderRadius: scale(30),
+    },
+    themeText: {
+      color: colors.accentOn,
+      fontSize: moderateScale(15),
+      fontWeight: '700',
+    },
+  });
+}

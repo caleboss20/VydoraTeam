@@ -13,9 +13,26 @@ import { s, ms } from "react-native-size-matters";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useExport } from "../Contexts/exportContext";
 import { Export, ExportStatus } from "../types";
+import { useTheme } from "../Contexts/ThemeContext";
 type FilterTab = "All" | ExportStatus;
 /* ─── Design Tokens ─── */
-const C = {
+type ExpPalette = {
+  bg: string;
+  surface: string;
+  surfaceAlt: string;
+  border: string;
+  accent: string;
+  textPrimary: string;
+  textSub: string;
+  textMuted: string;
+  readyBg: string;
+  readyText: string;
+  processingBg: string;
+  processingText: string;
+  failedBg: string;
+  failedText: string;
+};
+const DARK_C: ExpPalette = {
   bg: "#121212",
   surface: "#212121",
   surfaceAlt: "#333333",
@@ -31,6 +48,24 @@ const C = {
   failedBg: "#3A1E1E",
   failedText: "#F87171",
 };
+const LIGHT_C: ExpPalette = {
+  bg: "#F4F4F5",
+  surface: "#FFFFFF",
+  surfaceAlt: "#EEEEF0",
+  border: "#E4E4E7",
+  accent: "#E5B800",
+  textPrimary: "#111111",
+  textSub: "#6B6B6B",
+  textMuted: "#A1A1AA",
+  readyBg: "#E8F8EF",
+  readyText: "#15803D",
+  processingBg: "#FFF7E0",
+  processingText: "#A16207",
+  failedBg: "#FEE2E2",
+  failedText: "#DC2626",
+};
+let C: ExpPalette = DARK_C;
+let styles: any = {};
 function formatSize(mb: number): string {
   return `${mb} MB`;
 }
@@ -44,6 +79,10 @@ function formatDate(iso: string): string {
   });
 }
 export default function ExportLibraryScreen() {
+  const { isDark } = useTheme();
+  C = isDark ? DARK_C : LIGHT_C;
+  styles = createExportStyles(C);
+
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -75,7 +114,7 @@ export default function ExportLibraryScreen() {
   };
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={C.bg} />
       {/* ─── TOP BAR ─── */}
       <View style={styles.topBar}>
         {isSearching ? (
@@ -326,7 +365,8 @@ function EmptyState({
 
 
 
-const styles = StyleSheet.create({
+function createExportStyles(C: ExpPalette) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   topBar: {
     flexDirection: "row",
@@ -481,3 +521,7 @@ const styles = StyleSheet.create({
     lineHeight: ms(18),
   },
 });
+}
+
+styles = createExportStyles(DARK_C);
+

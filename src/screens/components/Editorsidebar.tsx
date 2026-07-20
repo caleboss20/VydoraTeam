@@ -1,6 +1,5 @@
-// components/Collab
 // components/CollaborationSidebar.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,7 +9,7 @@ import {
   TextInput,
   Animated,
   Dimensions,
-  Switch,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
@@ -18,31 +17,38 @@ import { useMember } from '../Contexts/memberContext';
 import { useComment } from '../Contexts/commentContext';
 import { useMessage } from '../Contexts/messageContext';
 import { useAuth } from '../Contexts/Authcontext';
-const COLORS = {
-  background: '#0B0D13',
-  surface: '#151821',
-  border: '#222633',
-  yellow: '#c39a07',
-  gold: '#F5C518',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#8F9BB3',
-  textMuted: '#4F5E7B',
-  online: '#10B981',
-};
+import { useTheme } from '../Contexts/ThemeContext';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SIDEBAR_WIDTH = SCREEN_WIDTH * 0.86;
+
 interface CollaborationSidebarProps {
   visible: boolean;
   onClose: () => void;
   projectId: string;
   clipId?: string;
 }
+
 export default function CollaborationSidebar({
   visible,
   onClose,
   projectId,
-  clipId,
+  clipId: _clipId,
 }: CollaborationSidebarProps) {
+  const { colors, isDark } = useTheme();
+  const COLORS = {
+    background: colors.background,
+    surface: colors.surface,
+    border: colors.border,
+    yellow: colors.accent,
+    textPrimary: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    online: colors.online,
+    accentOn: colors.accentOn,
+  };
+  const styles = useMemo(() => makeCollabStyles(COLORS), [colors, isDark]);
+
   const { getMembersForProject } = useMember();
   const { getCommentsForProject } = useComment();
   const {
@@ -61,6 +67,17 @@ export default function CollaborationSidebar({
   const [sending, setSending] = useState(false);
   const slideAnim = useRef(new Animated.Value(SIDEBAR_WIDTH)).current;
   const chatScrollRef = useRef<ScrollView>(null);
+
+  // You're viewing this panel → treat yourself as online in the list/count.
+  const displayMembers = useMemo(
+    () =>
+      members.map((m) =>
+        user?.id && m.userId === user.id ? { ...m, online: true } : m
+      ),
+    [members, user?.id]
+  );
+  const onlineCount = displayMembers.filter((m) => m.online).length;
+
   useEffect(() => {
     Animated.timing(slideAnim, {
       toValue: visible ? 0 : SIDEBAR_WIDTH,
@@ -68,6 +85,7 @@ export default function CollaborationSidebar({
       useNativeDriver: true,
     }).start();
   }, [visible]);
+
   // Load history + clear the unread badge whenever the panel opens.
   useEffect(() => {
     if (visible && projectId) {
@@ -75,16 +93,19 @@ export default function CollaborationSidebar({
       markProjectRead(projectId);
     }
   }, [visible, projectId]);
+
   // Clear unread as new messages stream in while the panel is open.
   useEffect(() => {
     if (visible && projectId) markProjectRead(projectId);
   }, [messages.length, visible, projectId]);
+
   // Keep the chat pinned to the newest message.
   useEffect(() => {
     if (visible && tab === 'chat') {
       requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true }));
     }
   }, [messages.length, visible, tab]);
+
   const handleSend = async () => {
     const text = message.trim();
     if (!text || sending) return;
@@ -99,10 +120,11 @@ export default function CollaborationSidebar({
       setSending(false);
     }
   };
+
   if (!visible) return null;
-  const onlineCount = members.filter((m) => m.online).length;
+
   return (
-    <View style={[StyleSheet.absoluteFill,{zIndex:999,elevation:999}]} pointerEvents="box-none">
+    <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 999 }]} pointerEvents="box-none">
       {/* Backdrop */}
       <TouchableOpacity
         style={styles.backdrop}
@@ -125,36 +147,60 @@ export default function CollaborationSidebar({
             <Ionicons name="close" size={scale(22)} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
+
         {/* Active members */}
         <View style={styles.activeSection}>
           <View style={styles.activeSectionHeader}>
             <Text style={styles.sectionLabel}>ACTIVE IN PROJECT</Text>
             <View style={styles.onlineBadge}>
-              <Text style={styles.onlineBadgeText}>{onlineCount} online</Text>
+              <View style={styles.onlineBadgeDot} />
+              <Text style={styles.onlineBadgeText}>
+                {onlineCount} online
+              </Text>
             </View>
           </View>
           <ScrollView style={{ maxHeight: verticalScale(140) }}>
-            {members.map((m) => (
-              <View key={m.id} style={styles.memberRow}>
-                <View style={[styles.avatar, { backgroundColor: m.color }]}>
-                  <Text style={styles.avatarText}>{m.initials}</Text>
+            {displayMembers.map((m) => {
+              const isYou = m.userId === user?.id;
+              const isOnline = !!m.online;
+              const photoUri = m.avatarUrl || (isYou ? user?.avatarUrl : undefined);
+              return (
+                <View key={m.id} style={styles.memberRow}>
+                  <View style={styles.avatarWrap}>
+                    {photoUri ? (
+                      <Image source={{ uri: photoUri }} style={styles.avatar} />
+                    ) : (
+                      <View style={[styles.avatar, { backgroundColor: m.color }]}>
+                        <Text style={styles.avatarText}>{m.initials}</Text>
+                      </View>
+                    )}
+                    {/* WhatsApp-style green presence pip on the avatar */}
+                    <View
+                      style={[
+                        styles.presencePip,
+                        {
+                          backgroundColor: isOnline ? COLORS.online : COLORS.textMuted,
+                          borderColor: COLORS.background,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName}>
+                      {m.name}
+                      {isYou ? ' (You)' : ''}
+                    </Text>
+                    <Text style={[styles.memberStatus, isOnline && styles.memberStatusOnline]}>
+                      {isOnline ? 'Online' : 'Offline'}
+                      {m.role ? ` · ${m.role}` : ''}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memberName}>
-                    {m.name} {m.userId === user?.id ? '(You)' : ''}
-                  </Text>
-                  <Text style={styles.memberRole}>{m.role}</Text>
-                </View>
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: m.online ? COLORS.online : COLORS.textMuted },
-                  ]}
-                />
-              </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
+
         {/* Tabs */}
         <View style={styles.tabRow}>
           <TouchableOpacity
@@ -170,6 +216,7 @@ export default function CollaborationSidebar({
             <Text style={[styles.tabText, tab === 'activity' && styles.tabTextActive]}>Activity</Text>
           </TouchableOpacity>
         </View>
+
         {/* Body */}
         {tab === 'chat' ? (
           <ScrollView
@@ -231,6 +278,7 @@ export default function CollaborationSidebar({
             )}
           </ScrollView>
         )}
+
         {/* Chat input — only relevant on chat tab */}
         {tab === 'chat' && (
           <View style={styles.inputRow}>
@@ -250,7 +298,7 @@ export default function CollaborationSidebar({
               disabled={sending}
               hitSlop={8}
             >
-              <Ionicons name="send" size={scale(16)} color={COLORS.textPrimary} />
+              <Ionicons name="send" size={scale(16)} color={COLORS.accentOn} />
             </TouchableOpacity>
           </View>
         )}
@@ -259,11 +307,23 @@ export default function CollaborationSidebar({
   );
 }
 
+type CollabColors = {
+  background: string;
+  surface: string;
+  border: string;
+  yellow: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  online: string;
+  accentOn: string;
+};
 
-const styles = StyleSheet.create({
+function makeCollabStyles(COLORS: CollabColors) {
+  return StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   sidebar: {
     position: 'absolute',
@@ -299,19 +359,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: verticalScale(8),
   },
-  sectionLabel: { color: COLORS.textMuted, fontSize: moderateScale(11), fontWeight: '700', letterSpacing: 0.5 },
+  sectionLabel: {
+    color: COLORS.textMuted,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
   onlineBadge: {
-    backgroundColor: COLORS.yellow,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    backgroundColor: 'rgba(37, 211, 102, 0.15)',
     borderRadius: scale(10),
     paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(2),
+    paddingVertical: verticalScale(3),
   },
-  onlineBadgeText: { color: COLORS.textPrimary, fontSize: moderateScale(10), fontWeight: '600' },
+  onlineBadgeDot: {
+    width: scale(7),
+    height: scale(7),
+    borderRadius: scale(4),
+    backgroundColor: COLORS.online,
+  },
+  onlineBadgeText: {
+    color: COLORS.online,
+    fontSize: moderateScale(10),
+    fontWeight: '700',
+  },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: verticalScale(6),
     gap: scale(10),
+  },
+  avatarWrap: {
+    width: scale(36),
+    height: scale(36),
   },
   avatar: {
     width: scale(32),
@@ -319,11 +401,21 @@ const styles = StyleSheet.create({
     borderRadius: scale(16),
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   avatarText: { color: '#FFF', fontSize: moderateScale(12), fontWeight: '700' },
+  presencePip: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: scale(11),
+    height: scale(11),
+    borderRadius: scale(6),
+    borderWidth: 2,
+  },
   memberName: { color: COLORS.textPrimary, fontSize: moderateScale(13), fontWeight: '600' },
-  memberRole: { color: COLORS.textSecondary, fontSize: moderateScale(11) },
-  statusDot: { width: scale(8), height: scale(8), borderRadius: scale(4) },
+  memberStatus: { color: COLORS.textMuted, fontSize: moderateScale(11), marginTop: 1 },
+  memberStatusOnline: { color: COLORS.online },
   tabRow: {
     flexDirection: 'row',
     paddingHorizontal: scale(16),
@@ -338,7 +430,7 @@ const styles = StyleSheet.create({
   },
   tabBtnActive: { backgroundColor: COLORS.yellow },
   tabText: { color: COLORS.textSecondary, fontSize: moderateScale(12), fontWeight: '600' },
-  tabTextActive: { color: COLORS.textPrimary },
+  tabTextActive: { color: '#1A0E00' },
   body: { flex: 1, paddingHorizontal: scale(16), paddingTop: verticalScale(10) },
   emptyHint: {
     color: COLORS.textMuted,
@@ -372,6 +464,7 @@ const styles = StyleSheet.create({
     gap: scale(8),
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
+    backgroundColor: COLORS.background,
   },
   input: {
     flex: 1,
@@ -391,3 +484,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+}

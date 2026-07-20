@@ -1,4 +1,6 @@
 import React, { useEffect } from "react";
+import { useMemo } from "react";
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -18,8 +20,20 @@ import { ProjectVersion, VersionListItem } from "../types";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
+function parseApiDate(iso: string): Date {
+  if (!iso) return new Date(NaN);
+  // Spring Instant is UTC; if the zone suffix is missing, treat as UTC (not local).
+  const hasZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+  const d = new Date(hasZone ? iso : `${iso}Z`);
+  return d;
+}
+
 function formatRelativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
+  const then = parseApiDate(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  let diffMs = Date.now() - then;
+  // Clock skew / future timestamps → treat as now.
+  if (diffMs < 0) diffMs = 0;
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return "Just now";
   if (mins < 60) return mins + " min ago";
@@ -27,7 +41,7 @@ function formatRelativeTime(iso: string): string {
   if (hrs < 24) return hrs + " hr ago";
   const days = Math.floor(hrs / 24);
   if (days === 1) {
-    const time = new Date(iso).toLocaleTimeString([], {
+    const time = parseApiDate(iso).toLocaleTimeString([], {
       hour: "numeric",
       minute: "2-digit",
     });
@@ -46,6 +60,8 @@ function toListItem(v: ProjectVersion): VersionListItem {
   return { ...v, relativeTime: formatRelativeTime(v.createdAt) };
 }
 export default function VersionHistoryScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation();
   const { currentProject } = useProject();
   const { currentVideoProject, setCurrentVideoProject } = useVideoProject();
@@ -103,7 +119,7 @@ export default function VersionHistoryScreen() {
     }
     const created = await createVersion({
       kind: "named",
-      name: name?.trim() || `Checkpoint ${new Date().toLocaleString()}`,
+      name: name?.trim() || "Checkpoint",
       changeSummary: "Named checkpoint",
       videoProject: currentVideoProject,
     });
@@ -151,107 +167,109 @@ export default function VersionHistoryScreen() {
   }
   const listItems: VersionListItem[] = versions.map(toListItem);
   return (
-    <SafeAreaView style={styles.container}>
-      <View>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.backArrow}>
-              <Ionicons name="arrow-back" size={24} />
-            </Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Version history</Text>
-          <TouchableOpacity
-            onPress={handleNamedSave}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.restoreText}>Save</Text>
-          </TouchableOpacity>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={styles.backArrow}>
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          </Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Version history</Text>
+        <TouchableOpacity
+          onPress={handleNamedSave}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={styles.restoreText}>Save</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.autoSaveLabel}>AUTO-SAVED EVERY 2 MIN</Text>
+      {loading && <ActivityIndicator style={styles.loader} color="#F5C518" />}
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      {!loading && !error && listItems.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="time-outline" size={40} color="#555" />
+          <Text style={styles.emptyTitle}>No versions yet</Text>
+          <Text style={styles.emptySubtitle}>
+            Auto-saves will show up here as you edit this project.
+          </Text>
         </View>
-        <Text style={styles.autoSaveLabel}>AUTO-SAVED EVERY 2 MIN</Text>
-        {loading && <ActivityIndicator style={styles.loader} color="#F5C518" />}
-        {error && <Text style={styles.errorText}>{error}</Text>}
-        {!loading && !error && listItems.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="time-outline" size={40} color="#555" />
-            <Text style={styles.emptyTitle}>No versions yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Auto-saves will show up here as you edit this project.
-            </Text>
-          </View>
-        ) : (
-          <ScrollView
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-          >
-            {listItems.map((version, index) => (
-              <View key={version.id} style={styles.row}>
-                <View style={styles.dotColumn}>
-                  <View
-                    style={[styles.dot, version.isCurrent && styles.dotCurrent]}
-                  />
-                  {index < listItems.length - 1 && <View style={styles.line} />}
-                </View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {listItems.map((version, index) => (
+            <View key={version.id} style={styles.row}>
+              <View style={styles.dotColumn}>
                 <View
-                  style={[styles.card, version.isCurrent && styles.cardCurrent]}
-                >
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.versionTitle}>
-                      {versionLabel(version)}
-                    </Text>
-                    {version.isCurrent ? (
-                      <View style={styles.currentPill}>
-                        <Text style={styles.currentPillText}>Current</Text>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        disabled={!!restoringVersionId}
-                        onPress={() => handleRestore(version)}
-                      >
-                        {restoringVersionId === version.id ? (
-                          <ActivityIndicator size="small" color="#F5C518" />
-                        ) : (
-                          <Text style={styles.restoreText}>Restore</Text>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <View style={styles.authorRow}>
-                    <View
-                      style={[
-                        styles.avatar,
-                        { backgroundColor: version.author.color },
-                      ]}
-                    >
-                      <Text style={styles.avatarText}>
-                        {version.author.initials}
-                      </Text>
+                  style={[styles.dot, version.isCurrent && styles.dotCurrent]}
+                />
+                {index < listItems.length - 1 && <View style={styles.line} />}
+              </View>
+              <View
+                style={[styles.card, version.isCurrent && styles.cardCurrent]}
+              >
+                <View style={styles.cardHeader}>
+                  <Text style={styles.versionTitle} numberOfLines={1}>
+                    {versionLabel(version)}
+                  </Text>
+                  {version.isCurrent ? (
+                    <View style={styles.currentPill}>
+                      <Text style={styles.currentPillText}>Current</Text>
                     </View>
-                    <Text style={styles.authorText}>
-                      {version.author.name} · {version.relativeTime}
+                  ) : (
+                    <TouchableOpacity
+                      disabled={!!restoringVersionId}
+                      onPress={() => handleRestore(version)}
+                      style={styles.restoreAction}
+                    >
+                      {restoringVersionId === version.id ? (
+                        <ActivityIndicator size="small" color="#F5C518" />
+                      ) : (
+                        <Text style={styles.restoreText}>Restore</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={styles.authorRow}>
+                  <View
+                    style={[
+                      styles.avatar,
+                      { backgroundColor: version.author.color },
+                    ]}
+                  >
+                    <Text style={styles.avatarText}>
+                      {version.author.initials}
                     </Text>
-                    {version.isRestored && !version.isCurrent && (
-                      <View style={styles.restoredPill}>
-                        <Text style={styles.restoredPillText}>Restored</Text>
-                      </View>
-                    )}
                   </View>
+                  <Text style={styles.authorText} numberOfLines={1}>
+                    {version.author.name} · {version.relativeTime}
+                  </Text>
+                  {version.isRestored && !version.isCurrent && (
+                    <View style={styles.restoredPill}>
+                      <Text style={styles.restoredPillText}>Restored</Text>
+                    </View>
+                  )}
                 </View>
               </View>
-            ))}
-          </ScrollView>
-        )}
-      </View>
+            </View>
+          ))}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0D0D0D",
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: "row",
@@ -263,16 +281,16 @@ const styles = StyleSheet.create({
     marginBottom: s(10),
   },
   backArrow: {
-    color: "#fff",
+    color: c.text,
     fontSize: 22,
   },
   headerTitle: {
-    color: "#fff",
+    color: c.text,
     fontSize: 20,
     fontWeight: "700",
   },
   autoSaveLabel: {
-    color: "#8A8A8A",
+    color: c.textSecondary,
     fontSize: 12,
     paddingHorizontal: 16,
     marginBottom: s(35),
@@ -293,21 +311,25 @@ const styles = StyleSheet.create({
     paddingTop: vs(40),
   },
   emptyTitle: {
-    color: "#FFFFFF",
+    color: c.text,
     fontSize: 17,
     fontWeight: "700",
     marginTop: 16,
     marginBottom: 8,
   },
   emptySubtitle: {
-    color: "#8A8A8A",
+    color: c.textSecondary,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 20,
   },
+  scroll: {
+    flex: 1,
+  },
   list: {
     paddingHorizontal: 16,
-    paddingBottom: s(60),
+    paddingBottom: vs(40),
+    flexGrow: 1,
   },
   row: {
     flexDirection: "row",
@@ -321,21 +343,21 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#555",
+    backgroundColor: c.textMuted,
     marginTop: 24,
   },
   dotCurrent: {
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     width: 18,
     height: 18,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: "#0D0D0D",
+    borderColor: c.background,
   },
-  line: { flex: 1, width: 2, backgroundColor: "#333", marginVertical: 4 },
+  line: { flex: 1, width: 2, backgroundColor: c.border, marginVertical: 4 },
   card: {
     flex: 1,
-    backgroundColor: "#1A1A1A",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -346,21 +368,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 8,
   },
-  versionTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  versionTitle: {
+    color: c.text,
+    fontSize: 16,
+    fontWeight: "700",
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   currentPill: {
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 3,
+    flexShrink: 0,
   },
-  currentPillText: { color: "#0D0D0D", fontWeight: "700", fontSize: 12 },
-  restoreText: { color: "#F5C518", fontWeight: "700", fontSize: 14 },
+  currentPillText: { color: c.background, fontWeight: "700", fontSize: 12 },
+  restoreAction: { flexShrink: 0 },
+  restoreText: { color: c.accent, fontWeight: "700", fontSize: 14 },
   authorRow: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 10,
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
   },
   avatar: {
     width: 22,
@@ -369,15 +401,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: 8,
+    flexShrink: 0,
   },
-  avatarText: { color: "#fff", fontSize: 11, fontWeight: "700" },
-  authorText: { color: "#B0B0B0", fontSize: 13 },
+  avatarText: { color: c.text, fontSize: 11, fontWeight: "700" },
+  authorText: { color: "#B0B0B0", fontSize: 13, flex: 1, flexShrink: 1, minWidth: 0 },
   restoredPill: {
-    backgroundColor: "#333",
+    backgroundColor: c.border,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 2,
     marginLeft: 8,
   },
-  restoredPillText: { color: "#ccc", fontSize: 11 },
+  restoredPillText: { color: c.textMuted, fontSize: 11 },
 });
+}

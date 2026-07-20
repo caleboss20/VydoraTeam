@@ -1,7 +1,7 @@
 import React from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import MainStackNavigator from "./src/screens/MainstackNavigator";
-import { NavigationContainer, LinkingOptions } from "@react-navigation/native";
+import { NavigationContainer, LinkingOptions, DefaultTheme, DarkTheme } from "@react-navigation/native";
 import { AuthProvider } from "./src/screens/Contexts/Authcontext";
 import { ProjectProvider } from "./src/screens/Contexts/projectContext";
 import { ClipProvider } from "./src/screens/Contexts/clipContext";
@@ -13,6 +13,7 @@ import { ExportProvider } from "./src/screens/Contexts/exportContext";
 import { VideoProjectProvider } from "./src/screens/Contexts/VideoProjectContext";
 import { VersionHistoryProvider } from "./src/screens/Contexts/VersionHistoryContext";
 import { InviteProvider } from "./src/screens/Contexts/InviteContext";
+import { ThemeProvider, useTheme } from "./src/screens/Contexts/ThemeContext";
 
 const linking: LinkingOptions<any> = {
   prefixes: ["vydora://", "https://vydora.io"],
@@ -23,34 +24,55 @@ const linking: LinkingOptions<any> = {
   },
 };
 
+function AppNavigation() {
+  const { isDark, colors } = useTheme();
+  const navTheme = {
+    ...(isDark ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+      background: colors.background,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+      primary: colors.accent,
+    },
+  };
+
+  return (
+    <NavigationContainer linking={linking} theme={navTheme}>
+      <MainStackNavigator />
+    </NavigationContainer>
+  );
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <ProjectProvider>
-          <VideoProjectProvider>
-           <InviteProvider>
-             <ClipProvider>
-              <VersionHistoryProvider>
-                <ExportProvider>
-                  <MemberProvider>
-                    <CommentProvider>
-                      <MessageProvider>
-                        <NotificationProvider>
-                          <NavigationContainer linking={linking}>
-                            <MainStackNavigator />
-                          </NavigationContainer>
-                        </NotificationProvider>
-                      </MessageProvider>
-                    </CommentProvider>
-                  </MemberProvider>
-                </ExportProvider>
-              </VersionHistoryProvider>
-            </ClipProvider>
-           </InviteProvider>
-          </VideoProjectProvider>
-        </ProjectProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <ProjectProvider>
+            <VideoProjectProvider>
+              <InviteProvider>
+                <ClipProvider>
+                  <VersionHistoryProvider>
+                    <ExportProvider>
+                      <MemberProvider>
+                        <CommentProvider>
+                          <MessageProvider>
+                            <NotificationProvider>
+                              <AppNavigation />
+                            </NotificationProvider>
+                          </MessageProvider>
+                        </CommentProvider>
+                      </MemberProvider>
+                    </ExportProvider>
+                  </VersionHistoryProvider>
+                </ClipProvider>
+              </InviteProvider>
+            </VideoProjectProvider>
+          </ProjectProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

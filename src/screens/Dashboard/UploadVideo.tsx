@@ -1,4 +1,6 @@
 
+import { useMemo } from "react";
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -27,20 +29,6 @@ import { useProject } from '../Contexts/projectContext';
 // Pick → POST /uploads/video → POST /projects/{id}/clips → show on Project Detail.
 // Local file:// is also handed to VideoProjectContext so the editor can preview.
 // ---------------------------------------------------------------------------
-const COLORS = {
-  bg: '#1A1A1A',
-  surface: '#262626',
-  surfaceAlt: '#2E2E2E',
-  border: '#3A3A3A',
-  borderDashed: '#4A4A4A',
-  yellow: '#F2C200',
-  yellowDim: 'rgba(242, 194, 0, 0.12)',
-  text: '#FFFFFF',
-  textMuted: '#9A9A9A',
-  textFaint: '#6B6B6B',
-  danger: '#FF6B6B',
-  online: '#3DD68C',
-};
 /** Matches backend UploadController (Cloudinary free-tier video cap). */
 const MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 const VALID_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv'];
@@ -93,6 +81,8 @@ function isRemoteUrl(uri: string) {
   return /^https?:\/\//i.test(uri);
 }
 export default function UploadVideoScreen({ navigation }: any) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { setCurrentVideoProject } = useVideoProject();
   const { currentProject } = useProject();
   const { addClip, fetchClips } = useClip();
@@ -396,7 +386,7 @@ export default function UploadVideoScreen({ navigation }: any) {
           hitSlop={12}
           style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
         >
-          <Ionicons name="close" size={24} color={COLORS.text} />
+          <Ionicons name="close" size={24} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Upload Video</Text>
         <View style={{ width: 32 }} />
@@ -408,7 +398,7 @@ export default function UploadVideoScreen({ navigation }: any) {
       >
         <Pressable onPress={pickFromFiles} style={styles.dropZone}>
           <Animated.View style={{ transform: [{ scale: dropPulse }] }}>
-            <Ionicons name="cloud-upload-outline" size={40} color={COLORS.yellow} />
+            <Ionicons name="cloud-upload-outline" size={40} color={colors.accent} />
           </Animated.View>
           <Text style={styles.dropZoneText}>Tap to select a video</Text>
           <Text style={styles.dropZoneSubtext}>MP4, MOV, AVI, MKV — up to 100 MB</Text>
@@ -426,7 +416,7 @@ export default function UploadVideoScreen({ navigation }: any) {
               onPress={source.onPress}
               style={({ pressed }) => [styles.sourceButton, pressed && styles.sourceButtonPressed]}
             >
-              <Ionicons name={source.icon} size={22} color={COLORS.text} />
+              <Ionicons name={source.icon} size={22} color={colors.text} />
               <Text style={styles.sourceLabel}>{source.label}</Text>
             </Pressable>
           ))}
@@ -448,7 +438,7 @@ export default function UploadVideoScreen({ navigation }: any) {
                 <Ionicons
                   name={file.isAudio ? 'musical-notes' : 'film-outline'}
                   size={20}
-                  color={isError ? COLORS.danger : COLORS.yellow}
+                  color={isError ? colors.danger : colors.accent}
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -465,13 +455,13 @@ export default function UploadVideoScreen({ navigation }: any) {
                 )}
               </View>
               {isDone ? (
-                <Ionicons name="checkmark-circle" size={20} color={COLORS.online} />
+                <Ionicons name="checkmark-circle" size={20} color={colors.online} />
               ) : (
                 <Pressable onPress={() => removeFile(file.id)} hitSlop={10}>
                   <Ionicons
                     name="close-circle"
                     size={20}
-                    color={isError ? COLORS.danger : COLORS.textFaint}
+                    color={isError ? colors.danger : colors.textMuted}
                   />
                 </Pressable>
               )}
@@ -488,7 +478,7 @@ export default function UploadVideoScreen({ navigation }: any) {
               value={urlDraft}
               onChangeText={(t) => { setUrlDraft(t); setUrlError(false); }}
               placeholder="https://example.com/video.mp4"
-              placeholderTextColor={COLORS.textFaint}
+              placeholderTextColor={colors.textMuted}
               style={[styles.modalInput, urlError && styles.modalInputError]}
               autoCapitalize="none"
               autoCorrect={false}
@@ -509,194 +499,196 @@ export default function UploadVideoScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  iconButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
-  },
-  iconButtonPressed: {
-    backgroundColor: COLORS.surfaceAlt,
-  },
-  headerTitle: {
-    color: COLORS.text,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: s(20),
-    paddingBottom: 40,
-  },
-  dropZone: {
-    borderWidth: 1.5,
-    borderColor: COLORS.borderDashed,
-    borderStyle: 'dashed',
-    borderRadius: 18,
-    paddingVertical: 36,
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-  },
-  fileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    padding: 12,
-    gap: s(12),
-    marginTop: s(30),
-  },
-  fileIconWrap: {
-    width: s(36),
-    height: s(36),
-    borderRadius: 10,
-    backgroundColor: '#000000',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fileName: {
-    flex: 1,
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  progressTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    marginTop: 8,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.yellow,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  modalCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 18,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  modalTitle: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 14,
-  },
-  modalInput: {
-    backgroundColor: COLORS.surfaceAlt,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    color: COLORS.text,
-    fontSize: 14,
-    padding: 12,
-  },
-  modalInputError: {
-    borderColor: COLORS.danger,
-  },
-  modalErrorText: {
-    color: COLORS.danger,
-    fontSize: 11,
-    marginTop: 6,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
-  },
-  modalCancelText: {
-    color: COLORS.textMuted,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  modalSubmitButton: {
-    backgroundColor: COLORS.yellow,
-    borderRadius: 8,
-    paddingHorizontal: s(16),
-    paddingVertical: vs(8),
-    marginLeft: s(8),
-  },
-  modalSubmitText: {
-    color: '#1A1A1A',
-    fontSize: ms(13),
-    fontWeight: '600',
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: s(25),
-  },
-  sourceLabel: {
-    color: COLORS.textMuted,
-    fontSize: ms(10),
-  },
-  modalCancelButton: {
-    paddingHorizontal: s(14),
-    paddingVertical: vs(8),
-  },
-  dropZoneText: {
-    color: COLORS.text,
-    fontSize: ms(14),
-    fontWeight: '600',
-    marginTop: vs(10),
-  },
-  dropZoneSubtext: {
-    color: COLORS.textMuted,
-    fontSize: ms(11),
-  },
-  projectHint: {
-    color: COLORS.yellow,
-    fontSize: ms(11),
-    marginTop: vs(10),
-    fontWeight: '600',
-  },
-  projectHintWarn: {
-    color: COLORS.danger,
-    fontSize: ms(11),
-    marginTop: vs(10),
-    fontWeight: '600',
-  },
-  sourceButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: vs(12),
-    marginHorizontal: s(4),
-    backgroundColor: COLORS.surface,
-    borderRadius: 10,
-  },
-  sourceButtonPressed: {
-    opacity: 0.7,
-  },
-  fileMeta: {
-    color: COLORS.textFaint,
-    fontSize: ms(10),
-    marginTop: vs(2),
-  },
-});
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    iconButton: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 16,
+    },
+    iconButtonPressed: {
+      backgroundColor: c.iconBg,
+    },
+    headerTitle: {
+      color: c.text,
+      fontSize: 17,
+      fontWeight: '700',
+    },
+    scroll: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingHorizontal: 16,
+      paddingTop: s(20),
+      paddingBottom: 40,
+    },
+    dropZone: {
+      borderWidth: 1.5,
+      borderColor: c.border,
+      borderStyle: 'dashed',
+      borderRadius: 18,
+      paddingVertical: 36,
+      alignItems: 'center',
+      backgroundColor: c.surface,
+    },
+    fileRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      padding: 12,
+      gap: s(12),
+      marginTop: s(30),
+    },
+    fileIconWrap: {
+      width: s(36),
+      height: s(36),
+      borderRadius: 10,
+      backgroundColor: c.iconBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    fileName: {
+      flex: 1,
+      color: c.text,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    progressTrack: {
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: c.border,
+      marginTop: 8,
+      overflow: 'hidden',
+    },
+    progressFill: {
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: c.accent,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+    },
+    modalCard: {
+      backgroundColor: c.card,
+      borderRadius: 18,
+      padding: 20,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    modalTitle: {
+      color: c.text,
+      fontSize: 16,
+      fontWeight: '700',
+      marginBottom: 14,
+    },
+    modalInput: {
+      backgroundColor: c.inputBg,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.border,
+      color: c.text,
+      fontSize: 14,
+      padding: 12,
+    },
+    modalInputError: {
+      borderColor: c.danger,
+    },
+    modalErrorText: {
+      color: c.danger,
+      fontSize: 11,
+      marginTop: 6,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 18,
+    },
+    modalCancelText: {
+      color: c.textSecondary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    modalSubmitButton: {
+      backgroundColor: c.accent,
+      borderRadius: 8,
+      paddingHorizontal: s(16),
+      paddingVertical: vs(8),
+      marginLeft: s(8),
+    },
+    modalSubmitText: {
+      color: c.accentOn,
+      fontSize: ms(13),
+      fontWeight: '600',
+    },
+    sourceRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: s(25),
+    },
+    sourceLabel: {
+      color: c.textSecondary,
+      fontSize: ms(10),
+    },
+    modalCancelButton: {
+      paddingHorizontal: s(14),
+      paddingVertical: vs(8),
+    },
+    dropZoneText: {
+      color: c.text,
+      fontSize: ms(14),
+      fontWeight: '600',
+      marginTop: vs(10),
+    },
+    dropZoneSubtext: {
+      color: c.textSecondary,
+      fontSize: ms(11),
+    },
+    projectHint: {
+      color: c.accent,
+      fontSize: ms(11),
+      marginTop: vs(10),
+      fontWeight: '600',
+    },
+    projectHintWarn: {
+      color: c.danger,
+      fontSize: ms(11),
+      marginTop: vs(10),
+      fontWeight: '600',
+    },
+    sourceButton: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: vs(12),
+      marginHorizontal: s(4),
+      backgroundColor: c.surface,
+      borderRadius: 10,
+    },
+    sourceButtonPressed: {
+      opacity: 0.7,
+    },
+    fileMeta: {
+      color: c.textMuted,
+      fontSize: ms(10),
+      marginTop: vs(2),
+    },
+  });
+}

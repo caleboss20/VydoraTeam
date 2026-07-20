@@ -14,7 +14,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Vydora needs the microphone to record voiceovers on your timeline."
+      }
     },
     "android": {
       "usesCleartextTraffic": true,
@@ -25,8 +28,6 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
@@ -50,6 +51,12 @@
           "photosPermission": "Vydora needs access to your photos to select a video.",
           "cameraPermission": "Vydora needs access to your camera to record videos.",
           "microphonePermission": "Vydora needs access to your microphone to record video audio."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Vydora needs the microphone to record voiceovers on your timeline."
         }
       ],
       "expo-audio"

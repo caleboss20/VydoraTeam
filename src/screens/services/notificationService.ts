@@ -23,6 +23,7 @@ type ItemsResponse = { items: ApiNotification[] };
 
 const VALID_TYPES: NotificationType[] = [
   'invite',
+  'invite_approval',
   'comment',
   'clip_upload',
   'role_change',

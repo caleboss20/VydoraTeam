@@ -27,8 +27,32 @@ import { useNotification } from "../Contexts/notificatinContext";
 import { Project } from "../types";
 import { useExport } from "../Contexts/exportContext";
 import UpgradeToProBanner from "../components/upgradeToProBanner";
+import { useTheme } from "../Contexts/ThemeContext";
 // ─── Palette ─────────────────────────────────────────────────────────────────
-const C = {
+type DashPalette = {
+  bg: string;
+  surface: string;
+  card: string;
+  border: string;
+  accent: string;
+  textPrimary: string;
+  textSecondary: string;
+  heroBg: string;
+  heroText: string;
+  heroSubtext: string;
+  versionBadgeBg: string;
+  versionBadgeText: string;
+  activeGreen: string;
+  activeGreenText: string;
+  draftText: string;
+  draftBg: string;
+  archivedBg: string;
+  archivedText: string;
+  searchBg: string;
+  danger: string;
+};
+
+const DARK_C: DashPalette = {
   bg: "#141414",
   surface: "#1C1C1C",
   card: "#212121",
@@ -49,7 +73,34 @@ const C = {
   archivedText: "#8A8A8A",
   searchBg: "#1C1C1C",
   danger: "#E05C5C",
-} as const;
+};
+
+const LIGHT_C: DashPalette = {
+  bg: "#F4F4F5",
+  surface: "#FFFFFF",
+  card: "#FFFFFF",
+  border: "rgba(0,0,0,0.08)",
+  accent: "#E5B800",
+  textPrimary: "#111111",
+  textSecondary: "#6B6B6B",
+  heroBg: "#D9E9E8",
+  heroText: "#0F1F1E",
+  heroSubtext: "#3F5654",
+  versionBadgeBg: "#F5934F",
+  versionBadgeText: "#1A0E00",
+  activeGreen: "#E8F8EF",
+  activeGreenText: "#15803D",
+  draftText: "#6B6B6B",
+  draftBg: "#EEEEF0",
+  archivedBg: "#F5F0EB",
+  archivedText: "#6B6B6B",
+  searchBg: "#EEEEF0",
+  danger: "#DC2626",
+};
+
+/** Module holders so StyleSheet + subcomponents stay theme-aware without a full rewrite. */
+let C: DashPalette = DARK_C;
+let styles: ReturnType<typeof createDashboardStyles> = null as any;
 const SCREEN_WIDTH = Dimensions.get("window").width;
 // ─── Types ───────────────────────────────────────────────────────────────────
 type QuickAction = {
@@ -71,7 +122,11 @@ const getGreeting = (): string => {
   return "Good evening,";
 };
 const timeAgo = (dateStr: string): string => {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const hasZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(dateStr || "");
+  const then = new Date(hasZone ? dateStr : `${dateStr}Z`).getTime();
+  if (Number.isNaN(then)) return "";
+  let diff = Date.now() - then;
+  if (diff < 0) diff = 0;
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
@@ -81,7 +136,9 @@ const timeAgo = (dateStr: string): string => {
   return `${days}d ago`;
 };
 const formatDate = (dateStr: string): string => {
-  const d = new Date(dateStr);
+  const hasZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(dateStr || "");
+  const d = new Date(hasZone ? dateStr : `${dateStr}Z`);
+  if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString(undefined, {
     day: "2-digit",
     month: "short",
@@ -171,6 +228,10 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 function DashboardScreen() {
+  const { isDark } = useTheme();
+  C = isDark ? DARK_C : LIGHT_C;
+  styles = createDashboardStyles(C);
+
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const { projects, isLoading, setCurrentProject,renameProject,deleteProject } = useProject();
@@ -317,7 +378,7 @@ localUri = downloaded.uri;
   return (
     <SafeAreaView style={styles.container}>
       <View>
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={C.bg} />
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
@@ -619,7 +680,8 @@ export default DashboardScreen;
 
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+function createDashboardStyles(C: DashPalette) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   centered: { flex: 1, backgroundColor: C.bg, justifyContent: "center" },
   scrollContent: {
@@ -831,9 +893,6 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontSize: ms(9.5), fontWeight: "600" },
 
-
-
-
   
   // ── New styles for the overflow popup menu ──
   menuOverlay: {
@@ -940,3 +999,6 @@ sheetConfirmTextActive: {
   color: "#141414",
 },
 });
+}
+
+styles = createDashboardStyles(DARK_C);

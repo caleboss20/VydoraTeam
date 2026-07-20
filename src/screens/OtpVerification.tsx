@@ -8,7 +8,8 @@ import {
   Animated,
   TextInput,
 } from "react-native";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { useTheme, ThemeColors } from "./Contexts/ThemeContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,6 +28,8 @@ type RootStackParamList = {
 };
 
 function VerifyEmail() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "verifyemail">>();
   const email = (route.params?.email || "").trim().toLowerCase();
@@ -129,12 +132,12 @@ function VerifyEmail() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#13151A" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
       <Pressable
         style={styles.backBtn}
         onPress={() => navigation.navigate("forgotpassword")}
       >
-        <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
+        <Ionicons name="arrow-back" size={ms(20)} color={colors.text} />
       </Pressable>
       <Text style={styles.heading}>Verify{"\n"}Your Email</Text>
       <Text style={styles.subText}>
@@ -147,7 +150,9 @@ function VerifyEmail() {
         {otp.map((digit, index) => (
           <TextInput
             key={index}
-            ref={(ref) => (inputRefs.current[index] = ref)}
+            ref={(ref) => {
+              inputRefs.current[index] = ref;
+            }}
             style={[
               styles.otpBox,
               digit ? styles.otpBoxFilled : null,
@@ -161,7 +166,7 @@ function VerifyEmail() {
             keyboardType="number-pad"
             maxLength={1}
             textAlign="center"
-            selectionColor="#F5A623"
+            selectionColor={colors.accent}
           />
         ))}
       </Animated.View>
@@ -181,7 +186,7 @@ function VerifyEmail() {
         disabled={loading || !enteredFull}
       >
         {loading ? (
-          <ActivityIndicator size="small" color="#1A0E00" />
+          <ActivityIndicator size="small" color={colors.accentOn} />
         ) : (
           <Text style={styles.ctaText}>Verify</Text>
         )}
@@ -192,10 +197,11 @@ function VerifyEmail() {
 
 export default VerifyEmail;
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#13151c",
+    backgroundColor: c.background,
     paddingHorizontal: s(24),
   },
   backBtn: {
@@ -207,13 +213,13 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontSize: s(32),
-    color: "#ffffff",
+    color: c.text,
     fontWeight: "800",
     lineHeight: s(40),
     marginBottom: vs(14),
   },
   subText: {
-    color: "#ccc",
+    color: c.textMuted,
     marginBottom: s(30),
     lineHeight: s(21),
     fontSize: s(13),
@@ -226,23 +232,23 @@ const styles = StyleSheet.create({
   otpBox: {
     width: s(55),
     height: s(55),
-    backgroundColor: "#1e1e1e",
+    backgroundColor: c.surface,
     borderRadius: s(12),
     fontSize: ms(22),
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: c.text,
     borderWidth: s(0.5),
     borderColor: "transparent",
   },
   otpBoxFilled: {
-    borderColor: "#F5A623",
+    borderColor: c.accent,
   },
   otpBoxError: {
-    borderColor: "#eb4343",
+    borderColor: c.danger,
   },
   errorText: {
     fontSize: ms(11),
-    color: "#eb4343",
+    color: c.danger,
     marginBottom: vs(10),
     marginLeft: s(4),
   },
@@ -257,10 +263,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   resendDisabled: {
-    color: "#ccc",
+    color: c.textMuted,
   },
   cta: {
-    backgroundColor: "#F5A623",
+    backgroundColor: c.accent,
     borderRadius: s(50),
     paddingVertical: vs(11),
     alignItems: "center",
@@ -272,6 +278,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: ms(15),
     fontWeight: "700",
-    color: "#13151c",
+    color: c.background,
   },
 });
+}

@@ -18,13 +18,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { ms, s, vs } from "react-native-size-matters";
 import { useMember } from '../Contexts/memberContext';
 import { useProject } from '../Contexts/projectContext';
-import { useInvite } from '../Contexts/InviteContext'; 
+import { useInvite } from '../Contexts/InviteContext';
+import { useAppPalette } from '../Contexts/ThemeContext';
 // ---------------------------------------------------------------------------
 // Vydora — Invite Member screen
 // Collaborative video editor. Dark theme, single yellow accent.
 // Full screen (not a modal) — pushed onto the stack from the project view.
 // ---------------------------------------------------------------------------
-const COLORS = {
+let COLORS = {
   bg: '#1A1A1A',
   surface: '#262626',
   surfaceAlt: '#2E2E2E',
@@ -54,6 +55,21 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 export default function InviteMemberScreen({ navigation }: any) {
+  const p = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    bg: p.background,
+    surface: p.surface,
+    surfaceAlt: p.card,
+    border: p.border,
+    yellow: p.yellow,
+    text: p.textPrimary,
+    textMuted: p.textSecondary,
+    textFaint: p.textMuted,
+    danger: p.danger,
+    online: p.online ?? COLORS.online,
+  };
+  styles = makeInviteStyles(COLORS);
   const { inviteMember } = useMember();
   const {sendInvite,isLoading,error,lastInviteLink}=useInvite()
   const { currentProject } = useProject();
@@ -141,10 +157,21 @@ export default function InviteMemberScreen({ navigation }: any) {
     setStatus('sending');
     try {
       // inviteMember handles one email at a time — fire all invites in this batch together
-      await Promise.all(emails.map((email) => inviteMember(projectId, email, role)));
+      const results = await Promise.all(
+        emails.map((email) => inviteMember(projectId, email, role))
+      );
+      const awaitingHost = results.filter((m) => m.status === 'PENDING_APPROVAL').length;
       setStatus('sent');
       checkAnim.setValue(0);
       Animated.spring(checkAnim, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }).start();
+      if (awaitingHost > 0) {
+        Alert.alert(
+          'Waiting for host',
+          awaitingHost === results.length
+            ? 'Your invite request was sent to the project Owner. They’ll Admit or Decline — like Zoom’s waiting room.'
+            : `${awaitingHost} invite(s) need Owner approval. The rest were sent.`
+        );
+      }
       setTimeout(() => {
         setStatus('idle');
         setEmails([]);
@@ -335,7 +362,10 @@ export default function InviteMemberScreen({ navigation }: any) {
 }
 
 
-const styles = StyleSheet.create({
+function makeInviteStyles(COLORS: {
+  bg: string; surface: string; surfaceAlt: string; border: string; yellow: string; yellowDim: string; text: string; textMuted: string; textFaint: string; danger: string; online: string;
+}) {
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -565,3 +595,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
+}
+let styles = makeInviteStyles(COLORS);

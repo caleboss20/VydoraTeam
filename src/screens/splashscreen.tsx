@@ -1,5 +1,6 @@
 import { Image, StyleSheet, View } from "react-native";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
+import { useTheme, ThemeColors } from "./Contexts/ThemeContext";
 import { s } from "react-native-size-matters";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -8,6 +9,8 @@ import { useAuth } from "./Contexts/Authcontext";
 const Splashscreen = () => {
   const navigation = useNavigation<any>();
   const { user, isLoadingAuth } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   useEffect(() => {
     const checkAndNavigate = async () => {
@@ -53,15 +56,17 @@ const Splashscreen = () => {
 
 export default Splashscreen;
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#13151c",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  logo: {
-    width: s(320),
-    height: s(320),
-  },
-});
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    logo: {
+      width: s(320),
+      height: s(320),
+    },
+  });
+}

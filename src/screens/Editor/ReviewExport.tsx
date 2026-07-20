@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useTheme, ThemeColors, darkColors } from "../Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -42,6 +43,8 @@ function formatDuration(ms: number) {
   return `${min}:${sec.toString().padStart(2, "0")}`;
 }
 export default function ExportReviewScreen({ navigation }: any) {
+  const { colors, isDark } = useTheme();
+  styles = makeStyles(colors);
   const confettiRef = useRef<any>(null);
   const { currentVideoProject } = useVideoProject();
   const { currentProject } = useProject();
@@ -443,15 +446,16 @@ function QualitySlider({
 
 const SLIDER_X_OFFSET = scale(20);
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#111111" },
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   scroll: { flex: 1 },
   emptyState: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: c.background,
   },
   emptyText: {
-    color: "#666",
+    color: c.textMuted,
     fontSize: moderateScale(14),
     textAlign: "center",
     marginTop: verticalScale(40),
@@ -464,7 +468,7 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(14),
   },
   headerTitle: {
-    color: "#fff",
+    color: c.text,
     fontSize: moderateScale(16),
     fontWeight: "600",
   },
@@ -472,7 +476,7 @@ const styles = StyleSheet.create({
     marginHorizontal: scale(16),
     height: verticalScale(180),
     borderRadius: scale(10),
-    backgroundColor: "#000",
+    backgroundColor: c.background,
     overflow: "hidden",
     justifyContent: "flex-end",
   },
@@ -491,7 +495,7 @@ const styles = StyleSheet.create({
     height: scale(40),
     borderRadius: scale(20),
     borderWidth: 1,
-    borderColor: "#fff",
+    borderColor: c.text,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -499,14 +503,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: verticalScale(10),
     left: scale(12),
-    color: "#fff",
+    color: c.text,
     fontSize: moderateScale(12),
   },
   filenameLabel: {
     position: "absolute",
     bottom: verticalScale(10),
     right: scale(12),
-    color: "#ccc",
+    color: c.textMuted,
     fontSize: moderateScale(12),
   },
   sectionLabel: {
@@ -531,16 +535,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: verticalScale(10),
     borderRadius: scale(8),
-    backgroundColor: "#1c1c1c",
+    backgroundColor: c.card,
     alignItems: "center",
   },
-  pillActive: { backgroundColor: "#F5C518" },
+  pillActive: { backgroundColor: c.accent },
   pillText: {
-    color: "#ccc",
+    color: c.textMuted,
     fontSize: moderateScale(13),
     fontWeight: "600",
   },
-  pillTextActive: { color: "#111" },
+  pillTextActive: { color: c.accentOn },
   qualityHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -548,10 +552,10 @@ const styles = StyleSheet.create({
     marginHorizontal: scale(16),
     marginTop: verticalScale(18),
   },
-  qualityValue: { color: "#fff", fontSize: moderateScale(12) },
+  qualityValue: { color: c.text, fontSize: moderateScale(12) },
   sliderTrack: {
     height: verticalScale(4),
-    backgroundColor: "#333",
+    backgroundColor: c.border,
     borderRadius: 2,
     marginHorizontal: scale(16),
     marginTop: verticalScale(10),
@@ -559,7 +563,7 @@ const styles = StyleSheet.create({
   },
   sliderFill: {
     height: verticalScale(4),
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     borderRadius: 2,
   },
   sliderThumb: {
@@ -567,7 +571,7 @@ const styles = StyleSheet.create({
     width: scale(14),
     height: scale(14),
     borderRadius: scale(7),
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     marginLeft: -scale(7),
   },
   toggleRow: {
@@ -592,7 +596,7 @@ const styles = StyleSheet.create({
   },
   estimateLabel: { color: "#999", fontSize: moderateScale(11) },
   estimateValue: {
-    color: "#F5C518",
+    color: c.accent,
     fontSize: moderateScale(15),
     fontWeight: "700",
     marginTop: 2,
@@ -602,14 +606,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: scale(8),
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     marginHorizontal: scale(16),
     marginTop: verticalScale(18),
     paddingVertical: verticalScale(14),
     borderRadius: scale(10),
   },
   exportButtonText: {
-    color: "#111",
+    color: c.accentOn,
     fontWeight: "700",
     fontSize: moderateScale(14),
   },
@@ -627,7 +631,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   sheetCard: {
-    backgroundColor: "#1a1a1a",
+    backgroundColor: c.card,
     borderTopLeftRadius: scale(20),
     borderTopRightRadius: scale(20),
     padding: scale(24),
@@ -637,13 +641,13 @@ const styles = StyleSheet.create({
     width: scale(52),
     height: scale(52),
     borderRadius: scale(26),
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: verticalScale(14),
   },
   sheetTitle: {
-    color: "#fff",
+    color: c.text,
     fontSize: moderateScale(18),
     fontWeight: "700",
   },
@@ -658,17 +662,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: scale(6),
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     width: "100%",
     paddingVertical: verticalScale(14),
     borderRadius: scale(10),
     marginBottom: verticalScale(10),
   },
   sheetPrimaryText: {
-    color: "#111",
+    color: c.accentOn,
     fontWeight: "700",
     fontSize: moderateScale(14),
   },
   sheetSecondaryButton: { paddingVertical: verticalScale(10) },
-  sheetSecondaryText: { color: "#888", fontSize: moderateScale(13) },
+  sheetSecondaryText: { color: c.textMuted, fontSize: moderateScale(13) },
 });
+}
+let styles = makeStyles(darkColors);
+

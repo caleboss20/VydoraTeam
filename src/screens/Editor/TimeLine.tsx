@@ -1,3 +1,4 @@
+import { useTheme } from "../Contexts/ThemeContext";
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -49,7 +50,7 @@ navigation for the bottom tabs from the parent navigator.
 */
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // ---- design tokens (matched to reference) ----------------------------
-const COLORS = {
+let COLORS: Record<string, string> = {
   bg: '#0E0E10',
   surface: '#1A1A1D',
   surfaceAlt: '#222226',
@@ -89,6 +90,30 @@ export default function TimelineScreen({
   duration = '00:20 / 01:12',
   clipCount = 3,
 }: TimelineScreenProps) {
+  const { colors, isDark } = useTheme();
+  COLORS = {
+    ...COLORS,
+    bg: colors.background,
+    surface: colors.surface,
+    text: colors.text,
+    textPrimary: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    textDim: colors.textMuted,
+    textTertiary: colors.textMuted,
+    border: colors.border,
+    trackBg: colors.surface,
+    btnBg: colors.iconBg,
+    sheet: colors.surface,
+    compareBg: colors.surface,
+    yellow: colors.accent,
+    accent: colors.accent,
+    accentYellow: colors.accent,
+    pillBg: colors.iconBg,
+    trackEmpty: colors.border,
+  };
+  styles = makeStyles();
+
   const [zoom, setZoom] = useState<number>(0.45); // 0..1
   const [playheadX, setPlayheadX] = useState<number>(120);
   const [clips] = useState<TrackClips>(initialClips);
@@ -313,7 +338,8 @@ function BottomTabBar({ active, navigation }: BottomTabBarProps) {
     </View>
   );
 }
-const styles = StyleSheet.create({
+function makeStyles() {
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -548,3 +574,5 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accentYellow,
   },
 });
+}
+let styles = makeStyles();

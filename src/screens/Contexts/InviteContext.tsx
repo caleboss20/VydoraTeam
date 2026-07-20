@@ -27,7 +27,7 @@ interface InviteContextValue {
     emails: string[],
     role: InviteRole,
     message?: string
-  ) => Promise<void>;
+  ) => Promise<{ pendingApprovalCount: number }>;
   loadInviteByToken: (token: string) => Promise<void>;
   /** Returns projectId on success so AcceptInvite can navigate. */
   acceptInvite: (token: string) => Promise<string | null>;
@@ -61,6 +61,7 @@ export function InviteProvider({ children }: { children: ReactNode }) {
         token || undefined
       );
       setLastInviteLink(result.inviteLink);
+      return { pendingApprovalCount: result.pendingApprovalCount ?? 0 };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to send invite';
       setError(msg);

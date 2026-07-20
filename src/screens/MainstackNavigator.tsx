@@ -23,6 +23,7 @@ import ProScreen from "./ProVersion/ProVersion";
 import AcceptInviteScreen from "./AcceptInvite/AcceptInvitescreen";
 import ExportReviewScreen from "./Editor/ReviewExport";
 import TeamMembersScreen from "./Dashboard/TeamMembers";
+import EditorFullscreenPreview from "./Editor/EditorFullscreenPreview";
 
 const Stack=createNativeStackNavigator();
 
@@ -44,6 +45,11 @@ function MainStackNavigator(){
              <Stack.Screen name="onboarding" component={Onboarding} />
 
               <Stack.Screen name="editorscreen" component={EditorScreen} />
+              <Stack.Screen
+                name="editorpreview"
+                component={EditorFullscreenPreview}
+                options={{ animation: "fade_from_bottom" }}
+              />
                <Stack.Screen name="newproject" component={NewProjectScreen} />
                 <Stack.Screen name="projectdetail" component={ProjectDetailScreen} />
                 <Stack.Screen name="projects" component={Dashboardtabbar} />

@@ -5,7 +5,8 @@ import {
   Pressable,
   StatusBar,
 } from "react-native";
-import React from "react";
+import React, { useMemo } from "react";
+import { useTheme, ThemeColors } from "./Contexts/ThemeContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,16 +16,18 @@ type RootStackParamList = {
   signin: undefined;
 };
 function PasswordSuccess(){
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#13151A" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
       <View style={styles.content}>
         {/* Glow rings + icon */}
         <View style={styles.outerGlow}>
           <View style={styles.middleGlow}>
             <View style={styles.innerCircle}>
-              <Ionicons name="shield-checkmark" size={ms(40)} color="#F5A623" />
+              <Ionicons name="shield-checkmark" size={ms(40)} color={colors.accent} />
             </View>
           </View>
         </View>
@@ -46,10 +49,11 @@ function PasswordSuccess(){
   );
 };
 export default PasswordSuccess;
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#13151c",
+    backgroundColor: c.background,
     paddingHorizontal: s(24),
     justifyContent: "space-between",
     paddingBottom: vs(40),
@@ -88,7 +92,7 @@ const styles = StyleSheet.create({
   // Heading
   heading: {
     fontSize: s(26),
-    color: "#ffffff",
+    color: c.text,
     fontWeight: "800",
     textAlign: "center",
     marginBottom: vs(14),
@@ -103,7 +107,7 @@ const styles = StyleSheet.create({
   },
   // CTA
   cta: {
-    backgroundColor: "#F5A623",
+    backgroundColor: c.accent,
     borderRadius: s(50),
     paddingVertical: vs(12),
     alignItems: "center",
@@ -111,6 +115,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: ms(15),
     fontWeight: "700",
-    color: "#1A0E00",
+    color: c.accentOn,
   },
 });
+}

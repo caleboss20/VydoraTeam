@@ -1,3 +1,4 @@
+import { useTheme } from "../Contexts/ThemeContext";
 import React, { useState } from 'react';
 import {
   View,
@@ -12,7 +13,7 @@ import {
 import {  SafeAreaView,} from "react-native-safe-area-context"
 import { Ionicons } from '@expo/vector-icons';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const COLORS = {
+let COLORS: Record<string, string> = {
   bg: '#111111',
   surface: '#1C1C1C',
   inputBg: '#1E1E1E',
@@ -23,7 +24,7 @@ const COLORS = {
   border: '#2A2A2A',
   presetBg: '#222222',
   compareBg: '#1A1A1A',
-} as const;
+};
 const PRESETS = ['Original', 'Golden', 'Vivid', 'Mono'];
 interface Adjust {
   brightness: number;
@@ -65,6 +66,30 @@ interface Props {
   navigation?: { goBack: () => void };
 }
 export default function FilterScreen({ navigation }: Props) {
+  const { colors, isDark } = useTheme();
+  COLORS = {
+    ...COLORS,
+    bg: colors.background,
+    surface: colors.surface,
+    text: colors.text,
+    textPrimary: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    textDim: colors.textMuted,
+    textTertiary: colors.textMuted,
+    border: colors.border,
+    trackBg: colors.surface,
+    btnBg: colors.iconBg,
+    sheet: colors.surface,
+    compareBg: colors.surface,
+    yellow: colors.accent,
+    accent: colors.accent,
+    accentYellow: colors.accent,
+    pillBg: colors.iconBg,
+    trackEmpty: colors.border,
+  };
+  styles = makeStyles();
+
   const [preset, setPreset] = useState('Golden');
   const [compareOn, setCompareOn] = useState(false);
   const [adjust, setAdjust] = useState<Adjust>({
@@ -172,7 +197,8 @@ export default function FilterScreen({ navigation }: Props) {
     </SafeAreaView>
   );
 }
-const styles = StyleSheet.create({
+function makeStyles() {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: 32 },
   // Top bar
@@ -345,3 +371,5 @@ const styles = StyleSheet.create({
   },
   toggleThumbOn: { alignSelf: 'flex-end' },
 });
+}
+let styles = makeStyles();

@@ -9,7 +9,8 @@ import {
   View,
   ActivityIndicator,
 } from "react-native";
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
+import { useTheme, ThemeColors } from "./Contexts/ThemeContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +21,8 @@ type RootStackParamList = {
   verifyemail: { email: string };
 };
 function ForgotPassword(){
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [email, setEmail] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -80,7 +83,7 @@ function ForgotPassword(){
   
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#13151A" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -90,7 +93,7 @@ function ForgotPassword(){
             style={styles.backBtn}
             onPress={() => navigation.navigate("signin")}
           >
-            <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={ms(20)} color={colors.text} />
           </Pressable>
           <Text style={styles.heading}>Forgot Password </Text>
           <Text style={styles.info}>Enter your email address</Text>
@@ -106,13 +109,13 @@ function ForgotPassword(){
             <Ionicons
               name="mail-outline"
               size={ms(18)}
-              color="#ccc"
+              color={colors.textMuted}
               style={styles.inputIcon}
             />
             <TextInput
               style={styles.input}
               placeholder="Email"
-              placeholderTextColor="#cccccc"
+              placeholderTextColor={colors.textMuted}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -124,7 +127,7 @@ function ForgotPassword(){
             
             {/* error icon */}
             {touched && error ? (
-              <Ionicons name="alert-circle" size={ms(18)} color="#eb4343" />
+              <Ionicons name="alert-circle" size={ms(18)} color={colors.danger} />
             ) : null}
           </View>
           {/* Error message */}
@@ -146,7 +149,7 @@ function ForgotPassword(){
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#1A0E00" />
+            <ActivityIndicator size="small" color={colors.accentOn} />
           ) : (
             <Text style={styles.ctaText}>Request password reset</Text>
           )}
@@ -156,23 +159,24 @@ function ForgotPassword(){
   );
 };
 export default ForgotPassword;
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#13151c",
+    backgroundColor: c.background,
     paddingHorizontal: s(24),
   },
   heading: {
     fontSize: s(30),
     marginTop: vs(1),
-    color: "#ffffff",
+    color: c.text,
     fontWeight: "600",
     marginBottom: vs(15),
     lineHeight: s(46),
   },
   info: {
     fontSize: s(15),
-    color: "#ccc",
+    color: c.textMuted,
     marginBottom: s(50),
   },
   backBtn: {
@@ -182,13 +186,13 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: ms(14),
-    color: "#FFFFFF",
+    color: c.text,
     padding: 0,
   },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1e1e1e",
+    backgroundColor: c.surface,
     borderRadius: s(10),
     paddingHorizontal: s(12),
     paddingVertical: vs(12),
@@ -198,7 +202,7 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   inputError: {
-    borderColor: "#eb4343",
+    borderColor: c.danger,
   },
   inputSuccess: {
     borderColor: "#4CAF50",
@@ -208,7 +212,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: ms(14),
-    color: "#eb4343",
+    color: c.danger,
     marginBottom: vs(10),
     marginLeft: s(4),
      marginTop:s(10),
@@ -222,7 +226,7 @@ const styles = StyleSheet.create({
     marginTop:s(10),
   },
   cta: {
-    backgroundColor: "#F5A623",
+    backgroundColor: c.accent,
     borderRadius: s(50),
     paddingVertical: vs(11),
     alignItems: "center",
@@ -235,6 +239,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: ms(16),
     fontWeight: "600",
-    color: "#1A0E00",
+    color: c.accentOn,
   },
 });
+}

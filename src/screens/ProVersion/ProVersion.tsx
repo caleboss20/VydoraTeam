@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useMemo } from "react";
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -79,6 +81,8 @@ const PLAN_DETAILS: Record<
 const PAYMENT_CALLBACK_MATCH = '/payment/callback';
 
 export default function ProScreen({ navigation }: any) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('yearlyDiscount');
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0); // 0 to 1
@@ -419,7 +423,8 @@ export default function ProScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1A1A1A',
@@ -515,7 +520,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   brandPro: {
-    color: '#F2C200',
+    color: c.accent,
     fontSize: ms(20),
     fontWeight: '700',
     fontStyle: 'italic',
@@ -544,7 +549,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '22%',
     borderRadius: vs(1.5),
-    backgroundColor: '#F2C200',
+    backgroundColor: c.accent,
   },
   scrubberThumb: {
     position: 'absolute',
@@ -552,7 +557,7 @@ const styles = StyleSheet.create({
     width: ms(10),
     height: ms(10),
     borderRadius: ms(5),
-    backgroundColor: '#F2C200',
+    backgroundColor: c.accent,
     marginLeft: -ms(5),
   },
   scrubberTime: {
@@ -561,7 +566,7 @@ const styles = StyleSheet.create({
     marginTop: vs(6),
   },
   sheet: {
-    backgroundColor: '#000',
+    backgroundColor: c.background,
     paddingHorizontal: s(16),
     paddingTop: vs(18),
     paddingBottom: vs(24),
@@ -582,7 +587,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   planCardSelected: {
-    borderColor: '#F2C200',
+    borderColor: c.accent,
   },
   planCardWithBadge: {
     position: 'relative',
@@ -657,3 +662,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+}

@@ -8,6 +8,7 @@
  * Styles / layout below are untouched — only the data + handlers are wired.
  */
 import React, { useState, useMemo, useCallback } from "react";
+import { useTheme, ThemeColors, darkColors } from "../Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -19,6 +20,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -48,6 +50,7 @@ interface Member {
   role: Role;
   online: boolean;
   isMe?: boolean;
+  avatarUrl?: string;
 }
 interface Invite {
   id: string;
@@ -62,6 +65,7 @@ interface RoleColorSet {
 interface AvatarProps {
   name: string;
   online?: boolean;
+  avatarUrl?: string;
 }
 interface RoleBadgeProps {
   role: Role;
@@ -75,11 +79,16 @@ type TeamMembersRoute = RouteProp<
 // ─────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────
-/** Role badge colours — mirrors what the Figma design uses */
-const ROLE_COLORS: Record<Role, RoleColorSet> = {
+/** Role badge colours — dark / light variants */
+const ROLE_COLORS_DARK: Record<Role, RoleColorSet> = {
   Owner: { bg: "#2A2305", text: "#F5C518" },
   Editor: { bg: "#0A2620", text: "#4ECBA4" },
   Viewer: { bg: "#1E1E1E", text: "#9E9E9E" },
+};
+const ROLE_COLORS_LIGHT: Record<Role, RoleColorSet> = {
+  Owner: { bg: "#FFF8E0", text: "#B8860B" },
+  Editor: { bg: "#E8F8F3", text: "#0D9488" },
+  Viewer: { bg: "#F0F0F2", text: "#71717A" },
 };
 /** All assignable roles (Owner is excluded from the picker — you can't promote to owner) */
 const ASSIGNABLE_ROLES: Role[] = ["Editor", "Viewer"];
@@ -100,7 +109,11 @@ function formatSentAgo(joinedAt?: string): string {
 }
 
 /** Map an ACTIVE API member into the row shape this screen already renders. */
-function toUiMember(m: ApiMember, currentUserId?: string | null): Member {
+function toUiMember(
+  m: ApiMember,
+  currentUserId?: string | null,
+  selfAvatarUrl?: string | null
+): Member {
   const isMe = !!currentUserId && m.userId === currentUserId;
   return {
     id: m.id,
@@ -109,6 +122,7 @@ function toUiMember(m: ApiMember, currentUserId?: string | null): Member {
     role: m.role as Role,
     online: !!m.online,
     isMe,
+    avatarUrl: m.avatarUrl || (isMe ? selfAvatarUrl || undefined : undefined),
   };
 }
 
@@ -125,13 +139,17 @@ function toUiInvite(m: ApiMember): Invite {
 // ─────────────────────────────────────────────
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────
-/** Circular avatar with online dot */
-function Avatar({ name, online }: AvatarProps) {
+/** Circular avatar with online dot — uses profile photo when available. */
+function Avatar({ name, online, avatarUrl }: AvatarProps) {
   return (
     <View style={styles.avatarWrapper}>
-      <View style={[styles.avatar, { backgroundColor: avatarBg(name) }]}>
-        <Text style={styles.avatarText}>{initials(name)}</Text>
-      </View>
+      {avatarUrl ? (
+        <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+      ) : (
+        <View style={[styles.avatar, { backgroundColor: avatarBg(name) }]}>
+          <Text style={styles.avatarText}>{initials(name)}</Text>
+        </View>
+      )}
       {online !== undefined && (
         <View style={[styles.onlineDot, { backgroundColor: online ? "#4ECBA4" : "#555" }]} />
       )}
@@ -140,10 +158,12 @@ function Avatar({ name, online }: AvatarProps) {
 }
 /** Coloured role pill */
 function RoleBadge({ role }: RoleBadgeProps) {
-  const colors = ROLE_COLORS[role] ?? ROLE_COLORS.Viewer;
+  const { isDark } = useTheme();
+  const palette = isDark ? ROLE_COLORS_DARK : ROLE_COLORS_LIGHT;
+  const roleColors = palette[role] ?? palette.Viewer;
   return (
-    <View style={[styles.roleBadge, { backgroundColor: colors.bg }]}>
-      <Text style={[styles.roleBadgeText, { color: colors.text }]}>{role}</Text>
+    <View style={[styles.roleBadge, { backgroundColor: roleColors.bg }]}>
+      <Text style={[styles.roleBadgeText, { color: roleColors.text }]}>{role}</Text>
     </View>
   );
 }
@@ -151,6 +171,8 @@ function RoleBadge({ role }: RoleBadgeProps) {
 // MAIN SCREEN
 // ─────────────────────────────────────────────
 export default function TeamMembersScreen() {
+  const { colors, isDark } = useTheme();
+  styles = makeStyles(colors);
   const navigation = useNavigation<any>();
   const route = useRoute<TeamMembersRoute>();
   const { user } = useAuth();
@@ -171,6 +193,7 @@ export default function TeamMembersScreen() {
   const [search, setSearch] = useState<string>("");
   /** Local override so Resend can flip "sentAgo" to "just now" without a backend resend API. */
   const [resentIds, setResentIds] = useState<Record<string, true>>({});
+  const ROLE_COLORS = isDark ? ROLE_COLORS_DARK : ROLE_COLORS_LIGHT;
   /* ── context menu state ── */
   const [menuVisible, setMenuVisible] = useState<boolean>(false);
   const [menuTarget, setMenuTarget] = useState<Member | null>(null);
@@ -191,9 +214,13 @@ export default function TeamMembersScreen() {
   const members: Member[] = useMemo(
     () =>
       apiMembers
-        .filter((m) => (m.status || "ACTIVE") !== "INVITED")
-        .map((m) => toUiMember(m, user?.id)),
-    [apiMembers, user?.id]
+        .filter(
+          (m) =>
+            (m.status || "ACTIVE") !== "INVITED" &&
+            m.status !== "PENDING_APPROVAL"
+        )
+        .map((m) => toUiMember(m, user?.id, user?.avatarUrl)),
+    [apiMembers, user?.id, user?.avatarUrl]
   );
 
   const invites: Invite[] = useMemo(
@@ -269,7 +296,7 @@ export default function TeamMembersScreen() {
   // ─────────────────────────────────────────────
   const renderMember = (item: Member) => (
     <View style={styles.memberRow} key={item.id}>
-      <Avatar name={item.name} online={item.online} />
+      <Avatar name={item.name} online={item.online} avatarUrl={item.avatarUrl} />
       <View style={styles.memberInfo}>
         <Text style={styles.memberName}>{item.name}</Text>
         <Text style={styles.memberEmail}>{item.email}</Text>
@@ -367,7 +394,11 @@ export default function TeamMembersScreen() {
           <View style={styles.menuCard}>
             {/* Member header inside sheet */}
             <View style={styles.menuHeader}>
-              <Avatar name={menuTarget?.name ?? ""} online={undefined} />
+              <Avatar
+                name={menuTarget?.name ?? ""}
+                online={undefined}
+                avatarUrl={menuTarget?.avatarUrl}
+              />
               <View style={{ marginLeft: 12 }}>
                 <Text style={styles.menuName}>{menuTarget?.name}</Text>
                 <Text style={styles.menuEmail}>{menuTarget?.email}</Text>
@@ -450,11 +481,12 @@ export default function TeamMembersScreen() {
 // ─────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   /* ── Layout ── */
   safe: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: c.background,
   },
   scroll: {
     flex: 1,
@@ -470,7 +502,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: "#111111",
+    backgroundColor: c.background,
   },
   backBtn: {
     width: 36,
@@ -481,7 +513,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: c.text,
     letterSpacing: 0.2,
   },
   addBtn: {
@@ -494,7 +526,7 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1E1E1E",
+    backgroundColor: c.surface,
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
@@ -506,7 +538,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: "#FFF",
+    color: c.text,
     fontSize: 14,
     paddingVertical: 0,
   },
@@ -514,7 +546,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#555",
+    color: c.textMuted,
     letterSpacing: 1.1,
     marginBottom: 10,
   },
@@ -528,13 +560,13 @@ const styles = StyleSheet.create({
   inviteCount: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#F5C518",
+    color: c.accent,
   },
   /* ── Member row ── */
   memberRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: c.card,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -547,12 +579,12 @@ const styles = StyleSheet.create({
   memberName: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: c.text,
     marginBottom: 2,
   },
   memberEmail: {
     fontSize: 12,
-    color: "#666",
+    color: c.textMuted,
   },
   moreBtn: {
     marginLeft: 10,
@@ -566,13 +598,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111",
+    color: c.accentOn,
   },
   onlineDot: {
     width: 10,
@@ -582,7 +615,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     borderWidth: 2,
-    borderColor: "#1A1A1A",
+    borderColor: c.card,
   },
   /* ── Role badge ── */
   roleBadge: {
@@ -598,14 +631,14 @@ const styles = StyleSheet.create({
   resendText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#F5C518",
+    color: c.accent,
   },
   /* ── Invite button ── */
   inviteButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F5C518",
+    backgroundColor: c.accent,
     borderRadius: 14,
     height: 52,
     marginTop: 24,
@@ -613,7 +646,7 @@ const styles = StyleSheet.create({
   inviteButtonText: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#000",
+    color: c.background,
   },
   /* ── Modal overlay ── */
   modalOverlay: {
@@ -624,7 +657,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   menuCard: {
-    backgroundColor: "#1E1E1E",
+    backgroundColor: c.surface,
     borderRadius: 18,
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -638,16 +671,16 @@ const styles = StyleSheet.create({
   menuName: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#FFF",
+    color: c.text,
   },
   menuEmail: {
     fontSize: 12,
-    color: "#666",
+    color: c.textMuted,
     marginTop: 2,
   },
   menuDivider: {
     height: 1,
-    backgroundColor: "#2A2A2A",
+    backgroundColor: c.border,
     marginBottom: 4,
   },
   /* ── Menu items ── */
@@ -659,14 +692,14 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 15,
-    color: "#CCC",
+    color: c.textMuted,
     fontWeight: "500",
   },
   /* ── Role picker ── */
   rolePickerTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#888",
+    color: c.textMuted,
     letterSpacing: 0.8,
     paddingTop: 14,
     paddingBottom: 4,
@@ -678,3 +711,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 });
+}
+let styles = makeStyles(darkColors);
+

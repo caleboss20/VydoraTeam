@@ -1,3 +1,4 @@
+import { useTheme } from "../Contexts/ThemeContext";
 import React from 'react';
 import {
   View,
@@ -12,7 +13,7 @@ import { s, vs, ms } from "react-native-size-matters";
 import {  SafeAreaView,} from "react-native-safe-area-context"
 import { Ionicons } from '@expo/vector-icons';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const COLORS = {
+let COLORS: Record<string, string> = {
   bg: 'rgba(0,0,0,0.6)',
   sheet: '#1A1A1A',
   surface: '#222222',
@@ -21,7 +22,7 @@ const COLORS = {
   textMuted: '#888888',
   border: '#2A2A2A',
   handle: '#3A3A3A',
-} as const;
+};
 interface MenuItem {
   key: string;
   label: string;
@@ -73,6 +74,30 @@ interface Props {
   };
 }
 export default function MoreScreen({ navigation }: Props) {
+  const { colors, isDark } = useTheme();
+  COLORS = {
+    ...COLORS,
+    bg: colors.background,
+    surface: colors.surface,
+    text: colors.text,
+    textPrimary: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    textDim: colors.textMuted,
+    textTertiary: colors.textMuted,
+    border: colors.border,
+    trackBg: colors.surface,
+    btnBg: colors.iconBg,
+    sheet: colors.surface,
+    compareBg: colors.surface,
+    yellow: colors.accent,
+    accent: colors.accent,
+    accentYellow: colors.accent,
+    pillBg: colors.iconBg,
+    trackEmpty: colors.border,
+  };
+  styles = makeStyles();
+
   function handlePress(key: string) {
     navigation?.goBack();
     // Navigate to respective screen
@@ -137,7 +162,8 @@ export default function MoreScreen({ navigation }: Props) {
     </View>
   );
 }
-const styles = StyleSheet.create({
+function makeStyles() {
+  return StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -233,3 +259,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
+}
+let styles = makeStyles();

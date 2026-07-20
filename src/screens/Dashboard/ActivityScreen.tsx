@@ -19,9 +19,22 @@ import { useProject } from '../Contexts/projectContext'
 import { useAuth } from '../Contexts/Authcontext'
 import { projectService } from '../services/projectservice'
 import { Notification, NotificationType } from '../types'
+import { useTheme } from '../Contexts/ThemeContext'
 
 // Matches the Notifications Figma: dark feed, yellow accents, real events only.
-const C = {
+type ActPalette = {
+  bg: string;
+  accent: string;
+  textPrimary: string;
+  textSecondary: string;
+  divider: string;
+  filterActive: string;
+  filterActiveTxt: string;
+  filterInactive: string;
+  filterInactiveTxt: string;
+  unreadDot: string;
+};
+const DARK_C: ActPalette = {
   bg: '#111111',
   accent: '#F5C518',
   textPrimary: '#FFFFFF',
@@ -32,7 +45,21 @@ const C = {
   filterInactive: '#1E1E1E',
   filterInactiveTxt: '#CCCCCC',
   unreadDot: '#F5C518',
-} as const
+};
+const LIGHT_C: ActPalette = {
+  bg: '#F4F4F5',
+  accent: '#E5B800',
+  textPrimary: '#111111',
+  textSecondary: '#6B6B6B',
+  divider: '#E4E4E7',
+  filterActive: '#E5B800',
+  filterActiveTxt: '#1A0E00',
+  filterInactive: '#EEEEF0',
+  filterInactiveTxt: '#52525B',
+  unreadDot: '#E5B800',
+};
+let C: ActPalette = DARK_C;
+let styles: any = {};
 
 /** Design filters — Mentions reserved until @mentions exist (stays empty). */
 type FilterTab = 'All' | 'Mentions' | 'Comments' | 'Invites'
@@ -53,6 +80,7 @@ const TYPE_PROJECT_ICON: Record<
 > = {
   comment: 'chatbubble-outline',
   invite: 'people-outline',
+  invite_approval: 'shield-checkmark-outline',
   clip_upload: 'cloud-upload-outline',
   role_change: 'checkmark-circle-outline',
 }
@@ -90,7 +118,7 @@ function matchesFilter(n: Notification, tab: FilterTab): boolean {
   // Mentions: no backend type yet — never invent rows.
   if (tab === 'Mentions') return false
   if (tab === 'Comments') return n.type === 'comment'
-  if (tab === 'Invites') return n.type === 'invite'
+  if (tab === 'Invites') return n.type === 'invite' || n.type === 'invite_approval'
   return true
 }
 
@@ -140,6 +168,10 @@ const NotifCard: React.FC<{
 }
 
 const ActivityScreen: React.FC = () => {
+  const { isDark } = useTheme();
+  C = isDark ? DARK_C : LIGHT_C;
+  styles = createActivityStyles(C);
+
   const navigation = useNavigation<any>()
   const { token } = useAuth()
   const { projects, setCurrentProject } = useProject()
@@ -149,14 +181,18 @@ const ActivityScreen: React.FC = () => {
     markAsRead,
     markAllAsRead,
     fetchNotifications,
+    clearLatestInvite,
+    openPendingApprovals,
   } = useNotification()
   const [activeFilter, setActiveFilter] = React.useState<FilterTab>('All')
   const [refreshing, setRefreshing] = React.useState(false)
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchNotifications()
-    }, [fetchNotifications])
+      // Refresh once when the tab/screen gains focus — not on every render.
+      void fetchNotifications()
+      clearLatestInvite()
+    }, [fetchNotifications, clearLatestInvite])
   )
 
   // Strictly API rows — no placeholders, demos, or invented activity.
@@ -188,6 +224,14 @@ const ActivityScreen: React.FC = () => {
       await markAsRead(notification.id)
     }
     if (!notification.projectId) return
+    // Owner: reopen Zoom-style Admit modal from Activity.
+    if (notification.type === 'invite_approval') {
+      await openPendingApprovals(
+        notification.projectId,
+        notification.projectName
+      )
+      return
+    }
     const preferTeam =
       notification.type === 'invite' || notification.type === 'role_change'
     await openProject(notification.projectId, preferTeam)
@@ -207,7 +251,7 @@ const ActivityScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={C.bg} />
 
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Notifications</Text>
@@ -319,7 +363,8 @@ const ActivityScreen: React.FC = () => {
 
 export default ActivityScreen
 
-const styles = StyleSheet.create({
+function createActivityStyles(C: ActPalette) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: C.bg,
@@ -366,8 +411,8 @@ const styles = StyleSheet.create({
     height: vs(44),
   },
   filterPill: {
-    height: vs(32),
-    paddingHorizontal: s(14),
+    height: vs(30),
+    paddingHorizontal: s(16),
     borderRadius: ms(16),
     justifyContent: 'center',
     alignItems: 'center',
@@ -479,4 +524,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: vs(40),
   },
-})
+});
+}
+
+styles = createActivityStyles(DARK_C);

@@ -36,8 +36,8 @@ export interface Clip {
 }
 // ─── Member ──────────────────────────────────────────────────────────────────
 export type MemberRole = 'Owner' | 'Editor' | 'Viewer';
-/** Mirrors backend MemberStatus — INVITED rows power the Pending Invites list. */
-export type MemberInviteStatus = 'INVITED' | 'ACTIVE';
+/** Mirrors backend statuses — INVITED = invitee pending; PENDING_APPROVAL = waiting on Owner admit. */
+export type MemberInviteStatus = 'INVITED' | 'ACTIVE' | 'PENDING_APPROVAL';
 export interface Member {
   id: string;
   projectId: string;
@@ -49,7 +49,9 @@ export interface Member {
   online: boolean;
   /** Present on real API members; used by Team Members screen. */
   email?: string;
-  /** ACTIVE = full member; INVITED = pending invite (not yet accepted). */
+  /** Profile photo URL from the linked user account. */
+  avatarUrl?: string;
+  /** ACTIVE = full member; INVITED = invitee pending; PENDING_APPROVAL = host admit. */
   status?: MemberInviteStatus;
   /** ISO timestamp from backend `joinedAt` (invite sent / accepted time). */
   joinedAt?: string;
@@ -68,6 +70,11 @@ export interface Comment {
   /** Frame-accurate position on the project timeline (ms) */
   timecodeMs?: number;
   timecodeLabel?: string;
+  /** Normalized pin on the preview canvas (0–1). */
+  canvasX?: number;
+  canvasY?: number;
+  /** Reviewer marked this feedback done */
+  resolved?: boolean;
 }
 // ─── Chat message (project-wide group chat) ───────────────────────────────────
 export interface ChatMessage {
@@ -85,7 +92,12 @@ export interface ChatMessage {
   createdAt: string;
 }
 // ─── Notification ────────────────────────────────────────────────────────────
-export type NotificationType = 'invite' | 'comment' | 'clip_upload' | 'role_change';
+export type NotificationType =
+  | 'invite'
+  | 'invite_approval'
+  | 'comment'
+  | 'clip_upload'
+  | 'role_change';
 export interface Notification {
   id: string;
   type: NotificationType;
@@ -100,7 +112,47 @@ export interface Notification {
   projectName?: string;
 }
 // ─── Video Project (editor domain) ────────────────────────────────────────────
-export type TextAnimationType = 'fade' | 'slideUp' | 'slideDown' | 'zoom' | 'none'|'typewriter'|'pop'|'bounce'|'spin'|'flip'|'wave'|'glitch'|'sparkle'|'pulse'|'shake'|'jiggle'|'float'|'swing'|'rubberBand'|'tada'|'flash'|'hinge';
+export type TextAnimationType =
+  | 'fade'
+  | 'slideUp'
+  | 'slideDown'
+  | 'slideLeft'
+  | 'slideRight'
+  | 'zoom'
+  | 'none'
+  | 'typewriter'
+  | 'pop'
+  | 'bounce'
+  | 'bounceDrop'
+  | 'elastic'
+  | 'spin'
+  | 'flip'
+  | 'wave'
+  | 'glitch'
+  | 'sparkle'
+  | 'pulse'
+  | 'shake'
+  | 'jiggle'
+  | 'float'
+  | 'swing'
+  | 'rubberBand'
+  | 'tada'
+  | 'flash'
+  | 'hinge'
+  /** CapCut/VN linear wipe reveal (mask-style in-anim). */
+  | 'reveal'
+  /** Alight Motion–style ghost trail / echo. */
+  | 'ghost';
+
+/** How text composites over the video (Alight Motion Blending). */
+export type TextBlendMode = 'normal' | 'screen' | 'multiply' | 'add' | 'overlay';
+
+/** Word timing for true karaoke (highlight-in-line) captions. */
+export type KaraokeWord = {
+  text: string;
+  startMs: number;
+  endMs: number;
+};
 
 export type TextOverlay = {
   id: string;
@@ -117,6 +169,8 @@ export type TextOverlay = {
   y?:number;
   fontSize?:number;
   fontWeight?:'normal'|'bold';
+  /** RN font family (System, sans-serif, etc.). Preview uses it; export maps when possible. */
+  fontFamily?: string;
   align?:'left'|'center'|'right';
   /**
    * CapCut-style pill behind the text. Undefined / omit = no background.
@@ -128,11 +182,43 @@ export type TextOverlay = {
   backgroundRadius?:number;
   strokeColor?:string|undefined;
   strokeWidth?:number;
-  animationIn?:TextAnimationType;
-  animationOut?:TextAnimationType;
+  animationIn?: TextAnimationType;
+  animationOut?: TextAnimationType;
+  /** Loops while the text is on screen (bounce / pulse / float…). */
+  animationLoop?: TextAnimationType;
+  /** In/out duration in ms (VN-style Duration slider). Default ~500. */
+  animationDurationMs?: number;
+  /** Alight Motion–style blending over the plate. */
+  blendMode?: TextBlendMode;
+  /** Layer opacity 0–1 (Blending & Opacity panel). */
+  textOpacity?: number;
+  /**
+   * True karaoke: full line stays visible; the active word uses highlightColor.
+   * Word times are clip-local (same clock as startMs).
+   */
+  karaokeWords?: KaraokeWord[];
+  /** Active-word color for karaokeWords (default brand yellow). */
+  highlightColor?: string;
+  /**
+   * Motion-track / manual position diamonds (clip-local ms).
+   * When set, preview + export lerp x/y like media overlays.
+   */
+  keyframes?: TextPositionKeyframe[];
+  /**
+   * CapCut-style mask on text (Split / Linear reveal behind subject).
+   * Keyframe mask.centerX to walk the reveal line with the person.
+   */
+  mask?: OverlayMask;
+  /** Speaker diarization — colored / labeled by who spoke. */
+  speakerId?: string;
+  speakerLabel?: string;
+};
 
-
-
+/** Position track for text overlays (motion tracking / manual diamonds). */
+export type TextPositionKeyframe = {
+  timeMs: number;
+  x: number;
+  y: number;
 };
 
 export type VideoSegment = {
@@ -147,7 +233,22 @@ export type VideoSegment = {
 
 
 
-export type ClipTransitionType = 'none' | 'crossfade' | 'wipe' | 'slide' | 'zoom';
+export type ClipTransitionType =
+  | 'none'
+  | 'crossfade'
+  | 'wipe'
+  | 'slide'
+  | 'zoom'
+  | 'whip'
+  | 'glitch'
+  | 'dissolve'
+  | 'fadeblack'
+  | 'fadewhite'
+  | 'circle'
+  | 'radial'
+  | 'pixelate'
+  | 'smoothleft'
+  | 'smoothright';
 
 export interface ClipTransition {
   type: ClipTransitionType;
@@ -161,14 +262,57 @@ export interface ClipTransition {
  */
 export type SpeedCurveId = 'none' | 'montage' | 'hero' | 'bullet' | 'jumpcut';
 
+/** One camera angle in a synced multi-cam group (A-roll / B-roll). */
+export type CamAngle = {
+  id: string;
+  uri: string;
+  label: string;
+  /**
+   * Sync clock: primaryMediaTime = angleMediaTime + offsetMs.
+   * Cam A is usually 0; Cam B is the audio-correlation lag from sync.
+   */
+  offsetMs: number;
+  durationMs: number;
+  thumbnailUri?: string;
+};
+
+export type MultiCamGroup = {
+  groupId: string;
+  angles: CamAngle[];
+  /** Which angle this timeline piece is showing. */
+  angleId: string;
+};
+
+/**
+ * Colored blank sheet — intro/outro cards (e.g. “Welcome to Amalife Clinic”).
+ * Timeline duration = durationMs; no camera footage.
+ */
+export type TitleCardSettings = {
+  backgroundColor: string;
+  title: string;
+  subtitle?: string;
+  textColor?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  animationIn?: TextAnimationType;
+  animationLoop?: TextAnimationType;
+};
+
 export type VideoClip = {
   id: string;
+  /**
+   * Media URI. Empty / unused when {@link kind} === 'title'
+   * (solid color sheet generated on preview + export).
+   */
   uri: string;
   durationMs: number;
   width?: number;
   height?: number;
   thumbnailUri?: string;
   order: number;
+  /** Default video; `title` = blank colored page with text. */
+  kind?: 'video' | 'title';
+  titleCard?: TitleCardSettings;
   textOverlays?: TextOverlay[];
   trimStartMs?: number; // ADDED: defaults to 0 if unset
   trimEndMs?: number;   // ADDED: defaults to durationMs if unset
@@ -183,12 +327,170 @@ export type VideoClip = {
   /** Play the clip backwards. Baked on export; preview plays forward. */
   reversed?: boolean;
   filterId?:string;
+  /** CapCut-style motion/look effects beyond tint filters. */
+  effectId?: ClipEffectId;
+  /** 0–1 intensity for blur / vignette / shake / zoom punch. */
+  effectIntensity?: number;
+  /** One-tap cinematic bundle (flashback / dream / rewind…). */
+  movieEffectId?: MovieEffectId;
+  /** Manual color grade (eq / temperature) on top of the tint filter. */
+  colorGrade?: ColorGrade;
   cropRatioId?: string;   // references CropRatioPreset.id; undefined = uncropped/original
   cropOffsetX?: number;   // 0 to 1, horizontal position of the crop box within the frame
   cropOffsetY?: number;   // 0 to 1, vertical position of the crop box within the frame
   cropZoom?: number;      // 1 = no zoom, >1 = zoomed in, used with offsets to pan around
   transitionOut?: ClipTransition;
+  /** Synced multi-cam angles; director cuts switch angleId + remap trims. */
+  multiCam?: MultiCamGroup;
+  /** Deshake / stabilize (baked on export). */
+  stabilize?: StabilizeSettings;
+  /** 9:16 smart reframe that follows motion/face energy over time. */
+  autoReframe?: AutoReframeSettings;
+  /** Per-clip mix bus: NR, speech enhance, EQ, compressor. */
+  audioFx?: ClipAudioFx;
+  /**
+   * CapCut-style property keyframes (clip-local ms). Scalars above are the
+   * baseline when a curve is empty.
+   */
+  volumeKeyframes?: ScalarKeyframe[];
+  /** Clip opacity over time (0–1); preview + export fade the picture. */
+  opacity?: number;
+  opacityKeyframes?: ScalarKeyframe[];
+  /**
+   * Camera-tilt rotation in degrees (−180…180). Filmora-style Dutch angle /
+   * “turn the camera”. Preview + export fill the frame (no black corners).
+   */
+  rotation?: number;
+  /** Animate the camera tilt over clip-local time (degrees). */
+  rotationKeyframes?: ScalarKeyframe[];
+  /**
+   * Canva-style free placement on the canvas (normalized center 0–1).
+   * Defaults 0.5 / 0.5 — drag the person wherever you want.
+   */
+  layoutX?: number;
+  layoutY?: number;
+  /** 1 = fill cover; <1 smaller floating layer; >1 zoomed. */
+  layoutScale?: number;
+  /** Mirror horizontally / vertically. */
+  flipH?: boolean;
+  flipV?: boolean;
+  /**
+   * Background remover — chromakey cut so the subject floats on the blank
+   * canvas (green/blue/custom). Auto uses a sampled edge key on export.
+   */
+  bgRemove?: BgRemoveSettings;
+  colorGradeKeyframes?: ColorGradeKeyframe[];
+  cropKeyframes?: CropKeyframe[];
+};
 
+/** Canva-style cutout — subject kept, backdrop keyed out onto canvasColor. */
+export type BgRemoveSettings = {
+  enabled: boolean;
+  mode: 'auto' | 'green' | 'blue' | 'custom';
+  /** Used when mode === custom (and as override). */
+  color?: string;
+  similarity?: number;
+  blend?: number;
+};
+
+/** Generic scalar diamond on the clip timeline. */
+export type ScalarKeyframe = {
+  timeMs: number;
+  value: number;
+};
+
+export type ColorGradeKeyframe = {
+  timeMs: number;
+  grade: ColorGrade;
+};
+
+export type CropKeyframe = {
+  timeMs: number;
+  cropOffsetX: number;
+  cropOffsetY: number;
+  cropZoom: number;
+};
+
+/** Warp stabilizer — shakiness 0–1 (higher = stronger deshake). */
+export type StabilizeSettings = {
+  enabled: boolean;
+  shakiness?: number;
+};
+
+/** One keyframe for auto-reframe crop center (0–1 along the long axis). */
+export type ReframeKeyframe = {
+  timeMs: number;
+  /** Horizontal center of the 9:16 window in the source (0–1). */
+  x: number;
+};
+
+export type AutoReframeSettings = {
+  enabled: boolean;
+  /** Target aspect preset id — default tiktok (9:16). */
+  ratioId?: string;
+  keyframes?: ReframeKeyframe[];
+};
+
+/** Clip audio processing — preview approximates; export bakes with FFmpeg. */
+export type ClipAudioFx = {
+  /** 0–1 noise reduction strength (afftdn). */
+  noiseReduction?: number;
+  /** Presence boost + light compression for dialogue. */
+  enhanceSpeech?: boolean;
+  /** 3-band EQ gains in dB-ish units (−1…1 → ≈ −12…+12 dB). */
+  eqLow?: number;
+  eqMid?: number;
+  eqHigh?: number;
+  /** Compressor on/off. */
+  compressor?: boolean;
+  /** −40…−5 dB threshold (default −18). */
+  compThreshold?: number;
+  /** 1–8 ratio (default 3). */
+  compRatio?: number;
+};
+
+export const DEFAULT_AUDIO_FX: ClipAudioFx = {
+  noiseReduction: 0,
+  enhanceSpeech: false,
+  eqLow: 0,
+  eqMid: 0,
+  eqHigh: 0,
+  compressor: false,
+  compThreshold: -18,
+  compRatio: 3,
+};
+
+/** Motion / polish effects baked with FFmpeg (preview approximates). */
+export type ClipEffectId = 'none' | 'blur' | 'vignette' | 'shake' | 'zoomPunch';
+
+/** One-tap cinematic look bundles (see movieEffectsService). */
+export type MovieEffectId =
+  | 'none'
+  | 'flashback'
+  | 'dream'
+  | 'rewind'
+  | 'slowMo'
+  | 'memory'
+  | 'impact'
+  | 'vhs';
+
+/** Manual grade knobs — all centered at 0 = unchanged. */
+export type ColorGrade = {
+  /** -1 … 1 (0 = neutral) */
+  brightness: number;
+  /** -1 … 1 */
+  contrast: number;
+  /** -1 … 1 */
+  saturation: number;
+  /** -1 … 1 (cool ← → warm) */
+  temperature: number;
+};
+
+export const DEFAULT_COLOR_GRADE: ColorGrade = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  temperature: 0,
 };
 
 // ─── Media overlays (multi-track: PiP video, images/GIFs, emoji stickers) ────
@@ -221,6 +523,67 @@ export type VoiceoverClip = {
   volume: number;
 };
 
+/** Chroma-key (green/blue screen) settings for a media overlay. */
+export type ChromaKeySettings = {
+  enabled: boolean;
+  /** Key color hex, e.g. #00FF00. */
+  color: string;
+  /** 0.01–1 how aggressively to cut the key (FFmpeg similarity). */
+  similarity: number;
+  /** 0–1 edge softness (FFmpeg blend). */
+  blend: number;
+  /** Optional plate shown behind the keyed subject (preview + export). */
+  backgroundUri?: string;
+};
+
+/**
+ * CapCut-style mask on a media overlay (PiP / image).
+ * Coordinates are local to the overlay box (0–1). Soft edges use feather.
+ */
+export type OverlayMaskShape =
+  | 'none'
+  | 'circle'
+  | 'rectangle'
+  | 'linear'
+  | 'linearH'
+  | 'radial'
+  | 'heart'
+  | 'star'
+  | 'splitLR'
+  | 'splitTB'
+  | 'splitDiag';
+
+export type OverlayMaskKeyframe = {
+  timeMs: number;
+  centerX: number;
+  centerY: number;
+  scale: number;
+  rotation: number;
+};
+
+export type OverlayMask = {
+  enabled: boolean;
+  shape: OverlayMaskShape;
+  /** 0–1 edge softness ( CapCut feather ). */
+  feather: number;
+  /** Flip visible / hidden regions. */
+  invert: boolean;
+  /** Mask center inside the overlay (0–1). */
+  centerX: number;
+  centerY: number;
+  /** Mask size relative to overlay (0.15–1.6). */
+  scale: number;
+  /** Degrees — linear / split / rectangle. */
+  rotation: number;
+  /**
+   * When true, Track bakes subject motion onto the overlay (and keeps the
+   * mask locked to overlay-local center) — CapCut “follow”.
+   */
+  followMotion?: boolean;
+  /** Optional animated mask transform (preview + first-kf export). */
+  keyframes?: OverlayMaskKeyframe[];
+};
+
 /** An overlay element living on its own timeline track above the video. */
 export type MediaOverlay = {
   id: string;
@@ -237,6 +600,12 @@ export type MediaOverlay = {
   opacity: number;
   /** Kept sorted by timeMs. */
   keyframes?: OverlayKeyframe[];
+  /** Green/blue screen key — baked with FFmpeg chromakey on export. */
+  chromaKey?: ChromaKeySettings;
+  /** Shape / gradient mask (CapCut Mask tool). */
+  mask?: OverlayMask;
+  flipH?: boolean;
+  flipV?: boolean;
 };
 
 export type VideoProject = {
@@ -246,13 +615,28 @@ export type VideoProject = {
   createdAt: string; // ISO timestamp
   updatedAt: string; // ISO timestamp
   clips: VideoClip[];
+  /**
+   * Canva blank canvas behind free-placed clips (hex). Default #000000.
+   * Shows through when layoutScale < 1 or BG remover is on.
+   */
+  canvasColor?: string;
   coverThumbnailUri?: string;
   totalDurationMs: number;
   backgroundMusic?: BackgroundMusic;
+  /**
+   * Multi music / SFX tracks on the timeline. Prefer this over singular
+   * `backgroundMusic` (kept in sync as tracks[0] for older code paths).
+   */
+  musicTracks?: BackgroundMusic[];
   /** Multi-track media overlays (PiP video, images/GIFs, emoji stickers). */
   overlays?: MediaOverlay[];
   /** Recorded narration takes on their own timeline track. */
   voiceovers?: VoiceoverClip[];
+  /**
+   * Beat / cut markers on the project timeline (ms). Split snaps to the
+   * nearest marker within a small window — CapCut-style beat sync.
+   */
+  beatMarkersMs?: number[];
 };
 
 export interface VideoFilter{
@@ -338,13 +722,31 @@ export type VersionHistoryScreenParams = {
 
 
 
-export interface BackgroundMusic{
-uri:string;
-volume:number;
-startMs:number;
-trimStartMs?:number;
-trimEndMs?:number;
-durationMs?:number;
+export interface BackgroundMusic {
+  /** Stable id once on a multi-track list. */
+  id?: string;
+  uri: string;
+  volume: number;
+  startMs: number;
+  trimStartMs?: number;
+  trimEndMs?: number;
+  durationMs?: number;
+  /** CapCut-style fade in at the start of the audible window (ms). */
+  fadeInMs?: number;
+  /** CapCut-style fade out at the end of the audible window (ms). */
+  fadeOutMs?: number;
+  /**
+   * When true (default), music volume dips under overlapping voiceovers
+   * on export (and lightly in preview).
+   */
+  duckUnderVoiceover?: boolean;
+  /**
+   * Volume multiplier while ducked (0–1). Default ~0.28.
+   * Lower = more ducking under VO.
+   */
+  duckLevel?: number;
+  /** Optional display name (library track title). */
+  title?: string;
 }
 
 

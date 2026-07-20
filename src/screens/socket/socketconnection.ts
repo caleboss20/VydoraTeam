@@ -36,9 +36,9 @@ import {
 } from './editorSync';
 
 export function useProjectSocket(projectId: string) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { fetchComments } = useComment();
-  const { setOnlineMembers } = useMember();
+  const { setOnlineMembers, setMemberOnline } = useMember();
   const { receiveMessage } = useMessage();
   const { applyRemoteProjectState, currentVideoProject } = useVideoProject();
   const clientRef = useRef<Client | null>(null);
@@ -48,16 +48,20 @@ export function useProjectSocket(projectId: string) {
   const handlersRef = useRef({
     fetchComments,
     setOnlineMembers,
+    setMemberOnline,
     receiveMessage,
     applyRemoteProjectState,
     currentVideoProject,
+    userId: user?.id as string | undefined,
   });
   handlersRef.current = {
     fetchComments,
     setOnlineMembers,
+    setMemberOnline,
     receiveMessage,
     applyRemoteProjectState,
     currentVideoProject,
+    userId: user?.id,
   };
 
   useEffect(() => {
@@ -82,12 +86,30 @@ export function useProjectSocket(projectId: string) {
         // to this destination is also what registers THIS user as online.
         client.subscribe(`/topic/project/${projectId}/presence`, (msg: IMessage) => {
           try {
-            const ids = JSON.parse(msg.body) as string[];
+            const raw = JSON.parse(msg.body);
+            const ids: string[] = Array.isArray(raw)
+              ? raw.map((id) => String(id))
+              : Array.isArray(raw?.userIds)
+                ? raw.userIds.map((id: unknown) => String(id))
+                : [];
             handlersRef.current.setOnlineMembers(projectId, ids);
+            // Keep yourself online even if the first broadcast raced without you.
+            const myId = handlersRef.current.userId;
+            if (myId && !ids.includes(myId)) {
+              handlersRef.current.setMemberOnline(projectId, myId, true);
+            }
           } catch (e) {
             console.log('[Socket] bad presence payload', e);
           }
         });
+
+        // Optimistic self-presence: the subscribe broadcast can race ahead of
+        // the client subscription (or arrive before members are loaded). Mark
+        // this user online locally so the panel never shows "0 online" for you.
+        const myId = handlersRef.current.userId;
+        if (myId) {
+          handlersRef.current.setMemberOnline(projectId, myId, true);
+        }
 
         // Project group chat
         client.subscribe(`/topic/project/${projectId}/messages`, (msg: IMessage) => {

@@ -11,14 +11,15 @@ import {
   Alert,
   PanResponder,
   Animated,
-} from "react-native";  
+  TextInput,
+} from "react-native";
 import { useMember } from "../Contexts/memberContext";
 import CollaborationSidebar from "../components/Editorsidebar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { scale, verticalScale, moderateScale } from "react-native-size-matters";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useAudioPlayer } from "expo-audio"; // for background music playback,
+import { useAudioPlayer, setAudioModeAsync } from "expo-audio"; // music + VO mix with clip audio
 import { useEventListener } from "expo";
 import { useNavigation } from "@react-navigation/native";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -31,6 +32,8 @@ import {
   VideoSegment,
   MediaOverlay,
   MediaOverlayType,
+  SpeedCurveId,
+  DEFAULT_COLOR_GRADE,
 } from "../types";
 import BottomToolbar from "../Tabbar/editTools";
 import { useComment } from "../Contexts/commentContext";
@@ -42,13 +45,62 @@ import EditToolPanel from "./EditToolPanel";
 import { FILTER_LIST, getFilterById } from "../services/FilterService";
 import FilterToolPanel from "./FilterPanelTool";
 import CropRatioPanel from "./cropRatioPanel"; 
+// CropOverlay source is currently stubbed/commented — keep optional until restored.
 // import CropOverlay from "./cropOverlay";
-import MusicToolPanel from "./MusicToolPanel"; // panel for picking/adjusting background music
+import MusicToolPanel from "./MusicToolPanel"; // multi-track music + fades + duck
 import TransitionPanel from "./TransitionPanel"; // CapCut-style transition picker between clips
 import CaptionsToolPanel from "./CaptionsToolPanel"; // AI auto-captions (Whisper)
+import SilenceToolPanel from "./SilenceToolPanel";
 import OverlayToolPanel from "./OverlayToolPanel"; // multi-track PiP/stickers/GIFs + keyframes
+import OverlayMaskView from "./OverlayMaskView";
+import MaskToolPanel from "./MaskToolPanel";
+import RotateToolPanel from "./RotateToolPanel";
+import CanvasToolPanel from "./CanvasToolPanel";
+import TitleCardPanel from "./TitleCardPanel";
+import AssembleToolPanel from "./AssembleToolPanel";
+import VoiceoverToolPanel from "./VoiceoverToolPanel"; // mic narration on the timeline
+import EffectsToolPanel from "./EffectsToolPanel";
+import ColorGradePanel from "./ColorGradePanel";
+import BeatsToolPanel from "./BeatsToolPanel";
+import ShortsToolPanel from "./ShortsToolPanel";
+import BrandKitPanel from "./BrandKitPanel";
+import MultiCamToolPanel from "./MultiCamToolPanel";
+import StabilizeToolPanel from "./StabilizeToolPanel";
+import StockToolPanel from "./StockToolPanel";
+import MotionTrackPanel from "./MotionTrackPanel";
+import MovieEffectsPanel from "./MovieEffectsPanel";
+import TemplatesPanel from "./TemplatesPanel";
+import CommentComposerBubble from "./CommentComposerBubble";
+import { clipService } from "../services/clipService";
+import { editTemplateService } from "../services/editTemplateService";
+import { curveAverageSpeed } from "../services/speedCurves";
+import { getAnimatedTextProps } from "../services/textAnimationUtils";
 import { captionService } from "../services/captionService";
+import { buildCaptionOverlays, CaptionStyleId } from "../services/captionStylePresets";
+import { silenceService } from "../services/silenceService";
+import { beatDetectService } from "../services/beatDetectService";
+import { shortsService, ShortSuggestion } from "../services/shortsService";
+import {
+  brandKitService,
+  BrandKit,
+} from "../services/brandKitService";
+import { multicamService } from "../services/multicamService";
+import { uploadService } from "../services/uploadService";
+import { reframeService } from "../services/reframeService";
+import { motionTrackService } from "../services/motionTrackService";
+import {
+  sampleClipVolume,
+  sampleClipOpacity,
+  sampleClipColorGrade,
+  sampleClipRotation,
+  coverScaleForRotation,
+  sampleTextPosition,
+} from "../services/clipKeyframes";
+import { DEFAULT_AUDIO_FX } from "../types";
 import { CROP_RATIO_PRESETS } from '../services/cropService';
+import { getMusicTracks, musicAudibleMs } from "../services/BackgroundmusicService";
+import { nearestBeatMarker } from "../services/beatMarkerService";
+import { BlurView } from "expo-blur";
 
 
 //for the exporting//
@@ -56,8 +108,10 @@ import { ExportConfirmModal } from "../components/ExportModal";
 import { ExportProgressSheet } from "../components/Exportsheet";
 import { exportService } from "../services/exportService";
 import { getRandomQuote } from "../../../constants/exportQuotes";
+import { useAppPalette } from '../Contexts/ThemeContext';
 
-const COLORS = {
+
+let COLORS: Record<string, string> = {
   background: "#0B0D13",
   surface: "#151821",
   // border: '#222633',
@@ -158,6 +212,52 @@ function ClipTrimmer({
   const rightPanResponder = useRef(createPanResponder("right")).current;
 
   const clipSeconds = Math.max(1, Math.ceil(clip.durationMs / 1000));
+  const isTitle = clip.kind === 'title';
+  const titleBg = clip.titleCard?.backgroundColor ?? '#000000';
+  const titleLabel = clip.titleCard?.title ?? 'Title';
+  const titleFg =
+    clip.titleCard?.textColor ??
+    (['#FFFFFF', '#F5C518'].includes(titleBg.toUpperCase())
+      ? '#0B0D13'
+      : '#FFFFFF');
+
+  if (isTitle && !isActive) {
+    const trimStart = clip.trimStartMs ?? 0;
+    const trimEnd = clip.trimEndMs ?? clip.durationMs;
+    const w = Math.max(
+      PX_PER_SECOND * 0.5,
+      ((trimEnd - trimStart) / 1000) * PX_PER_SECOND
+    );
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        style={{
+          width: w,
+          height: verticalScale(46),
+          backgroundColor: titleBg,
+          borderRadius: scale(4),
+          opacity: 0.75,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: scale(6),
+          borderWidth: 1,
+          borderColor: 'rgba(245,197,24,0.35)',
+        }}
+      >
+        <Text
+          numberOfLines={1}
+          style={{
+            color: titleFg,
+            fontSize: moderateScale(9),
+            fontWeight: '700',
+          }}
+        >
+          {titleLabel}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
 
   if (!isActive) {
   const trimStart = clip.trimStartMs ?? 0;
@@ -218,8 +318,30 @@ function ClipTrimmer({
         height: verticalScale(46),
       }}
     >
-      {/* Filmstrip */}
-      {thumbnails.length > 0 ? (
+      {/* Filmstrip — solid sheet for title cards */}
+      {isTitle ? (
+        <View
+          style={{
+            width: PX_PER_SECOND * clipSeconds,
+            height: verticalScale(46),
+            backgroundColor: titleBg,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: scale(8),
+          }}
+        >
+          <Text
+            numberOfLines={1}
+            style={{
+              color: titleFg,
+              fontSize: moderateScale(10),
+              fontWeight: '800',
+            }}
+          >
+            {titleLabel}
+          </Text>
+        </View>
+      ) : thumbnails.length > 0 ? (
         thumbnails.map((uri, i) => (
           <Image
             key={i}
@@ -324,85 +446,299 @@ function ClipTrimmer({
 function DraggableOverlay({
   overlay,
   previewSize,
+  localTimeMs,
+  isEditing,
   onTap,
   onDragEnd,
+  onChangeText,
 }: {
   overlay: TextOverlay;
   previewSize: { width: number; height: number };
+  /** Clip-local time — drives entrance animation (typewriter / pop / fade…). */
+  localTimeMs: number;
+  /** CapCut-style: type directly on the preview box. */
+  isEditing?: boolean;
   onTap: () => void;
   onDragEnd: (x: number, y: number) => void;
+  onChangeText?: (text: string) => void;
 }) {
-  const startXRef = useRef((overlay.x ?? 0.5) * previewSize.width);
-  const startYRef = useRef((overlay.y ?? 0.5) * previewSize.height);
+  const sampled = sampleTextPosition(
+    overlay.keyframes,
+    overlay.x ?? 0.5,
+    overlay.y ?? 0.5,
+    localTimeMs
+  );
+  const startXRef = useRef(sampled.x * previewSize.width);
+  const startYRef = useRef(sampled.y * previewSize.height);
   const [pos, setPos] = useState({
-    x: (overlay.x ?? 0.5) * previewSize.width,
-    y: (overlay.y ?? 0.5) * previewSize.height,
+    x: sampled.x * previewSize.width,
+    y: sampled.y * previewSize.height,
   });
+  const [dragging, setDragging] = useState(false);
   const movedRef = useRef(false);
+  const isEditingRef = useRef(!!isEditing);
+  const posRef = useRef(pos);
+  const previewSizeRef = useRef(previewSize);
+  const onTapRef = useRef(onTap);
+  const onDragEndRef = useRef(onDragEnd);
+  isEditingRef.current = !!isEditing;
+  posRef.current = pos;
+  previewSizeRef.current = previewSize;
+  onTapRef.current = onTap;
+  onDragEndRef.current = onDragEnd;
   useEffect(() => {
+    if (dragging) return;
     setPos({
-      x: (overlay.x ?? 0.5) * previewSize.width,
-      y: (overlay.y ?? 0.5) * previewSize.height,
+      x: sampled.x * previewSize.width,
+      y: sampled.y * previewSize.height,
     });
-  }, [overlay.x, overlay.y, previewSize.width, previewSize.height]);
+  }, [sampled.x, sampled.y, previewSize.width, previewSize.height, dragging]);
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => !isEditingRef.current,
+      onMoveShouldSetPanResponder: () => !isEditingRef.current,
       onPanResponderGrant: () => {
-        startXRef.current = pos.x;
-        startYRef.current = pos.y;
+        startXRef.current = posRef.current.x;
+        startYRef.current = posRef.current.y;
         movedRef.current = false;
+        setDragging(true);
       },
       onPanResponderMove: (_, gesture) => {
         if (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4) {
           movedRef.current = true;
         }
-        const nextX = Math.max(0, Math.min(previewSize.width, startXRef.current + gesture.dx));
-        const nextY = Math.max(0, Math.min(previewSize.height, startYRef.current + gesture.dy));
+        const size = previewSizeRef.current;
+        const nextX = Math.max(0, Math.min(size.width, startXRef.current + gesture.dx));
+        const nextY = Math.max(0, Math.min(size.height, startYRef.current + gesture.dy));
         setPos({ x: nextX, y: nextY });
       },
       onPanResponderRelease: () => {
+        setDragging(false);
         if (movedRef.current) {
-          const normX = pos.x / previewSize.width;
-          const normY = pos.y / previewSize.height;
-          onDragEnd(normX, normY);
+          const size = previewSizeRef.current;
+          const normX = posRef.current.x / size.width;
+          const normY = posRef.current.y / size.height;
+          onDragEndRef.current(normX, normY);
         } else {
-          onTap();
+          onTapRef.current();
         }
       },
     })
   ).current;
+
+  const elapsedMs = Math.max(0, localTimeMs - overlay.startMs);
+  const anim = isEditing
+    ? {
+        opacity: 1,
+        transform: [] as { scale?: number; translateY?: number; translateX?: number; rotate?: string }[],
+        displayText: overlay.text || "",
+        ghost: null as null | { opacity: number; translateX: number; translateY: number },
+      }
+    : getAnimatedTextProps(overlay, elapsedMs);
+  const karaokeWords = isEditing ? undefined : overlay.karaokeWords;
+  // Use the stored pt size directly so the slider (14–120) maps 1:1 on preview.
+  // (scale() was crushing large sizes and TextInput often ignores live fontSize.)
+  const fontPx = Math.max(10, Math.round(overlay.fontSize ?? 24));
+  const baseStyle = {
+    color: overlay.color ?? "#FFFFFF",
+    fontSize: fontPx,
+    fontWeight: (overlay.fontWeight === "bold" ? "700" : "400") as "700" | "400",
+    fontFamily: overlay.fontFamily,
+    textAlign: (overlay.align ?? "center") as "center" | "left" | "right",
+  };
+  const pillBg = overlay.backgroundColor
+    ? `${overlay.backgroundColor}${Math.round((overlay.backgroundOpacity ?? 0.6) * 255)
+        .toString(16)
+        .padStart(2, "0")}`
+    : "transparent";
+  const textMasked =
+    !isEditing &&
+    !!overlay.mask?.enabled &&
+    overlay.mask.shape !== "none";
+  const maskBoxW = Math.max(160, fontPx * 8);
+  const maskBoxH = Math.max(64, fontPx * 2.4);
+  const padH = scale(10);
+  const padV = verticalScale(6);
+  const pillRadius = scale(overlay.backgroundRadius ?? 8);
+
+  // Dual-layer editor: styled Text always reflects size/font/color (RN TextInput
+  // often freezes fontSize after the first keystroke). Transparent TextInput on top.
+  const editorBox = (
+    <View
+      style={{
+        minWidth: scale(120),
+        maxWidth: previewSize.width * 0.85,
+        backgroundColor: pillBg === "transparent" ? "rgba(0,0,0,0.25)" : pillBg,
+        borderRadius: pillRadius,
+        paddingHorizontal: padH,
+        paddingVertical: padV,
+        borderWidth: 1.5,
+        borderColor: COLORS.yellow,
+        overflow: "hidden",
+      }}
+    >
+      <Text
+        pointerEvents="none"
+        allowFontScaling={false}
+        style={[
+          baseStyle,
+          {
+            opacity: overlay.text?.length ? 1 : 0,
+          },
+        ]}
+      >
+        {overlay.text?.length ? overlay.text : " "}
+      </Text>
+      {!overlay.text?.length ? (
+        <Text
+          pointerEvents="none"
+          allowFontScaling={false}
+          style={[
+            baseStyle,
+            {
+              position: "absolute",
+              left: padH,
+              right: padH,
+              top: padV,
+              color: "rgba(255,255,255,0.45)",
+            },
+          ]}
+        >
+          Type here
+        </Text>
+      ) : null}
+      <TextInput
+        key={`ti-${overlay.id}-fs${fontPx}-ff${overlay.fontFamily ?? "System"}`}
+        value={overlay.text ?? ""}
+        onChangeText={onChangeText}
+        multiline
+        autoFocus={isEditing}
+        allowFontScaling={false}
+        caretHidden={false}
+        selectionColor={COLORS.yellow}
+        underlineColorAndroid="transparent"
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          ...baseStyle,
+          color: "transparent",
+          paddingHorizontal: padH,
+          paddingVertical: padV,
+          textAlignVertical: "top",
+          backgroundColor: "transparent",
+        }}
+      />
+    </View>
+  );
+
+  const textInner = isEditing ? (
+    editorBox
+  ) : karaokeWords?.length ? (
+    <Text
+      allowFontScaling={false}
+      style={{
+        ...baseStyle,
+        backgroundColor: pillBg,
+        borderRadius: scale(overlay.backgroundRadius ?? 0),
+        paddingHorizontal: scale(10),
+        paddingVertical: verticalScale(5),
+        overflow: "hidden",
+      }}
+    >
+      {karaokeWords.map((w, i) => {
+        const on =
+          localTimeMs >= w.startMs && localTimeMs < Math.max(w.endMs, w.startMs + 80);
+        return (
+          <Text
+            key={`${w.startMs}-${i}`}
+            allowFontScaling={false}
+            style={{
+              color: on
+                ? overlay.highlightColor ?? COLORS.yellow
+                : overlay.color ?? "#FFFFFF",
+              fontSize: fontPx,
+              fontWeight: "700",
+              fontFamily: overlay.fontFamily,
+            }}
+          >
+            {w.text}
+            {i < karaokeWords.length - 1 ? " " : ""}
+          </Text>
+        );
+      })}
+    </Text>
+  ) : (
+    <Text
+      allowFontScaling={false}
+      style={{
+        ...baseStyle,
+        backgroundColor: pillBg,
+        borderRadius: scale(overlay.backgroundRadius ?? 0),
+        paddingHorizontal: scale(8),
+        paddingVertical: verticalScale(4),
+        overflow: "hidden",
+      }}
+    >
+      {anim.displayText || "Text"}
+    </Text>
+  );
+
   return (
     <View
-      {...panResponder.panHandlers}
+      {...(isEditing ? {} : panResponder.panHandlers)}
       style={[
         styles.overlayTextWrapper,
         {
           left: pos.x,
           top: pos.y,
+          opacity: anim.opacity,
+          transform: anim.transform,
+          zIndex: isEditing ? 40 : 12,
         },
       ]}
     >
-      <Text
-        style={{
-          color: overlay.color ?? "#FFFFFF",
-          fontSize: scale(overlay.fontSize ?? 24),
-          fontWeight: overlay.fontWeight === "bold" ? "700" : "400",
-          textAlign: overlay.align ?? "center",
-          // CapCut-style pill: #RRGGBB + 2-digit hex alpha from backgroundOpacity.
-          backgroundColor: overlay.backgroundColor
-            ? `${overlay.backgroundColor}${Math.round((overlay.backgroundOpacity ?? 0.6) * 255)
-                .toString(16)
-                .padStart(2, "0")}`
-            : "transparent",
-          borderRadius: scale(overlay.backgroundRadius ?? 0),
-          paddingHorizontal: scale(8),
-          paddingVertical: verticalScale(4),
-          overflow: "hidden",
-        }}
-      >
-        {overlay.text}
-      </Text>
+      {!isEditing && anim.ghost ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            opacity: anim.ghost.opacity,
+            transform: [
+              { translateX: anim.ghost.translateX },
+              { translateY: anim.ghost.translateY },
+            ],
+          }}
+        >
+          <Text
+            style={{
+              ...baseStyle,
+              color: overlay.color ?? "#FFFFFF",
+            }}
+          >
+            {anim.displayText}
+          </Text>
+        </View>
+      ) : null}
+      {textMasked ? (
+        <OverlayMaskView
+          width={maskBoxW}
+          height={maskBoxH}
+          mask={overlay.mask}
+          timelineMs={localTimeMs}
+        >
+          <View
+            style={{
+              width: maskBoxW,
+              height: maskBoxH,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {textInner}
+          </View>
+        </OverlayMaskView>
+      ) : (
+        textInner
+      )}
     </View>
   );
 }
@@ -517,30 +853,37 @@ function DraggableMediaOverlay({
     })
   ).current;
 
-  const { w, h } = OVERLAY_SIZES[overlay.type];
+  const base = OVERLAY_SIZES[overlay.type];
+  const chroma = !!overlay.chromaKey?.enabled;
+  const masked =
+    !!overlay.mask?.enabled &&
+    overlay.mask.shape !== "none" &&
+    overlay.type !== "emoji";
+  const w = chroma
+    ? Math.min(previewSize.width * 0.92, base.w * 2.4)
+    : masked
+      ? Math.min(previewSize.width * 0.85, base.w * 2.1)
+      : base.w;
+  const h = chroma
+    ? Math.min(previewSize.height * 0.92, base.h * 2.4)
+    : masked
+      ? Math.min(previewSize.height * 0.85, base.h * 2.1)
+      : base.h;
 
-  return (
-    <View
-      {...panResponder.panHandlers}
-      style={{
-        position: "absolute",
-        left: pos.x,
-        top: pos.y,
-        width: w,
-        height: h,
-        marginLeft: -w / 2,
-        marginTop: -h / 2,
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: t.opacity,
-        transform: [{ rotate: `${t.rotation}deg` }, { scale: t.scale }],
-        zIndex: 12,
-        borderWidth: isSelected ? 1.5 : 0,
-        borderColor: COLORS.yellow,
-        borderStyle: "dashed",
-        borderRadius: scale(10),
-      }}
-    >
+  const media = (
+    <>
+      {overlay.chromaKey?.enabled && overlay.chromaKey.backgroundUri ? (
+        <Image
+          source={{ uri: overlay.chromaKey.backgroundUri }}
+          style={{
+            position: "absolute",
+            width: "100%",
+            height: "100%",
+            borderRadius: scale(8),
+          }}
+          resizeMode="cover"
+        />
+      ) : null}
       {overlay.type === "emoji" ? (
         <Text style={{ fontSize: scale(42) }}>{overlay.uri}</Text>
       ) : overlay.type === "image" ? (
@@ -570,14 +913,123 @@ function DraggableMediaOverlay({
           <Ionicons name="videocam" size={scale(22)} color="#FFFFFF" />
         </View>
       )}
+    </>
+  );
+
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={{
+        position: "absolute",
+        left: pos.x,
+        top: pos.y,
+        width: w,
+        height: h,
+        marginLeft: -w / 2,
+        marginTop: -h / 2,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: t.opacity,
+        transform: [{ rotate: `${t.rotation}deg` }, { scale: t.scale }],
+        zIndex: 12,
+        borderWidth: isSelected ? 1.5 : 0,
+        borderColor: COLORS.yellow,
+        borderStyle: "dashed",
+        borderRadius: scale(10),
+      }}
+    >
+      {masked ? (
+        <OverlayMaskView
+          width={w}
+          height={h}
+          mask={overlay.mask}
+          timelineMs={timelineMs}
+        >
+          {media}
+        </OverlayMaskView>
+      ) : (
+        media
+      )}
+      {overlay.chromaKey?.enabled ? (
+        <View
+          style={{
+            position: "absolute",
+            top: scale(4),
+            right: scale(4),
+            backgroundColor: "rgba(0,0,0,0.65)",
+            borderRadius: scale(8),
+            paddingHorizontal: scale(6),
+            paddingVertical: verticalScale(2),
+            flexDirection: "row",
+            alignItems: "center",
+            gap: scale(4),
+          }}
+        >
+          <View
+            style={{
+              width: scale(8),
+              height: scale(8),
+              borderRadius: scale(4),
+              backgroundColor: overlay.chromaKey.color || "#00FF00",
+            }}
+          />
+          <Text style={{ color: "#fff", fontSize: moderateScale(9), fontWeight: "700" }}>
+            KEY
+          </Text>
+        </View>
+      ) : null}
+      {masked ? (
+        <View
+          style={{
+            position: "absolute",
+            top: scale(4),
+            left: scale(4),
+            backgroundColor: "rgba(0,0,0,0.65)",
+            borderRadius: scale(8),
+            paddingHorizontal: scale(6),
+            paddingVertical: verticalScale(2),
+          }}
+        >
+          <Text style={{ color: COLORS.yellow, fontSize: moderateScale(9), fontWeight: "700" }}>
+            MASK
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 export default function EditorScreen() {
+  const __palette = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    background: __palette.background,
+    surface: __palette.surface,
+    // Keep editor chrome accent border yellow in both themes.
+    border: __palette.yellow,
+    yellow: __palette.yellow,
+    textPrimary: __palette.textPrimary,
+    textSecondary: __palette.textSecondary,
+    textMuted: __palette.textMuted,
+  };
+  styles = __makeStyles();
+
   const navigation = useNavigation<any>();
 
-const { currentVideoProject, updateClipTrim, deleteClip, duplicateClip, splitClip } = useVideoProject();
+const {
+  currentVideoProject,
+  updateClipTrim,
+  deleteClip,
+  duplicateClip,
+  splitClip,
+  applyKeepRanges,
+  insertClipRange,
+  addTitleCard,
+  moveClip,
+  resetClipEdits,
+  attachMultiCam,
+  cutToMultiCamAngle,
+} = useVideoProject();
 const { currentProject } = useProject();
   const { getMembersForProject, fetchMembers } = useMember();
 
@@ -598,11 +1050,38 @@ const projectId = project?.id;
 
   const {
     updateClipSpeed,
+    updateClipSpeedCurve,
+    updateClipReversed,
     updateClipVolume,
+    updateClipOpacity,
+    addClipVolumeKeyframe,
+    clearClipVolumeKeyframes,
+    addClipOpacityKeyframe,
+    clearClipOpacityKeyframes,
+    updateClipRotation,
+    addClipRotationKeyframe,
+    clearClipRotationKeyframes,
+    setCanvasColor,
+    updateClipLayout,
+    applyDoubleExposure,
+    addClipColorGradeKeyframe,
+    clearClipColorGradeKeyframes,
+    addClipCropKeyframe,
+    clearClipCropKeyframes,
+    addTextPositionKeyframe,
+    clearTextPositionKeyframes,
+    appendRemoteClip,
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
     updateClipFilter,
+    updateClipEffect,
+    applyMovieEffect,
+    applyEditTemplate,
+    updateClipColorGrade,
+    updateClipStabilize,
+    updateClipAutoReframe,
+    updateClipAudioFx,
     updateClipCrop,
     updateClipSegments,
     updateClipTransition,
@@ -611,14 +1090,25 @@ const projectId = project?.id;
     removeMediaOverlay,
     addOverlayKeyframe,
     clearOverlayKeyframes,
-    setBackgroundMusic,
-    updateBackgroundMusic,
-    removeBackgroundMusic,
+    addMusicTrack,
+    updateMusicTrack,
+    removeMusicTrack,
+    addVoiceover,
+    updateVoiceover,
+    removeVoiceover,
+    addBeatMarker,
+    removeBeatMarker,
+    clearBeatMarkers,
+    mergeBeatMarkers,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useVideoProject();
 
-  const { fetchComments } = useComment();
+  const { fetchComments, addComment, getCommentsForProject } = useComment();
   const { fetchMessages, markProjectRead, getUnreadForProject } = useMessage();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
   // ── Real-time collaboration ──
   // Opens a STOMP connection for this project: live group chat, presence
@@ -637,6 +1127,42 @@ const projectId = project?.id;
 
   //for the video volume//
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
+  const [detectingBeats, setDetectingBeats] = useState(false);
+  const canvasDragStart = useRef({ x: 0.5, y: 0.5 });
+  const canvasLayoutRef = useRef({
+    clipId: '',
+    layoutX: 0.5,
+    layoutY: 0.5,
+    width: 1,
+    height: 1,
+  });
+  const canvasPan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          canvasDragStart.current = {
+            x: canvasLayoutRef.current.layoutX,
+            y: canvasLayoutRef.current.layoutY,
+          };
+        },
+        onPanResponderMove: (_, g) => {
+          const { width, height, clipId } = canvasLayoutRef.current;
+          if (!clipId || width < 2) return;
+          const nx = Math.max(
+            0.05,
+            Math.min(0.95, canvasDragStart.current.x + g.dx / width)
+          );
+          const ny = Math.max(
+            0.05,
+            Math.min(0.95, canvasDragStart.current.y + g.dy / height)
+          );
+          updateClipLayout(clipId, { layoutX: nx, layoutY: ny });
+        },
+      }),
+    [updateClipLayout]
+  );
 
   //for the selectedoverlay//s
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
@@ -691,10 +1217,26 @@ const handleExportConfirm = () => {
     }
   }, [projectId]);
 
-  const clips: VideoClip[] = project?.clips ?? [];
+  const clips: VideoClip[] = useMemo(
+    () =>
+      [...(project?.clips ?? [])].sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0)
+      ),
+    [project?.clips]
+  );
 
   //--------------for the sidebar--------------//
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  /** Canva-style comment pin mode on the preview. */
+  const [commentPinMode, setCommentPinMode] = useState(false);
+  const [commentComposer, setCommentComposer] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
+    null
+  );
 
   const onlineMembers = projectId
     ? getMembersForProject(projectId).filter((m) => m.online)
@@ -713,8 +1255,13 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
   //--------for media overlays (multi-track PiP/stickers/GIFs)-------------//
   const mediaOverlays = project?.overlays ?? [];
   const [selectedMediaOverlayId, setSelectedMediaOverlayId] = useState<string | null>(null);
+  const [motionTracking, setMotionTracking] = useState(false);
   const selectedMediaOverlay =
     mediaOverlays.find((o) => o.id === selectedMediaOverlayId) ?? null;
+
+  // Voiceover narration takes — project-timeline audio track.
+  const voiceovers = project?.voiceovers ?? [];
+  const [selectedVoiceoverId, setSelectedVoiceoverId] = useState<string | null>(null);
 
   //--------for clip transitions-------------//
   // Which clip's outgoing transition is being edited (tap the circle between clips).
@@ -749,25 +1296,46 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
 
   const player = useVideoPlayer(activeClip?.uri ?? null, (p: any) => {
     p.loop = false;
-    p.timeUpdateEventInterval = 0.25; // Update every 100ms
+    p.timeUpdateEventInterval = 0.25;
+    // Mix clip audio with background music / VO (don't mute the video bed).
+    try {
+      p.audioMixingMode = "mixWithOthers";
+    } catch {
+      /* older expo-video builds */
+    }
+    try {
+      p.muted = false;
+    } catch {
+      /* ignore */
+    }
   });
 
+  // Allow video + music + voiceover to play at the same time.
+  useEffect(() => {
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      interruptionMode: "mixWithOthers",
+      shouldPlayInBackground: false,
+      allowsRecording: false,
+    }).catch((e) => console.log("audio mix mode failed", e));
+  }, []);
 
-  // ── Background music setup ──
-// Pulls the saved music track (if any) from the project, and creates a
-// second, independent audio player for it. This runs in parallel to the
-// video's own player — they are kept in sync manually (see togglePlayback
-// and the timeUpdate listener below), since expo-video and expo-audio
-// don't share a clock automatically.
-const backgroundMusic = project?.backgroundMusic;
-const musicPlayer = useAudioPlayer(backgroundMusic?.uri ?? null);
-// Keep the music player's volume live-synced to whatever the user sets
-// in MusicToolPanel, without needing a manual "apply" step.
-useEffect(() => {
-  if (backgroundMusic) {
-    musicPlayer.volume = backgroundMusic.volume ?? 0.5;
-  }
-}, [backgroundMusic?.volume]);
+  // ── Background music (multi-track) — play the track under the playhead ──
+  const musicTracks = useMemo(
+    () => (project ? getMusicTracks(project) : []),
+    [project?.musicTracks, project?.backgroundMusic],
+  );
+  const [selectedMusicTrackId, setSelectedMusicTrackId] = useState<string | null>(null);
+  const beatMarkersMs = project?.beatMarkersMs ?? [];
+
+  // Preview player for the voiceover under the playhead (URI swapped via replace).
+  const [voPreviewUri, setVoPreviewUri] = useState<string | null>(null);
+  const voiceoverPlayer = useAudioPlayer(voPreviewUri);
+
+  // Music URI follows the active track under the playhead (set below once
+  // currentPositionMs is known). Seed with first track so the hook mounts.
+  const [musicPreviewUri, setMusicPreviewUri] = useState<string | null>(null);
+  const musicPlayer = useAudioPlayer(musicPreviewUri);
 
 
 
@@ -783,98 +1351,207 @@ useEffect(() => {
   const pipPlayer = useVideoPlayer(pipOverlay?.uri ?? null, (p: any) => {
     p.loop = true;
     p.muted = true;
+    try {
+      p.audioMixingMode = "mixWithOthers";
+    } catch {
+      /* ignore */
+    }
   });
 
   const [currentTime, setCurrentTime] = useState(player.currentTime ?? 0);
   const [currentLoadedUri, setCurrentLoadedUri] = useState<string | null>(null);
 
-  // Sync player source on active clip change
+  // Sync player source on active clip change (title cards have no video URI).
   useEffect(() => {
-    if (activeClip?.uri && activeClip.uri !== currentLoadedUri) {
+    if (!activeClip) return;
+    if (activeClip.kind === 'title') {
+      try {
+        player.pause();
+      } catch {
+        /* ignore */
+      }
+      setCurrentLoadedUri(null);
+      const startMs = activeClip.trimStartMs ?? 0;
+      setCurrentTime(startMs / 1000);
+      return;
+    }
+    if (activeClip.uri && activeClip.uri !== currentLoadedUri) {
       player.replace(activeClip.uri);
       setCurrentLoadedUri(activeClip.uri);
       const startMs = activeClip.trimStartMs ?? 0;
       player.currentTime = startMs / 1000;
       setCurrentTime(startMs / 1000);
     }
-  }, [activeClip?.uri, currentLoadedUri]);
+  }, [activeClip?.id, activeClip?.uri, activeClip?.kind, currentLoadedUri]);
 
-  //for the real time video audio volume//
+  /** Advance to the next timeline piece (video or title sheet). */
+  const playClipFromStart = (clip: VideoClip, autoplay: boolean) => {
+    setSelectedClipId(clip.id);
+    if (clip.kind === 'title') {
+      try {
+        player.pause();
+      } catch {
+        /* ignore */
+      }
+      setCurrentLoadedUri(null);
+      setCurrentTime((clip.trimStartMs ?? 0) / 1000);
+      setIsPlaying(autoplay);
+      if (autoplay) {
+        try {
+          musicPlayer.play();
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+    setIsPlaying(false);
+    player.replace(clip.uri);
+    setCurrentLoadedUri(clip.uri);
+    const nextStart = clip.trimStartMs ?? 0;
+    player.currentTime = nextStart / 1000;
+    setCurrentTime(nextStart / 1000);
+    if (autoplay) {
+      player.play();
+      try {
+        musicPlayer.play();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  // Live volume / opacity curves (clip-local playhead).
+  const clipLocalMs = currentTime * 1000;
+  const liveVolume = activeClip
+    ? sampleClipVolume(activeClip, clipLocalMs)
+    : 1;
+  const liveOpacity = activeClip
+    ? sampleClipOpacity(activeClip, clipLocalMs)
+    : 1;
+  const liveGrade = activeClip
+    ? sampleClipColorGrade(activeClip, clipLocalMs)
+    : DEFAULT_COLOR_GRADE;
+  const liveRotation = activeClip
+    ? sampleClipRotation(activeClip, clipLocalMs)
+    : 0;
+  const liveRotateCover = coverScaleForRotation(liveRotation);
+
   useEffect(() => {
     if (activeClip) {
-      player.volume = activeClip.volume ?? 1;
+      try {
+        player.muted = false;
+        player.volume = liveVolume;
+      } catch {
+        /* ignore */
+      }
     }
-  }, [activeClip?.volume, player.volume]);
+  }, [liveVolume, activeClip?.id, player]);
 
   //for the real time video speed//
   useEffect(() => {
     if (activeClip) {
-      player.playbackRate = activeClip.speed ?? 1;
+      // Curves: preview uses the curve's average speed (true variable speed
+      // is baked on export). Constant speed when curve is 'none'.
+      const curveId = (activeClip.speedCurve ?? 'none') as SpeedCurveId;
+      const base = activeClip.speed ?? 1;
+      const rate =
+        curveId !== 'none' ? curveAverageSpeed(curveId) : base;
+      player.playbackRate = rate;
     }
-  }, [activeClip?.speed, player]);
+  }, [activeClip?.speed, activeClip?.speedCurve, player]);
   
-  // Handle active clip playback endpoint
+  // Handle active clip playback endpoint (video clips only).
 useEventListener(player, "timeUpdate", (payload) => {
-  if (!activeClip) return;
+  if (!activeClip || activeClip.kind === 'title') return;
   const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
   const curTimeMs = payload.currentTime * 1000;
-  // ── Background music sync — runs every tick, independent of clip end ──
-  if (backgroundMusic) {
-    const musicStart = backgroundMusic.startMs ?? 0;
-    const musicTrimStart = backgroundMusic.trimStartMs ?? 0;
-    const musicTrimEnd = backgroundMusic.trimEndMs ?? backgroundMusic.durationMs ?? 0;
-    const timelinePosMs = curTimeMs;
-    const shouldBePlayingMusic =
-      timelinePosMs >= musicStart &&
-      timelinePosMs < musicStart + (musicTrimEnd - musicTrimStart);
-    if (shouldBePlayingMusic && !musicPlayer.playing) {
-      const offsetMs = timelinePosMs - musicStart + musicTrimStart;
-      musicPlayer.seekTo(offsetMs / 1000)
-        .then(() => musicPlayer.play())
-        .catch((e) => console.log("music seek failed:", e));
-    } else if (!shouldBePlayingMusic && musicPlayer.playing) {
-      musicPlayer.pause();
-    }
-  }
-  // ── end background music sync ──
   if (curTimeMs >= trimEndMs) {
     const activeIdx = clips.findIndex((c) => c.id === activeClip.id);
     if (activeIdx !== -1 && activeIdx + 1 < clips.length) {
-      // Play the outgoing clip's transition effect across the cut.
       const outgoing = activeClip.transitionOut;
       if (outgoing && outgoing.type !== "none") {
         runTransitionEffect(outgoing.durationMs || 500);
       }
-      const nextClip = clips[activeIdx + 1];
-      setSelectedClipId(nextClip.id);
-      player.pause();
-      player.replace(nextClip.uri);
-      const nextStart = nextClip.trimStartMs ?? 0;
-      player.currentTime = nextStart / 1000;
-      player.play();
+      playClipFromStart(clips[activeIdx + 1], true);
     } else {
       player.pause();
       player.currentTime = trimEndMs / 1000;
+      setIsPlaying(false);
     }
   } else {
     setCurrentTime(payload.currentTime);
   }
 });
 
+  // Title-card clock — no VideoView decoder; advance by wall clock.
+  useEffect(() => {
+    if (!isPlaying || !activeClip || activeClip.kind !== 'title') return;
+    const trimStart = (activeClip.trimStartMs ?? 0) / 1000;
+    const trimEnd = (activeClip.trimEndMs ?? activeClip.durationMs) / 1000;
+    let t = currentTime;
+    if (t < trimStart || t >= trimEnd) t = trimStart;
+    const origin = Date.now() - t * 1000;
+    const id = setInterval(() => {
+      const now = (Date.now() - origin) / 1000;
+      if (now >= trimEnd) {
+        clearInterval(id);
+        const activeIdx = clips.findIndex((c) => c.id === activeClip.id);
+        if (activeIdx !== -1 && activeIdx + 1 < clips.length) {
+          playClipFromStart(clips[activeIdx + 1], true);
+        } else {
+          setCurrentTime(trimEnd);
+          setIsPlaying(false);
+          try {
+            musicPlayer.pause();
+          } catch {
+            /* ignore */
+          }
+        }
+      } else {
+        setCurrentTime(now);
+      }
+    }, 40);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, activeClip?.id, activeClip?.kind]);
 
 const togglePlayback = () => {
+  if (activeClip?.kind === 'title') {
+    if (isPlaying) {
+      setIsPlaying(false);
+      musicPlayer.pause();
+      try {
+        voiceoverPlayer.pause();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      const trimStartMs = activeClip.trimStartMs ?? 0;
+      const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
+      const posMs = currentTime * 1000;
+      if (posMs < trimStartMs || posMs >= trimEndMs) {
+        setCurrentTime(trimStartMs / 1000);
+      }
+      setIsPlaying(true);
+      musicPlayer.play();
+    }
+    return;
+  }
+
   const currentlyPlaying = player.playing;
   if (currentlyPlaying) {
     player.pause();
     musicPlayer.pause();
+    try { voiceoverPlayer.pause(); } catch { /* ignore */ }
   } else {
     if (activeClip) {
       const trimStartMs = activeClip.trimStartMs ?? 0;
       const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
-      const posMs = currentTime * 1000; // use React state, not player.currentTime
+      const posMs = currentTime * 1000;
       if (posMs < trimStartMs || posMs >= trimEndMs) {
         player.currentTime = trimStartMs / 1000;
-        setCurrentTime(trimStartMs / 1000); // keep state in sync immediately
+        setCurrentTime(trimStartMs / 1000);
       }
     }
     player.play();
@@ -892,6 +1569,10 @@ const togglePlayback = () => {
     const generateAll = async () => {
       for (const clip of clips) {
         if (clipThumbnails[clip.id]) continue;
+        if (clip.kind === 'title' || !clip.uri) {
+          setClipThumbnails((prev) => ({ ...prev, [clip.id]: [] }));
+          continue;
+        }
         const secondsCount = Math.max(1, Math.ceil(clip.durationMs / 1000));
         const uris: string[] = [];
         for (let s = 0; s < secondsCount; s++) {
@@ -953,7 +1634,232 @@ const togglePlayback = () => {
     0,
   );
   const currentPositionMs = getTimelinePositionMs(currentTime);
+
+  const projectComments = projectId ? getCommentsForProject(projectId) : [];
+  const projectMembers = projectId ? getMembersForProject(projectId) : [];
+  const canvasPins = useMemo(
+    () =>
+      projectComments.filter(
+        (c) =>
+          !c.resolved &&
+          typeof c.canvasX === 'number' &&
+          typeof c.canvasY === 'number'
+      ),
+    [projectComments]
+  );
+
+  const resolveBackendClipId = async (): Promise<string | null> => {
+    if (!projectId || !token) return null;
+    const looksUuid =
+      !!activeClip?.id &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        activeClip.id
+      );
+    if (looksUuid) return activeClip!.id;
+    try {
+      const remote = await clipService.getClips(projectId, token);
+      if (!remote.length) return null;
+      const byUrl = activeClip?.uri
+        ? remote.find((c) => c.videoUrl && c.videoUrl === activeClip.uri)
+        : undefined;
+      return byUrl?.id ?? remote[0].id;
+    } catch {
+      return null;
+    }
+  };
+
+  const openCommentAt = (xNorm: number, yNorm: number) => {
+    try {
+      player.pause();
+    } catch {
+      /* ignore */
+    }
+    setIsPlaying(false);
+    setCommentComposer({
+      x: Math.max(0.05, Math.min(0.95, xNorm)),
+      y: Math.max(0.05, Math.min(0.95, yNorm)),
+    });
+  };
+
+  const handleCommentSubmit = async (text: string) => {
+    if (!projectId || !commentComposer) return;
+    setCommentSubmitting(true);
+    try {
+      const clipId = await resolveBackendClipId();
+      if (!clipId) {
+        Alert.alert(
+          'Upload first',
+          'Comments need a project clip on the server. Export once or upload so teammates can see it.'
+        );
+        return;
+      }
+      await addComment(
+        projectId,
+        clipId,
+        text,
+        currentPositionMs / 1000,
+        { x: commentComposer.x, y: commentComposer.y }
+      );
+      setCommentComposer(null);
+      setCommentPinMode(false);
+    } catch (e: any) {
+      Alert.alert('Couldn’t post', e?.message ?? 'Try again.');
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
   const totalSeconds = Math.max(1, Math.ceil(totalDurationMs / 1000));
+
+  // Track under the playhead for music preview (multi-track).
+  const activeMusicTrack = useMemo(() => {
+    return (
+      musicTracks.find((t) => {
+        const start = t.startMs ?? 0;
+        return (
+          currentPositionMs >= start &&
+          currentPositionMs < start + musicAudibleMs(t)
+        );
+      }) ?? null
+    );
+  }, [musicTracks, currentPositionMs]);
+
+  // Keep music preview URI + play/pause + fades/duck in sync with the timeline.
+  useEffect(() => {
+    const uri = activeMusicTrack?.uri ?? null;
+    if (uri !== musicPreviewUri) {
+      setMusicPreviewUri(uri);
+      return; // wait for player to remount on next tick
+    }
+    if (!activeMusicTrack) {
+      try {
+        if (musicPlayer.playing) musicPlayer.pause();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const start = activeMusicTrack.startMs ?? 0;
+    const trimStart = activeMusicTrack.trimStartMs ?? 0;
+    const audible = musicAudibleMs(activeMusicTrack);
+    const local = currentPositionMs - start;
+    let vol = activeMusicTrack.volume ?? 0.5;
+    const fadeIn = activeMusicTrack.fadeInMs ?? 0;
+    const fadeOut = activeMusicTrack.fadeOutMs ?? 0;
+    if (fadeIn > 0 && local < fadeIn) vol *= Math.max(0, local / fadeIn);
+    if (fadeOut > 0 && local > audible - fadeOut) {
+      vol *= Math.max(0, (audible - local) / fadeOut);
+    }
+    const underVo =
+      activeMusicTrack.duckUnderVoiceover !== false &&
+      voiceovers.some(
+        (v) =>
+          currentPositionMs >= v.startMs &&
+          currentPositionMs < v.startMs + v.durationMs,
+      );
+    if (underVo) vol *= activeMusicTrack.duckLevel ?? 0.28;
+    try {
+      musicPlayer.volume = vol;
+    } catch {
+      /* ignore */
+    }
+
+    // Keep clip audio alive whenever music is under the playhead.
+    if (activeClip?.kind !== "title") {
+      try {
+        player.muted = false;
+        player.volume = liveVolume;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!isPlaying) {
+      try {
+        if (musicPlayer.playing) musicPlayer.pause();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const offsetMs = local + trimStart;
+    (async () => {
+      try {
+        if (!musicPlayer.playing) {
+          await musicPlayer.seekTo(Math.max(0, offsetMs) / 1000);
+          musicPlayer.play();
+        }
+        // Re-assert mix after music starts (OS can duck/mute video otherwise).
+        if (activeClip?.kind !== "title") {
+          player.muted = false;
+          player.volume = liveVolume;
+        }
+      } catch (e) {
+        console.log("music sync failed", e);
+      }
+    })();
+  }, [
+    activeMusicTrack?.id,
+    activeMusicTrack?.uri,
+    activeMusicTrack?.volume,
+    activeMusicTrack?.fadeInMs,
+    activeMusicTrack?.fadeOutMs,
+    activeMusicTrack?.duckUnderVoiceover,
+    musicPreviewUri,
+    currentPositionMs,
+    isPlaying,
+    voiceovers,
+    liveVolume,
+    activeClip?.kind,
+    player,
+  ]);
+
+  // Voiceover under the playhead — swap preview URI and keep audio in sync.
+  const activeVoiceover = useMemo(
+    () =>
+      voiceovers.find(
+        (v) =>
+          currentPositionMs >= v.startMs &&
+          currentPositionMs < v.startMs + v.durationMs,
+      ) ?? null,
+    [voiceovers, currentPositionMs],
+  );
+
+  useEffect(() => {
+    const next = activeVoiceover?.uri ?? null;
+    if (next !== voPreviewUri) setVoPreviewUri(next);
+  }, [activeVoiceover?.uri, voPreviewUri]);
+
+  useEffect(() => {
+    if (activeVoiceover) {
+      voiceoverPlayer.volume = activeVoiceover.volume ?? 1;
+    }
+  }, [activeVoiceover?.id, activeVoiceover?.volume]);
+
+  useEffect(() => {
+    if (!activeVoiceover || !voPreviewUri) {
+      try { if (voiceoverPlayer.playing) voiceoverPlayer.pause(); } catch { /* ignore */ }
+      return;
+    }
+    const offsetMs = currentPositionMs - activeVoiceover.startMs;
+    const sync = async () => {
+      try {
+        if (isPlaying) {
+          await voiceoverPlayer.seekTo(Math.max(0, offsetMs) / 1000);
+          if (!voiceoverPlayer.playing) voiceoverPlayer.play();
+        } else if (voiceoverPlayer.playing) {
+          voiceoverPlayer.pause();
+        }
+      } catch (e) {
+        console.log("voiceover sync failed", e);
+      }
+    };
+    // Seek only when starting play or when the take changes — avoid thrashing.
+    if (isPlaying) {
+      const t = setTimeout(sync, 40);
+      return () => clearTimeout(t);
+    }
+    try { voiceoverPlayer.pause(); } catch { /* ignore */ }
+  }, [isPlaying, activeVoiceover?.id, voPreviewUri]);
 
   const rulerMarks = useMemo(() => {
     const marks: number[] = [];
@@ -1048,12 +1954,26 @@ const togglePlayback = () => {
       const targetPlayerTimeSec =
         ((targetClip.trimStartMs ?? 0) + relativeOffsetMs) / 1000;
 
-      if (targetClip.id !== activeClip.id) {
+      if (targetClip.id !== activeClip?.id) {
         setSelectedClipId(targetClip.id);
-        player.replace(targetClip.uri);
       }
-      player.currentTime = targetPlayerTimeSec;
-      setCurrentTime(targetPlayerTimeSec);
+      if (targetClip.kind === 'title') {
+        try {
+          player.pause();
+        } catch {
+          /* ignore */
+        }
+        setCurrentLoadedUri(null);
+        setCurrentTime(targetPlayerTimeSec);
+        setIsPlaying(false);
+      } else {
+        if (targetClip.uri !== currentLoadedUri) {
+          player.replace(targetClip.uri);
+          setCurrentLoadedUri(targetClip.uri);
+        }
+        player.currentTime = targetPlayerTimeSec;
+        setCurrentTime(targetPlayerTimeSec);
+      }
     }
   };
 
@@ -1110,23 +2030,39 @@ const togglePlayback = () => {
   }, [clips, clipTimelineSegments]);
 
   //get the visible overlays for the active clip at the current time//
+  // Keep the selected text box visible while the Text tool is open (even if
+  // playhead drifts outside its timing window) so the user can type on-video.
   const activeVisibleOverlays = useMemo(() => {
     if (!activeClip) return [];
     const localTimeMs = currentTime * 1000;
-    return (activeClip.textOverlays ?? []).filter(
-      (o) =>
-        localTimeMs >= o.startMs && localTimeMs <= o.startMs + o.durationMs,
-    );
-  }, [activeClip, currentTime]);
+    return (activeClip.textOverlays ?? []).filter((o) => {
+      const inWindow =
+        localTimeMs >= o.startMs && localTimeMs <= o.startMs + o.durationMs;
+      const editing =
+        activeToolLabel === "Text" && selectedOverlayId === o.id;
+      return inWindow || editing;
+    });
+  }, [activeClip, currentTime, activeToolLabel, selectedOverlayId]);
 
-  // Toolbar Actions
+  // Toolbar Actions — Split snaps to nearest beat marker (±350ms).
   const handleSplit = () => {
     if (!activeClip) return;
-    const splitTimeMs = currentTime * 1000;
+    let timelineMs = currentPositionMs;
+    const snap = nearestBeatMarker(beatMarkersMs, timelineMs);
+    if (snap != null) timelineMs = snap;
+    const activeSegment = clipTimelineSegments.find(
+      (s) => s.clip.id === activeClip.id,
+    );
+    if (!activeSegment) return;
+    const splitTimeMs =
+      (activeClip.trimStartMs ?? 0) +
+      (timelineMs - activeSegment.timelineStartMs);
     splitClip(activeClip.id, splitTimeMs);
     Alert.alert(
       "Clip Split",
-      "The clip has been split at the playhead position.",
+      snap != null
+        ? "Split snapped to the nearest beat marker."
+        : "The clip has been split at the playhead position.",
     );
   };
 
@@ -1147,7 +2083,36 @@ const togglePlayback = () => {
     overlayId: string | null = null,
   ) => {
     setActiveToolLabel(toolLabel);
-    setSelectedOverlayId(overlayId ?? null);
+    if (toolLabel !== "Text") {
+      setSelectedOverlayId(overlayId ?? null);
+      return;
+    }
+    // CapCut-style: tap Text → box appears on the video to type into.
+    try {
+      player.pause();
+    } catch {
+      /* ignore */
+    }
+    if (overlayId) {
+      setSelectedOverlayId(overlayId);
+      return;
+    }
+    if (!activeClip) {
+      setSelectedOverlayId(null);
+      return;
+    }
+    const localMs = Math.round(currentTime * 1000);
+    const atPlayhead = (activeClip.textOverlays ?? []).find(
+      (o) => localMs >= o.startMs && localMs <= o.startMs + o.durationMs,
+    );
+    if (atPlayhead) {
+      setSelectedOverlayId(atPlayhead.id);
+      return;
+    }
+    const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
+    const remaining = Math.max(2000, trimEndMs - localMs);
+    const id = addTextOverlay(activeClip.id, "", localMs, remaining);
+    setSelectedOverlayId(id);
   };
 
   const closeToolPanel = () => {
@@ -1200,8 +2165,26 @@ const togglePlayback = () => {
 
 const handleSelectCropRatio = (ratioId: string) => {
   setPendingCropRatioId(ratioId);
-  setCropOverlayVisible(true);
-  closeToolPanel(); // hides CropRatioPanel/EditToolPanel since overlay takes over
+  // Crop overlay UI is stubbed — apply ratio + diamond at playhead immediately.
+  if (activeClip) {
+    const cropOffsetX = activeClip.cropOffsetX ?? 0.5;
+    const cropOffsetY = activeClip.cropOffsetY ?? 0.5;
+    const cropZoom = activeClip.cropZoom ?? 1;
+    updateClipCrop(activeClip.id, {
+      cropRatioId: ratioId,
+      cropOffsetX,
+      cropOffsetY,
+      cropZoom,
+    });
+    addClipCropKeyframe(activeClip.id, {
+      timeMs: Math.round(currentTime * 1000),
+      cropOffsetX,
+      cropOffsetY,
+      cropZoom,
+    });
+  }
+  setCropOverlayVisible(false);
+  closeToolPanel();
 };
 const handleConfirmCrop = (cropData: {
   cropRatioId: string;
@@ -1211,8 +2194,116 @@ const handleConfirmCrop = (cropData: {
 }) => {
   if (activeClip) {
     updateClipCrop(activeClip.id, cropData);
+    // Diamond at playhead so pan/zoom can animate over time.
+    addClipCropKeyframe(activeClip.id, {
+      timeMs: Math.round(currentTime * 1000),
+      cropOffsetX: cropData.cropOffsetX,
+      cropOffsetY: cropData.cropOffsetY,
+      cropZoom: cropData.cropZoom,
+    });
   }
   setCropOverlayVisible(false);
+};
+
+const handleMotionTrack = async () => {
+  if (!activeClip) {
+    Alert.alert("Select a clip", "Pick a clip on the timeline first.");
+    return;
+  }
+  const uri = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(uri)) {
+    Alert.alert(
+      "Upload needed",
+      "Motion track needs the uploaded clip URL. Wait for upload, then try again."
+    );
+    return;
+  }
+
+  // Prefer selected text overlay; fall back to selected emoji sticker.
+  if (activeOverlay) {
+    setMotionTracking(true);
+    try {
+      const seedX = activeOverlay.x ?? 0.5;
+      const seedY = activeOverlay.y ?? 0.5;
+      const result = await motionTrackService.track(
+        uri,
+        { x: seedX, y: seedY, timeMs: Math.round(currentTime * 1000) },
+        {
+          windowStartMs: activeClip.trimStartMs ?? 0,
+          windowEndMs: activeClip.trimEndMs ?? activeClip.durationMs,
+        }
+      );
+      updateTextOverlay(activeClip.id, activeOverlay.id, {
+        keyframes: result.items,
+        x: result.items[0]?.x ?? seedX,
+        y: result.items[0]?.y ?? seedY,
+      });
+      Alert.alert("Tracked", result.message);
+    } catch (e: any) {
+      Alert.alert("Track failed", e?.message ?? "Could not track subject.");
+    } finally {
+      setMotionTracking(false);
+    }
+    return;
+  }
+
+  if (selectedMediaOverlay) {
+    setMotionTracking(true);
+    try {
+      const result = await motionTrackService.track(
+        uri,
+        {
+          x: selectedMediaOverlay.x ?? 0.5,
+          y: selectedMediaOverlay.y ?? 0.5,
+          timeMs: Math.round(currentPositionMs),
+        },
+        {
+          windowStartMs: activeClip.trimStartMs ?? 0,
+          windowEndMs: activeClip.trimEndMs ?? activeClip.durationMs,
+        }
+      );
+      const followMask = !!selectedMediaOverlay.mask?.followMotion;
+      updateMediaOverlay(selectedMediaOverlay.id, {
+        keyframes: result.items.map((p) => ({
+          timeMs: p.timeMs,
+          x: p.x,
+          y: p.y,
+          scale: selectedMediaOverlay.scale ?? 1,
+          rotation: selectedMediaOverlay.rotation ?? 0,
+          opacity: selectedMediaOverlay.opacity ?? 1,
+        })),
+        x: result.items[0]?.x ?? selectedMediaOverlay.x,
+        y: result.items[0]?.y ?? selectedMediaOverlay.y,
+        ...(followMask && selectedMediaOverlay.mask
+          ? {
+              mask: {
+                ...selectedMediaOverlay.mask,
+                followMotion: true,
+                // Keep mask centered on the overlay while the layer follows the subject.
+                centerX: 0.5,
+                centerY: 0.5,
+              },
+            }
+          : {}),
+      });
+      Alert.alert(
+        followMask ? "Mask following" : "Tracked",
+        followMask
+          ? "Mask stays locked to the overlay while it tracks the subject."
+          : result.message
+      );
+    } catch (e: any) {
+      Alert.alert("Track failed", e?.message ?? "Could not track subject.");
+    } finally {
+      setMotionTracking(false);
+    }
+    return;
+  }
+
+  Alert.alert(
+    "Select a target",
+    "Select text, a sticker, or a photo/PiP overlay, place it on the subject, then Track."
+  );
 };
 
 // ── AI captions ──
@@ -1226,7 +2317,9 @@ const handleClearCaptions = () => {
   captionOverlays.forEach((o) => removeTextOverlay(activeClip.id, o.id));
 };
 
-const handleGenerateCaptions = async (): Promise<number> => {
+const handleGenerateCaptions = async (
+  styleId: CaptionStyleId = "podcast"
+): Promise<number> => {
   if (!activeClip) throw new Error("Select a clip first.");
   const uri = activeClip.uri || "";
   if (!/^https?:\/\//i.test(uri)) {
@@ -1234,35 +2327,251 @@ const handleGenerateCaptions = async (): Promise<number> => {
       "Captions need the uploaded clip. Wait for the upload to finish, then try again."
     );
   }
-  const segments = await captionService.generateCaptions(uri);
-  if (!segments.length) throw new Error("No speech detected in this clip.");
+  const { items, words } = await captionService.generateCaptions(uri);
+  if (!items.length && !words.length) {
+    throw new Error("No speech detected in this clip.");
+  }
 
   // Regenerating replaces previous AI captions instead of stacking them.
   captionOverlays.forEach((o) => removeTextOverlay(activeClip.id, o.id));
 
-  const clipEnd = activeClip.durationMs;
+  const drafts = buildCaptionOverlays(
+    styleId,
+    items,
+    words,
+    activeClip.durationMs
+  );
+  if (!drafts.length) throw new Error("No speech detected in this clip.");
+
   let added = 0;
-  segments.forEach((seg) => {
-    if (seg.startMs >= clipEnd) return;
-    const startMs = Math.max(0, seg.startMs);
-    const durationMs = Math.max(600, Math.min(seg.endMs, clipEnd) - startMs);
-    const id = addTextOverlay(activeClip.id, seg.text, startMs, durationMs);
-    // Caption look: bottom-centered, subtitle-sized, on a soft dark pill.
+  for (const d of drafts) {
+    const id = addTextOverlay(activeClip.id, d.text, d.startMs, d.durationMs);
     updateTextOverlay(activeClip.id, id, {
       isAiGenerated: true,
-      x: 0.5,
-      y: 0.82,
-      fontSize: 15,
-      fontWeight: "bold",
-      color: "#FFFFFF",
-      backgroundColor: "#000000",
-      backgroundOpacity: 0.55,
-      backgroundRadius: 6,
-      animationIn: "fade",
+      x: d.x,
+      y: d.y,
+      fontSize: d.fontSize,
+      fontWeight: d.fontWeight,
+      fontFamily: d.fontFamily,
+      color: d.color,
+      highlightColor: d.highlightColor,
+      karaokeWords: d.karaokeWords,
+      backgroundColor: d.backgroundColor,
+      backgroundOpacity: d.backgroundOpacity,
+      backgroundRadius: d.backgroundRadius,
+      animationIn: d.animationIn,
+      animationOut: d.animationOut,
+      align: d.align,
+      speakerId: d.speakerId,
+      speakerLabel: d.speakerLabel,
     });
     added++;
-  });
+  }
   return added;
+};
+
+const handleMulticamSyncWithClip = async (camBClipId: string) => {
+  if (!activeClip) throw new Error("Select Cam A first.");
+  const camB = clips.find((c) => c.id === camBClipId);
+  if (!camB) throw new Error("Cam B clip not found.");
+  const aUrl = activeClip.uri || "";
+  const bUrl = camB.uri || "";
+  if (!/^https?:\/\//i.test(aUrl) || !/^https?:\/\//i.test(bUrl)) {
+    throw new Error("Both cams need uploaded http URLs before sync.");
+  }
+  const result = await multicamService.sync(aUrl, bUrl);
+  const group = multicamService.buildGroup(activeClip, {
+    uri: camB.uri,
+    durationMs: camB.durationMs,
+    offsetMs: result.offsetMs,
+    thumbnailUri: camB.thumbnailUri,
+  });
+  attachMultiCam(activeClip.id, group);
+  return result;
+};
+
+const handleMulticamSyncPicked = async (localUri: string) => {
+  if (!activeClip) throw new Error("Select Cam A first.");
+  const aUrl = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(aUrl)) {
+    throw new Error("Cam A needs an uploaded URL before sync.");
+  }
+  const uploaded = await uploadService.uploadVideo(localUri, "cam_b.mp4", "video/mp4");
+  const result = await multicamService.sync(aUrl, uploaded.url);
+  const durationMs = Math.round((uploaded.durationSeconds ?? 60) * 1000);
+  const group = multicamService.buildGroup(activeClip, {
+    uri: uploaded.url,
+    durationMs,
+    offsetMs: result.offsetMs,
+  });
+  attachMultiCam(activeClip.id, group);
+  return result;
+};
+
+const handleDirectorCut = (angleId: string) => {
+  if (!activeClip) return;
+  const seg = clipTimelineSegments.find((s) => s.clip.id === activeClip.id);
+  if (!seg) return;
+  const localMs =
+    (activeClip.trimStartMs ?? 0) + (currentPositionMs - seg.timelineStartMs);
+  const ok = cutToMultiCamAngle(activeClip.id, angleId, localMs);
+  if (!ok) {
+    Alert.alert(
+      "Could not cut",
+      "That angle window is too short here — nudge the playhead and try again."
+    );
+  }
+};
+
+const handleAnalyzeReframe = async () => {
+  if (!activeClip) throw new Error("Select a clip first.");
+  const uri = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(uri)) {
+    throw new Error("Auto-reframe needs an uploaded clip URL.");
+  }
+  const result = await reframeService.analyze(uri, {
+    windowStartMs: activeClip.trimStartMs ?? 0,
+    windowEndMs: activeClip.trimEndMs ?? activeClip.durationMs,
+  });
+  if (!result.items?.length) throw new Error("Could not track a subject.");
+  updateClipAutoReframe(activeClip.id, reframeService.fromAnalysis(result));
+  return { count: result.items.length, message: result.message };
+};
+
+const handleRemoveSilence = async (choices: {
+  removeSilence: boolean;
+  removeFillers: boolean;
+  minSilenceMs: number;
+}) => {
+  if (!activeClip) throw new Error("Select a clip first.");
+  const uri = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(uri)) {
+    throw new Error(
+      "Rough cut needs the uploaded clip. Wait for upload, then try again."
+    );
+  }
+  const trimStart = activeClip.trimStartMs ?? 0;
+  const trimEnd = activeClip.trimEndMs ?? activeClip.durationMs;
+  const result = await silenceService.roughCut(uri, {
+    windowStartMs: trimStart,
+    windowEndMs: trimEnd,
+    minSilenceMs: choices.minSilenceMs,
+    removeSilence: choices.removeSilence,
+    removeFillers: choices.removeFillers,
+  });
+  if (!result.items?.length) {
+    throw new Error("Nothing to cut with these options — try different toggles.");
+  }
+  if (result.removedMs < 120) {
+    throw new Error("Almost nothing removed — try a lower silence threshold or enable fillers.");
+  }
+  const pieces = applyKeepRanges(activeClip.id, result.items);
+  if (pieces < 1) throw new Error("Could not apply rough cut.");
+  return {
+    pieces,
+    removedMs: result.removedMs,
+    silenceCount: result.silenceCount,
+    fillerCount: result.fillerCount,
+  };
+};
+
+const handleDetectBeats = async (): Promise<number> => {
+  if (!activeClip) throw new Error("Select a clip first.");
+  const uri = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(uri)) {
+    throw new Error(
+      "Beat detection needs the uploaded clip. Wait for upload, then try again."
+    );
+  }
+  try {
+    setDetectingBeats(true);
+    const trimStart = activeClip.trimStartMs ?? 0;
+    const trimEnd = activeClip.trimEndMs ?? activeClip.durationMs;
+    const times = await beatDetectService.detect(uri, {
+      windowStartMs: trimStart,
+      windowEndMs: trimEnd,
+    });
+    if (!times.length) throw new Error("No beats detected — try a clip with clearer rhythm.");
+    const added = mergeBeatMarkers(times);
+    return added > 0 ? added : times.length;
+  } finally {
+    setDetectingBeats(false);
+  }
+};
+
+const handleGenerateShorts = async (): Promise<ShortSuggestion[]> => {
+  if (!activeClip) throw new Error("Select a clip first.");
+  const uri = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(uri)) {
+    throw new Error(
+      "Shorts need the uploaded clip. Wait for upload, then try again."
+    );
+  }
+  const items = await shortsService.suggest(uri);
+  if (!items.length) throw new Error("No short-worthy moments found.");
+  return items;
+};
+
+const handleAddShort = (suggestion: ShortSuggestion) => {
+  if (!activeClip) return;
+  const id = insertClipRange(activeClip.id, suggestion.startMs, suggestion.endMs);
+  if (!id) {
+    Alert.alert("Could not add short", "That range is too short or invalid.");
+  }
+};
+
+const handleApplyBrandKit = async (kit: BrandKit) => {
+  if (!activeClip) throw new Error("Select a clip first.");
+  const suggestions = brandKitService.applyOverlays(kit);
+  const grade = brandKitService.applyColorGrade(kit);
+  const trimStart = activeClip.trimStartMs ?? 0;
+  const trimEnd = activeClip.trimEndMs ?? activeClip.durationMs;
+  const span = Math.max(1000, trimEnd - trimStart);
+
+  for (const s of suggestions) {
+    if (s.role === "caption") {
+      (activeClip.textOverlays ?? [])
+        .filter((o) => o.isAiGenerated)
+        .forEach((o) =>
+          updateTextOverlay(activeClip.id, o.id, {
+            color: s.color,
+            backgroundColor: s.backgroundColor,
+            backgroundOpacity: s.backgroundOpacity,
+            fontSize: s.fontSize,
+            fontFamily: s.fontFamily,
+            y: s.y,
+          })
+        );
+      continue;
+    }
+    if (!s.text.trim()) continue;
+    const startMs =
+      s.role === "intro" ? trimStart : Math.max(trimStart, trimEnd - 3500);
+    const durationMs = s.role === "intro" ? Math.min(3500, span) : Math.min(3500, span);
+    const id = addTextOverlay(activeClip.id, s.text, startMs, durationMs);
+    updateTextOverlay(activeClip.id, id, {
+      color: s.color,
+      backgroundColor: s.backgroundColor,
+      backgroundOpacity: s.backgroundOpacity,
+      fontSize: s.fontSize,
+      fontFamily: s.fontFamily,
+      y: s.y,
+      x: 0.5,
+      fontWeight: "bold",
+      align: "center",
+      animationIn: "fade",
+    });
+  }
+
+  const existing = activeClip.colorGrade ?? DEFAULT_COLOR_GRADE;
+  updateClipColorGrade(activeClip.id, {
+    contrast: Math.min(1, Math.max(-1, existing.contrast + grade.contrastBoost)),
+    saturation: Math.min(1, Math.max(-1, existing.saturation + grade.tintStrength * 0.5)),
+    temperature: Math.min(
+      1,
+      Math.max(-1, existing.temperature + (kit.primaryColor.toLowerCase().includes("f5") ? 0.12 : 0))
+    ),
+  });
 };
 
 
@@ -1289,23 +2598,23 @@ const handleGenerateCaptions = async (): Promise<number> => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
 
-      {/* Header */}
+      {/* Header — CapCut-style: back · Edit · collab */}
       <View style={styles.header}>
-        <TouchableOpacity 
-        onPress={() => setShowExportConfirm(true)}
-        style={styles.headerBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.headerBtn}
+          hitSlop={8}
+        >
           <Ionicons
-            name="share-outline"
-            size={scale(22)}
+            name="chevron-back"
+            size={scale(24)}
             color={COLORS.textPrimary}
           />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.headerBtn}>
-          <Text style={styles.videoTitle}>Edit</Text>
-        </TouchableOpacity>
+        <Text style={styles.videoTitle}>Edit</Text>
         <View
           style={{ flexDirection: "row", alignItems: "center", gap: scale(10) }}
         >
@@ -1326,10 +2635,18 @@ const handleGenerateCaptions = async (): Promise<number> => {
                       {
                         backgroundColor: m.color,
                         marginLeft: i === 0 ? 0 : -scale(10),
+                        overflow: "hidden",
                       },
                     ]}
                   >
-                    <Text style={styles.stackedAvatarText}>{m.initials}</Text>
+                    {m.avatarUrl ? (
+                      <Image
+                        source={{ uri: m.avatarUrl }}
+                        style={{ width: "100%", height: "100%" }}
+                      />
+                    ) : (
+                      <Text style={styles.stackedAvatarText}>{m.initials}</Text>
+                    )}
                   </View>
                 ))}
                 {/* Green presence pulse on the last avatar */}
@@ -1357,22 +2674,136 @@ const handleGenerateCaptions = async (): Promise<number> => {
         clipId={activeClip?.id}
       />
 
-      {/* Video Preview */}
+      {/* Video Preview — Canva blank canvas + free layout */}
       <View style={styles.previewWrapper}>
         <View 
           onLayout={(e) => {
         const { width, height } = e.nativeEvent.layout;
       setPreviewSize({ width, height });
      }}
-        style={styles.previewContainer}
+        style={[
+          styles.previewContainer,
+          {
+            backgroundColor:
+              currentVideoProject?.canvasColor ?? COLORS.background,
+          },
+        ]}
         >
-          {activeClip ? (
-            <VideoView
-              style={styles.videoView}
-              player={player}
-              contentFit="cover"
-              nativeControls={false}
+          {activeClip?.kind === 'title' ? (
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor:
+                    activeClip.titleCard?.backgroundColor ?? '#000000',
+                },
+              ]}
             />
+          ) : activeClip ? (
+            (() => {
+              canvasLayoutRef.current = {
+                clipId: activeClip.id,
+                layoutX: activeClip.layoutX ?? 0.5,
+                layoutY: activeClip.layoutY ?? 0.5,
+                width: previewSize.width,
+                height: previewSize.height,
+              };
+              const lx = activeClip.layoutX ?? 0.5;
+              const ly = activeClip.layoutY ?? 0.5;
+              const ls = activeClip.layoutScale ?? 1;
+              const sx =
+                (activeClip.flipH ? -1 : 1) *
+                ls *
+                liveRotateCover *
+                (activeClip.autoReframe?.enabled ? 1.22 : 1);
+              const sy =
+                (activeClip.flipV ? -1 : 1) *
+                ls *
+                liveRotateCover *
+                (activeClip.autoReframe?.enabled ? 1.22 : 1);
+              const tx =
+                (lx - 0.5) * previewSize.width +
+                (activeClip.autoReframe?.enabled
+                  ? (0.5 -
+                      reframeService.sampleX(
+                        activeClip.autoReframe,
+                        currentTime * 1000
+                      )) *
+                    previewSize.width *
+                    0.55
+                  : 0);
+              const ty = (ly - 0.5) * previewSize.height;
+              const dragOn = activeToolLabel === 'Canvas';
+              return (
+                <View
+                  style={StyleSheet.absoluteFill}
+                  {...(dragOn ? canvasPan.panHandlers : {})}
+                >
+                  <VideoView
+                    style={[
+                      styles.videoView,
+                      { opacity: liveOpacity },
+                      {
+                        transform: [
+                          { translateX: tx },
+                          { translateY: ty },
+                          { rotate: `${liveRotation}deg` },
+                          { scaleX: sx },
+                          { scaleY: sy },
+                        ],
+                      },
+                    ]}
+                    player={player}
+                    contentFit="cover"
+                    nativeControls={false}
+                  />
+                  {dragOn && (
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        left: lx * previewSize.width - scale(14),
+                        top: ly * previewSize.height - scale(14),
+                        width: scale(28),
+                        height: scale(28),
+                        borderRadius: scale(14),
+                        backgroundColor: 'rgba(245,197,24,0.85)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 20,
+                      }}
+                    >
+                      <Ionicons name="move" size={scale(16)} color="#0B0D13" />
+                    </View>
+                  )}
+                  {activeClip.bgRemove?.enabled && (
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        top: scale(10),
+                        left: scale(10),
+                        backgroundColor: 'rgba(0,0,0,0.65)',
+                        paddingHorizontal: scale(8),
+                        paddingVertical: verticalScale(3),
+                        borderRadius: scale(8),
+                        zIndex: 20,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: COLORS.yellow,
+                          fontSize: moderateScale(9),
+                          fontWeight: '800',
+                        }}
+                      >
+                        BG REMOVE
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()
           ) : (
             <View style={[styles.videoView, styles.videoPlaceholder]}>
               <Image
@@ -1386,7 +2817,7 @@ const handleGenerateCaptions = async (): Promise<number> => {
             </View>
           )}
 
-          {activeClip && (
+          {activeClip && activeClip.kind !== 'title' && (
             <View
               pointerEvents="none"
               style={[
@@ -1397,6 +2828,119 @@ const handleGenerateCaptions = async (): Promise<number> => {
                 },
               ]}
             />
+          )}
+
+          {/* Color grade — soft overlays approximating eq / temperature (live keyframes) */}
+          {activeClip && activeClip.kind !== 'title' && (
+            <>
+              <View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFillObject,
+                  {
+                    backgroundColor:
+                      (liveGrade.brightness ?? 0) >= 0
+                        ? "#FFFFFF"
+                        : "#000000",
+                    opacity: Math.min(
+                      0.35,
+                      Math.abs(liveGrade.brightness ?? 0) * 0.35,
+                    ),
+                  },
+                ]}
+              />
+              <View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFillObject,
+                  {
+                    backgroundColor:
+                      (liveGrade.temperature ?? 0) >= 0
+                        ? "#FF9A3C"
+                        : "#3C7CFF",
+                    opacity: Math.min(
+                      0.22,
+                      Math.abs(liveGrade.temperature ?? 0) * 0.22,
+                    ),
+                  },
+                ]}
+              />
+              <View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFillObject,
+                  {
+                    backgroundColor: "#000000",
+                    opacity: Math.min(
+                      0.25,
+                      Math.max(0, -(liveGrade.saturation ?? 0)) * 0.25,
+                    ),
+                  },
+                ]}
+              />
+            </>
+          )}
+
+          {/* Effects preview — blur / vignette (shake & zoom are subtle) */}
+          {activeClip?.effectId === "blur" && (
+            <BlurView
+              intensity={Math.round((activeClip.effectIntensity ?? 0.55) * 55)}
+              tint="dark"
+              style={[StyleSheet.absoluteFillObject, { zIndex: 2 }]}
+              pointerEvents="none"
+            />
+          )}
+          {activeClip?.effectId === "vignette" && (
+            <>
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: "18%",
+                  backgroundColor: `rgba(0,0,0,${0.35 + (activeClip.effectIntensity ?? 0.55) * 0.45})`,
+                  zIndex: 2,
+                }}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: "18%",
+                  backgroundColor: `rgba(0,0,0,${0.35 + (activeClip.effectIntensity ?? 0.55) * 0.45})`,
+                  zIndex: 2,
+                }}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  width: "10%",
+                  backgroundColor: `rgba(0,0,0,${0.25 + (activeClip.effectIntensity ?? 0.55) * 0.35})`,
+                  zIndex: 2,
+                }}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  right: 0,
+                  width: "10%",
+                  backgroundColor: `rgba(0,0,0,${0.25 + (activeClip.effectIntensity ?? 0.55) * 0.35})`,
+                  zIndex: 2,
+                }}
+              />
+            </>
           )}
 
           {/* Transition effect — brief fade as playback crosses a clip boundary */}
@@ -1415,9 +2959,14 @@ const handleGenerateCaptions = async (): Promise<number> => {
         key={o.id}
         overlay={o}
         previewSize={previewSize}
+        localTimeMs={currentTime * 1000}
+        isEditing={activeToolLabel === "Text" && selectedOverlayId === o.id}
         onTap={() => handleToolPress("Text", o.id)}
         onDragEnd={(x, y) => {
           if (activeClip) updateTextOverlay(activeClip.id, o.id, { x, y });
+        }}
+        onChangeText={(text) => {
+          if (activeClip) updateTextOverlay(activeClip.id, o.id, { text });
         }}
       />
       ))}
@@ -1439,7 +2988,144 @@ const handleGenerateCaptions = async (): Promise<number> => {
         />
       ))}
 
-          <View style={styles.videoTopBar} />
+      {/* Canva-style comment pins */}
+      {canvasPins.map((c) => (
+        <TouchableOpacity
+          key={c.id}
+          style={{
+            position: 'absolute',
+            left: (c.canvasX ?? 0.5) * previewSize.width - scale(12),
+            top: (c.canvasY ?? 0.5) * previewSize.height - scale(12),
+            width: scale(24),
+            height: scale(24),
+            borderRadius: scale(12),
+            backgroundColor: '#FFFFFF',
+            borderWidth: 2,
+            borderColor: selectedCommentId === c.id ? COLORS.yellow : '#4DA6FF',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 30,
+          }}
+          onPress={() => {
+            setSelectedCommentId(c.id);
+            Alert.alert(
+              c.author,
+              `${c.text}${c.timecodeLabel ? `\n\n@ ${c.timecodeLabel}` : ''}`,
+              [
+                { text: 'OK', style: 'cancel' },
+                {
+                  text: 'Open desk',
+                  onPress: () => setSidebarVisible(true),
+                },
+              ]
+            );
+          }}
+        >
+          <Text style={{ fontSize: moderateScale(9), fontWeight: '800', color: '#0B0D13' }}>
+            {c.initials.slice(0, 1)}
+          </Text>
+        </TouchableOpacity>
+      ))}
+
+      {commentPinMode && !commentComposer && (
+        <TouchableOpacity
+          style={[StyleSheet.absoluteFill, { zIndex: 28 }]}
+          activeOpacity={1}
+          onPress={(e) => {
+            const { locationX, locationY } = e.nativeEvent;
+            if (!previewSize.width || !previewSize.height) return;
+            openCommentAt(
+              locationX / previewSize.width,
+              locationY / previewSize.height
+            );
+          }}
+        >
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: scale(12),
+              alignSelf: 'center',
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                paddingHorizontal: scale(12),
+                paddingVertical: verticalScale(6),
+                borderRadius: scale(20),
+              }}
+            >
+              <Text
+                style={{
+                  color: '#FFF',
+                  fontSize: moderateScale(11),
+                  fontWeight: '600',
+                }}
+              >
+                Tap anywhere to leave a comment
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      <CommentComposerBubble
+        visible={!!commentComposer}
+        user={user}
+        members={projectMembers}
+        timecodeLabel={formatTime(currentPositionMs)}
+        pinX={commentComposer?.x ?? 0.5}
+        pinY={commentComposer?.y ?? 0.4}
+        previewWidth={previewSize.width || 1}
+        previewHeight={previewSize.height || 1}
+        submitting={commentSubmitting}
+        onCancel={() => {
+          setCommentComposer(null);
+          setCommentPinMode(false);
+        }}
+        onSubmit={handleCommentSubmit}
+      />
+
+          <View style={styles.videoTopBar}>
+            <TouchableOpacity
+              style={[
+                styles.previewChromeBtn,
+                commentPinMode && styles.previewChromeBtnAccent,
+              ]}
+              onPress={() => {
+                setCommentPinMode((v) => {
+                  const next = !v;
+                  if (!next) setCommentComposer(null);
+                  return next;
+                });
+              }}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={scale(18)}
+                color={commentPinMode ? COLORS.yellow : COLORS.textPrimary}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.previewChromeBtn}
+              onPress={() => navigation.navigate("reviewexport")}
+              hitSlop={8}
+            >
+              <Ionicons name="share-outline" size={scale(18)} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.previewChromeBtn, styles.previewChromeBtnAccent]}
+              onPress={() => navigation.navigate("reviewexport")}
+              hitSlop={8}
+            >
+              <Ionicons name="checkmark" size={scale(20)} color={COLORS.yellow} />
+            </TouchableOpacity>
+          </View>
           <View style={styles.timestampOverlay}>
             <Text style={styles.timestampText}>
               {formatTime(currentPositionMs)}{" "}
@@ -1449,11 +3135,16 @@ const handleGenerateCaptions = async (): Promise<number> => {
             </Text>
           </View>
           <View style={styles.videoControlRow}>
-            <TouchableOpacity style={styles.videoControlIcon} hitSlop={8}>
+            <TouchableOpacity
+              style={styles.videoControlIcon}
+              hitSlop={8}
+              disabled={!canUndo}
+              onPress={undo}
+            >
               <Ionicons
-                name="settings-outline"
+                name="arrow-undo"
                 size={scale(20)}
-                color={COLORS.textPrimary}
+                color={canUndo ? COLORS.textPrimary : COLORS.textSecondary}
               />
             </TouchableOpacity>
             <TouchableOpacity
@@ -1467,18 +3158,45 @@ const handleGenerateCaptions = async (): Promise<number> => {
                 color={COLORS.textPrimary}
               />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.videoControlIcon} hitSlop={8}>
+            <TouchableOpacity
+              style={styles.videoControlIcon}
+              hitSlop={8}
+              disabled={!canRedo}
+              onPress={redo}
+            >
               <Ionicons
-                name="scan-outline"
+                name="arrow-redo"
                 size={scale(20)}
-                color={COLORS.textPrimary}
+                color={canRedo ? COLORS.textPrimary : COLORS.textSecondary}
               />
             </TouchableOpacity>
           </View>
+          {/* Expand → immersive fullscreen preview */}
+          <TouchableOpacity
+            style={[styles.videoControlIcon, { position: "absolute", right: scale(12), bottom: verticalScale(12) }]}
+            hitSlop={8}
+            onPress={() => {
+              try {
+                player.pause();
+                musicPlayer.pause();
+              } catch {
+                /* ignore */
+              }
+              navigation.navigate("editorpreview", {
+                positionMs: Math.round(currentPositionMs),
+              });
+            }}
+          >
+            <Ionicons
+              name="scan-outline"
+              size={scale(20)}
+              color={COLORS.textPrimary}
+            />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Multi-track Timeline */}
+      {/* Multi-track Timeline — vertical scroll so VO/music aren't crushed */}
       <View style={styles.timelineContainer}>
         {/* Playhead Vertical Line */}
         <View style={styles.playheadLine} pointerEvents="none" />
@@ -1487,6 +3205,7 @@ const handleGenerateCaptions = async (): Promise<number> => {
           ref={timelineScrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
+          nestedScrollEnabled
           onScrollBeginDrag={() => {
             isScrubbingRef.current = true;
           }}
@@ -1500,9 +3219,16 @@ const handleGenerateCaptions = async (): Promise<number> => {
           scrollEventThrottle={16}
           contentContainerStyle={{
             paddingHorizontal: SCREEN_WIDTH * 0.35,
-            width: totalSeconds * PX_PER_SECOND + SCREEN_WIDTH * 0.7,
+            paddingBottom: verticalScale(8),
           }}
         >
+          <ScrollView
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+            style={styles.timelineTracksScroll}
+            contentContainerStyle={styles.timelineTracksContent}
+            bounces={false}
+          >
           <View>
             {/* 1. Ruler Track */}
             <View
@@ -1523,6 +3249,16 @@ const handleGenerateCaptions = async (): Promise<number> => {
                   <View style={styles.rulerTick} />
                   <Text style={styles.rulerMarkText}>{s}s</Text>
                 </View>
+              ))}
+              {/* Beat markers on the ruler */}
+              {beatMarkersMs.map((ms) => (
+                <View
+                  key={`beat-${ms}`}
+                  style={[
+                    styles.beatMarker,
+                    { left: (ms / 1000) * PX_PER_SECOND - 1 },
+                  ]}
+                />
               ))}
             </View>
 
@@ -1684,6 +3420,95 @@ const handleGenerateCaptions = async (): Promise<number> => {
               </View>
             )}
 
+            {/* 6. Voiceover track — mic narration takes */}
+            {voiceovers.length > 0 && (
+              <View
+                style={{
+                  height: verticalScale(22),
+                  position: "relative",
+                  width: totalSeconds * PX_PER_SECOND,
+                  marginTop: verticalScale(6),
+                }}
+              >
+                {voiceovers.map((v, i) => {
+                  const left = (v.startMs / 1000) * PX_PER_SECOND;
+                  const width = Math.max(
+                    scale(28),
+                    (v.durationMs / 1000) * PX_PER_SECOND,
+                  );
+                  const isSel = v.id === selectedVoiceoverId;
+                  return (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[
+                        styles.voiceoverTrackBlock,
+                        { left, width },
+                        isSel && styles.voiceoverTrackBlockSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedVoiceoverId(v.id);
+                        setActiveToolLabel("Voiceover");
+                      }}
+                    >
+                      <Ionicons
+                        name="mic"
+                        size={scale(10)}
+                        color={isSel ? COLORS.background : "#A78BFA"}
+                      />
+                      <Text style={styles.voiceoverTrackLabel} numberOfLines={1}>
+                        VO {i + 1}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* 7. Music tracks */}
+            {musicTracks.length > 0 && (
+              <View
+                style={{
+                  height: verticalScale(22),
+                  position: "relative",
+                  width: totalSeconds * PX_PER_SECOND,
+                  marginTop: verticalScale(6),
+                }}
+              >
+                {musicTracks.map((t, i) => {
+                  const id = t.id ?? `legacy-${i}`;
+                  const left = ((t.startMs ?? 0) / 1000) * PX_PER_SECOND;
+                  const width = Math.max(
+                    scale(28),
+                    (musicAudibleMs(t) / 1000) * PX_PER_SECOND,
+                  );
+                  const isSel = id === selectedMusicTrackId;
+                  return (
+                    <TouchableOpacity
+                      key={id}
+                      style={[
+                        styles.musicTrackBlock,
+                        { left, width },
+                        isSel && styles.musicTrackBlockSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedMusicTrackId(id);
+                        setActiveToolLabel("Music");
+                      }}
+                    >
+                      <Ionicons
+                        name="musical-notes"
+                        size={scale(10)}
+                        color={isSel ? COLORS.background : "#34D399"}
+                      />
+                      <Text style={styles.musicTrackLabel} numberOfLines={1}>
+                        {t.title ?? `Music ${i + 1}`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
             {/* Teammates' live cursors — colored playheads with name tags */}
             {remoteCursors.map((c) => (
               <View
@@ -1704,10 +3529,11 @@ const handleGenerateCaptions = async (): Promise<number> => {
               </View>
             ))}
           </View>
+          </ScrollView>
         </ScrollView>
       </View>
 
-      {/* Bottom Toolbar */}
+      {/* Bottom Toolbar — stays visible; tool sheets overlay above it */}
       <BottomToolbar
         onSplit={handleSplit}
         onDuplicate={handleDuplicate}
@@ -1715,7 +3541,9 @@ const handleGenerateCaptions = async (): Promise<number> => {
         onToolPress={handleToolPress}
       />
 
- {/* //for the filter tool panel  */}
+ {/* Tool sheets overlay the bottom of the editor so they don't stack under the toolbar */}
+ {activeToolLabel != null ? (
+ <View style={styles.toolSheetHost} pointerEvents="box-none">
     {activeToolLabel === 'Filter' ? (
   <FilterToolPanel
           visible={true}
@@ -1736,16 +3564,181 @@ const handleGenerateCaptions = async (): Promise<number> => {
     onClose={closeToolPanel}
   />
 ) : activeToolLabel === 'Music' ? (
-  // NEW: background music panel — pick a file, adjust volume, or remove
   <MusicToolPanel
     visible={true}
-    backgroundMusic={project?.backgroundMusic}
-    onPick={(uri, durationMs) => setBackgroundMusic(uri, durationMs)}
-    onVolumeChange={(volume) => updateBackgroundMusic({ volume })}
-    onRemove={() => {
-      removeBackgroundMusic();
-      closeToolPanel();
+    tracks={musicTracks}
+    selectedTrackId={selectedMusicTrackId}
+    playheadMs={currentPositionMs}
+    onSelectTrack={setSelectedMusicTrackId}
+    onAddTrack={(uri, durationMs, startMs, title) => {
+      const id = addMusicTrack(uri, durationMs, startMs, title);
+      setSelectedMusicTrackId(id);
     }}
+    onUpdateTrack={(trackId, changes) => updateMusicTrack(trackId, changes)}
+    onRemoveTrack={(trackId) => {
+      removeMusicTrack(trackId);
+      setSelectedMusicTrackId(null);
+    }}
+    onAddFootage={(url, durationMs, title) => {
+      const id = appendRemoteClip({ uri: url, durationMs, title });
+      if (id) setSelectedClipId(id);
+    }}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Stock' ? (
+  <StockToolPanel
+    visible={true}
+    playheadMs={currentPositionMs}
+    onAddAudio={(uri, durationMs, startMs, title) => {
+      const id = addMusicTrack(uri, durationMs, startMs, title);
+      setSelectedMusicTrackId(id);
+    }}
+    onAddFootage={(track) => {
+      const id = appendRemoteClip({
+        uri: track.url,
+        durationMs: track.durationMs ?? 12_000,
+        title: track.title,
+        thumbnailUri: track.thumbnailUrl,
+      });
+      if (id) setSelectedClipId(id);
+      Alert.alert('Stock added', `"${track.title}" appended to the timeline.`);
+    }}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Track' ? (
+  <MotionTrackPanel
+    visible={true}
+    targetLabel={
+      activeOverlay
+        ? activeOverlay.text.slice(0, 28) || 'Text'
+        : selectedMediaOverlay
+          ? selectedMediaOverlay.type === 'emoji'
+            ? selectedMediaOverlay.uri
+            : selectedMediaOverlay.type === 'video'
+              ? 'PiP video'
+              : 'Photo overlay'
+          : undefined
+    }
+    tracking={motionTracking}
+    keyframeCount={
+      activeOverlay?.keyframes?.length ??
+      selectedMediaOverlay?.keyframes?.length ??
+      0
+    }
+    onTrack={handleMotionTrack}
+    onClear={() => {
+      if (activeClip && activeOverlay) {
+        clearTextPositionKeyframes(activeClip.id, activeOverlay.id);
+      } else if (selectedMediaOverlayId) {
+        clearOverlayKeyframes(selectedMediaOverlayId);
+      }
+    }}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Effects' ? (
+  <EffectsToolPanel
+    visible={true}
+    effectId={activeClip?.effectId}
+    intensity={activeClip?.effectIntensity}
+    onChange={(effectId, intensity) =>
+      activeClip && updateClipEffect(activeClip.id, effectId, intensity)
+    }
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Movie' ? (
+  <MovieEffectsPanel
+    visible={true}
+    selectedId={activeClip?.movieEffectId ?? 'none'}
+    onApply={(id) => activeClip && applyMovieEffect(activeClip.id, id)}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Templates' ? (
+  <TemplatesPanel
+    visible={true}
+    canSave={!!activeClip}
+    onSave={async (name) => {
+      if (!activeClip) throw new Error('Select a clip first.');
+      await editTemplateService.saveFromClip(activeClip, name);
+    }}
+    onApply={(tpl) => activeClip && applyEditTemplate(activeClip.id, tpl)}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Color' ? (
+  <ColorGradePanel
+    visible={true}
+    grade={liveGrade}
+    onChange={(partial) =>
+      activeClip && updateClipColorGrade(activeClip.id, partial)
+    }
+    onReset={() =>
+      activeClip && updateClipColorGrade(activeClip.id, DEFAULT_COLOR_GRADE)
+    }
+    keyframeCount={activeClip?.colorGradeKeyframes?.length ?? 0}
+    onAddKeyframe={() => {
+      if (!activeClip) return;
+      const grade = {
+        ...DEFAULT_COLOR_GRADE,
+        ...(activeClip.colorGrade ?? {}),
+      };
+      addClipColorGradeKeyframe(activeClip.id, {
+        timeMs: Math.round(currentTime * 1000),
+        grade,
+      });
+    }}
+    onClearKeyframes={() =>
+      activeClip && clearClipColorGradeKeyframes(activeClip.id)
+    }
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Beats' ? (
+  <BeatsToolPanel
+    visible={true}
+    markers={beatMarkersMs}
+    playheadMs={currentPositionMs}
+    onAddAtPlayhead={() => addBeatMarker(currentPositionMs)}
+    onRemove={(timeMs) => removeBeatMarker(timeMs)}
+    onClear={clearBeatMarkers}
+    onClose={closeToolPanel}
+    onDetectBeats={handleDetectBeats}
+    detecting={detectingBeats}
+  />
+) : activeToolLabel === 'Shorts' ? (
+  <ShortsToolPanel
+    visible={true}
+    onGenerate={handleGenerateShorts}
+    onAdd={handleAddShort}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Multi-cam' ? (
+  <MultiCamToolPanel
+    visible={true}
+    activeClip={activeClip}
+    otherClips={clips.filter((c) => c.id !== activeClip?.id)}
+    playheadLabel={formatTime(currentPositionMs)}
+    onSyncWithClip={handleMulticamSyncWithClip}
+    onSyncWithPickedVideo={handleMulticamSyncPicked}
+    onCutToAngle={handleDirectorCut}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Stabilize' ? (
+  <StabilizeToolPanel
+    visible={true}
+    stabilize={activeClip?.stabilize}
+    autoReframe={activeClip?.autoReframe}
+    onStabilizeChange={(s) =>
+      activeClip && updateClipStabilize(activeClip.id, s)
+    }
+    onAnalyzeReframe={handleAnalyzeReframe}
+    onDisableReframe={() =>
+      activeClip && updateClipAutoReframe(activeClip.id, undefined)
+    }
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Brand kit' ? (
+  <BrandKitPanel
+    visible={true}
+    onSave={() => {}}
+    onApply={handleApplyBrandKit}
     onClose={closeToolPanel}
   />
 ) : activeToolLabel === 'Captions' ? (
@@ -1757,7 +3750,12 @@ const handleGenerateCaptions = async (): Promise<number> => {
     onClearCaptions={handleClearCaptions}
     onClose={closeToolPanel}
   />
-
+) : activeToolLabel === 'Rough cut' ? (
+  <SilenceToolPanel
+    visible={true}
+    onApply={handleRemoveSilence}
+    onClose={closeToolPanel}
+  />
 ) : activeToolLabel === 'Overlay' ? (
   // Multi-track overlays — PiP video, images/GIFs, emoji stickers + keyframes
   <OverlayToolPanel
@@ -1774,6 +3772,163 @@ const handleGenerateCaptions = async (): Promise<number> => {
       selectedMediaOverlayId && clearOverlayKeyframes(selectedMediaOverlayId)
     }
     onDelete={handleDeleteMediaOverlay}
+    onOpenMask={() => setActiveToolLabel('Mask')}
+    onClose={closeToolPanel}
+  />
+
+) : activeToolLabel === 'Mask' ? (
+  <MaskToolPanel
+    visible={true}
+    selectedOverlay={selectedMediaOverlay}
+    selectedText={activeOverlay}
+    playheadMs={
+      selectedMediaOverlay
+        ? currentPositionMs
+        : clipLocalMs
+    }
+    tracking={motionTracking}
+    onChange={(changes) =>
+      selectedMediaOverlayId && updateMediaOverlay(selectedMediaOverlayId, changes)
+    }
+    onTextMaskChange={(mask) => {
+      if (activeClip && activeOverlay) {
+        updateTextOverlay(activeClip.id, activeOverlay.id, { mask });
+      }
+    }}
+    onFollowTrack={handleMotionTrack}
+    onClearFollow={() =>
+      selectedMediaOverlayId && clearOverlayKeyframes(selectedMediaOverlayId)
+    }
+    onClose={closeToolPanel}
+  />
+
+) : activeToolLabel === 'Rotate' ? (
+  <RotateToolPanel
+    visible={true}
+    rotation={activeClip?.rotation ?? liveRotation}
+    keyframeCount={activeClip?.rotationKeyframes?.length ?? 0}
+    onRotationChange={(degrees) =>
+      activeClip && updateClipRotation(activeClip.id, degrees)
+    }
+    onAddKeyframe={() => {
+      if (!activeClip) return;
+      addClipRotationKeyframe(activeClip.id, {
+        timeMs: Math.round(clipLocalMs),
+        value: activeClip.rotation ?? 0,
+      });
+    }}
+    onClearKeyframes={() =>
+      activeClip && clearClipRotationKeyframes(activeClip.id)
+    }
+    onClose={closeToolPanel}
+  />
+
+) : activeToolLabel === 'Canvas' ? (
+  <CanvasToolPanel
+    visible={true}
+    clip={activeClip}
+    canvasColor={currentVideoProject?.canvasColor ?? '#000000'}
+    onCanvasColorChange={setCanvasColor}
+    onLayoutChange={(patch) =>
+      activeClip && updateClipLayout(activeClip.id, patch)
+    }
+    onDoubleExposure={() => {
+      if (!activeClip) {
+        Alert.alert('Select a clip', 'Pick a clip first, then Double exposure.');
+        return;
+      }
+      applyDoubleExposure(activeClip.id);
+      setActiveToolLabel('Overlay');
+      Alert.alert(
+        'Double exposure',
+        'Ghost layer added. Tweak Transparency / Size on Canvas, or the Overlay layer.'
+      );
+    }}
+    onOpenRotate={() => setActiveToolLabel('Rotate')}
+    onOpenMask={() => setActiveToolLabel('Mask')}
+    onClose={closeToolPanel}
+  />
+
+) : activeToolLabel === 'Sheet' ? (
+  <TitleCardPanel
+    visible={true}
+    onClose={closeToolPanel}
+    onAdd={(card, durationMs, where) => {
+      const id = addTitleCard(card, durationMs, where, selectedClipId);
+      if (id) {
+        setSelectedClipId(id);
+        closeToolPanel();
+        Alert.alert(
+          'Title card added',
+          'Add music under Music if you want a song under the sheet. Bounce text plays on preview + export.'
+        );
+      }
+    }}
+  />
+
+) : activeToolLabel === 'Assemble' ? (
+  <AssembleToolPanel
+    visible={true}
+    clips={clips}
+    selectedClipId={selectedClipId}
+    sourceClip={
+      activeClip && activeClip.kind !== 'title'
+        ? activeClip
+        : clips.find((c) => c.kind !== 'title') ?? null
+    }
+    onSelectClip={setSelectedClipId}
+    onExtractRange={(startSec, endSec) => {
+      const source =
+        activeClip && activeClip.kind !== 'title'
+          ? activeClip
+          : clips.find((c) => c.kind !== 'title');
+      if (!source) {
+        Alert.alert('No video', 'Select a video clip to pull a range from.');
+        return;
+      }
+      const id = insertClipRange(
+        source.id,
+        Math.round(startSec * 1000),
+        Math.round(endSec * 1000)
+      );
+      if (id) setSelectedClipId(id);
+    }}
+    onMoveClip={moveClip}
+    onDeleteClip={(clipId) => {
+      deleteClip(clipId);
+      if (selectedClipId === clipId) setSelectedClipId(null);
+    }}
+    onResetClipEdits={resetClipEdits}
+    onClose={closeToolPanel}
+  />
+
+) : activeToolLabel === 'Voiceover' ? (
+  <VoiceoverToolPanel
+    visible={true}
+    voiceovers={voiceovers}
+    selectedId={selectedVoiceoverId}
+    playheadMs={currentPositionMs}
+    onSelect={setSelectedVoiceoverId}
+    onRecorded={(uri, startMs, durationMs) => {
+      const id = addVoiceover(uri, startMs, durationMs);
+      setSelectedVoiceoverId(id);
+    }}
+    onVolumeChange={(volume) =>
+      selectedVoiceoverId && updateVoiceover(selectedVoiceoverId, { volume })
+    }
+    onDelete={() => {
+      if (!selectedVoiceoverId) return;
+      removeVoiceover(selectedVoiceoverId);
+      setSelectedVoiceoverId(null);
+    }}
+    onRecordingChange={(recording) => {
+      // CapCut-style: pause timeline while the mic is live.
+      if (recording) {
+        try { player.pause(); } catch { /* ignore */ }
+        try { musicPlayer.pause(); } catch { /* ignore */ }
+        try { voiceoverPlayer.pause(); } catch { /* ignore */ }
+      }
+    }}
     onClose={closeToolPanel}
   />
 
@@ -1783,17 +3938,49 @@ const handleGenerateCaptions = async (): Promise<number> => {
           visible={activeToolLabel !== null}
           toolLabel={activeToolLabel}
           onClose={closeToolPanel}
-          volume={activeClip?.volume ?? 1}
+          volume={liveVolume}
           onVolumeChange={(v) =>
             activeClip && updateClipVolume(activeClip.id, v)
           }
+          opacity={liveOpacity}
+          onOpacityChange={(v) =>
+            activeClip && updateClipOpacity(activeClip.id, v)
+          }
+          volumeKeyframeCount={activeClip?.volumeKeyframes?.length ?? 0}
+          onAddVolumeKeyframe={() => {
+            if (!activeClip) return;
+            addClipVolumeKeyframe(activeClip.id, {
+              timeMs: Math.round(currentTime * 1000),
+              value: activeClip.volume ?? 1,
+            });
+          }}
+          onClearVolumeKeyframes={() =>
+            activeClip && clearClipVolumeKeyframes(activeClip.id)
+          }
+          opacityKeyframeCount={activeClip?.opacityKeyframes?.length ?? 0}
+          onAddOpacityKeyframe={() => {
+            if (!activeClip) return;
+            addClipOpacityKeyframe(activeClip.id, {
+              timeMs: Math.round(currentTime * 1000),
+              value: activeClip.opacity ?? 1,
+            });
+          }}
+          onClearOpacityKeyframes={() =>
+            activeClip && clearClipOpacityKeyframes(activeClip.id)
+          }
+          audioFx={activeClip?.audioFx ?? DEFAULT_AUDIO_FX}
+          onAudioFxChange={(fx) =>
+            activeClip && updateClipAudioFx(activeClip.id, fx)
+          }
           speed={activeClip?.speed ?? 1}
           onSpeedChange={(s) => activeClip && updateClipSpeed(activeClip.id, s)}
-          textValue={activeOverlay?.text ?? ""}
-          onTextChange={(text) =>
-            activeClip &&
-            selectedOverlayId &&
-            updateTextOverlay(activeClip.id, selectedOverlayId, { text })
+          speedCurve={(activeClip?.speedCurve ?? 'none') as SpeedCurveId}
+          onSpeedCurveChange={(curve) =>
+            activeClip && updateClipSpeedCurve(activeClip.id, curve)
+          }
+          reversed={!!activeClip?.reversed}
+          onReversedChange={(reversed) =>
+            activeClip && updateClipReversed(activeClip.id, reversed)
           }
           textColor={activeOverlay?.color ?? "#FFFFFF"}
           onTextColorChange={(color) =>
@@ -1817,12 +4004,54 @@ const handleGenerateCaptions = async (): Promise<number> => {
           onFontSizeChange={(fontSize) =>
             activeClip &&
             selectedOverlayId &&
-            updateTextOverlay(activeClip.id, selectedOverlayId, { fontSize })
+            updateTextOverlay(activeClip.id, selectedOverlayId, {
+              fontSize: Math.round(fontSize),
+            })
           }
-          onAddText={(text) => {
-            if (!activeClip) return;
-            addTextOverlay(activeClip.id, text, currentTime * 1000);
-          }}
+          fontFamily={activeOverlay?.fontFamily ?? 'System'}
+          onFontFamilyChange={(fontFamily) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { fontFamily })
+          }
+          animationIn={activeOverlay?.animationIn ?? 'fade'}
+          onAnimationInChange={(animationIn) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { animationIn })
+          }
+          animationOut={activeOverlay?.animationOut ?? 'none'}
+          onAnimationOutChange={(animationOut) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { animationOut })
+          }
+          animationLoop={activeOverlay?.animationLoop ?? 'none'}
+          onAnimationLoopChange={(animationLoop) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { animationLoop })
+          }
+          animationDurationMs={activeOverlay?.animationDurationMs ?? 500}
+          onAnimationDurationChange={(animationDurationMs) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, {
+              animationDurationMs,
+            })
+          }
+          blendMode={activeOverlay?.blendMode ?? 'normal'}
+          onBlendModeChange={(blendMode) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { blendMode })
+          }
+          textOpacity={activeOverlay?.textOpacity ?? 1}
+          onTextOpacityChange={(textOpacity) =>
+            activeClip &&
+            selectedOverlayId &&
+            updateTextOverlay(activeClip.id, selectedOverlayId, { textOpacity })
+          }
           isEditingExistingOverlay={!!selectedOverlayId}
           onDeleteOverlay={() => {
             if (activeClip && selectedOverlayId) {
@@ -1832,6 +4061,8 @@ const handleGenerateCaptions = async (): Promise<number> => {
           }}
         />
 )}
+ </View>
+ ) : null}
 
 {/* {activeClip && (
   <CropOverlay
@@ -1880,7 +4111,8 @@ const handleGenerateCaptions = async (): Promise<number> => {
 
 // ─── Perfect Styles Replicating the Design ──────────────────────────────
 
-const styles = StyleSheet.create({
+function __makeStyles() {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -1899,25 +4131,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: scale(18),
-    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(6),
   },
   headerBtn: {
     padding: scale(4),
+    minWidth: scale(36),
   },
   previewWrapper: {
     flex: 1,
-    paddingHorizontal: scale(16),
+    minHeight: verticalScale(180),
+    paddingHorizontal: scale(14),
     marginVertical: verticalScale(4),
   },
   previewContainer: {
     flex: 1,
-    borderRadius: scale(28),
+    borderRadius: scale(24),
     overflow: "hidden",
-    backgroundColor: "#12252B",
+    backgroundColor: "#0E1016",
     position: "relative",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.06)",
   },
   videoView: {
     flex: 1,
@@ -1935,7 +4169,7 @@ const styles = StyleSheet.create({
   },
   tealScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(19, 44, 53, 0.45)",
+    backgroundColor: "rgba(11, 13, 19, 0.35)",
   },
   videoTopBar: {
     position: "absolute",
@@ -1945,20 +4179,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: scale(16),
-    paddingTop: verticalScale(14),
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(12),
     zIndex: 10,
+  },
+  previewChromeBtn: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Only the Done check gets a quiet yellow accent — not every control.
+  previewChromeBtnAccent: {
+    borderColor: "rgba(245,197,24,0.45)",
   },
   videoTitle: {
     color: COLORS.textPrimary,
-    fontSize: moderateScale(15),
+    fontSize: moderateScale(16),
     fontWeight: "700",
   },
   timestampOverlay: {
     position: "absolute",
     bottom: verticalScale(64),
     alignSelf: "center",
-    backgroundColor: "rgba(0,0,0,0.65)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(4),
     borderRadius: scale(20),
@@ -1993,16 +4241,33 @@ const styles = StyleSheet.create({
     width: scale(44),
     height: scale(44),
     borderRadius: scale(22),
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255,255,255,0.14)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
   },
   timelineContainer: {
-    height: verticalScale(210),
+    height: verticalScale(168),
     position: "relative",
-    marginTop: verticalScale(8),
+    marginTop: verticalScale(4),
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.06)",
+    backgroundColor: COLORS.background,
+  },
+  timelineTracksScroll: {
+    maxHeight: verticalScale(160),
+  },
+  timelineTracksContent: {
+    paddingBottom: verticalScale(10),
+  },
+  toolSheetHost: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 60,
+    elevation: 60,
   },
   playheadLine: {
     position: "absolute",
@@ -2041,6 +4306,15 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: moderateScale(9),
     fontWeight: "600",
+  },
+  beatMarker: {
+    position: "absolute",
+    top: 0,
+    bottom: verticalScale(14),
+    width: 2,
+    backgroundColor: COLORS.yellow,
+    opacity: 0.85,
+    borderRadius: 1,
   },
   trackRow: {
     flexDirection: "row",
@@ -2306,6 +4580,54 @@ const styles = StyleSheet.create({
     transform: [{ rotate: "45deg" }],
   },
 
+  voiceoverTrackBlock: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    borderRadius: scale(6),
+    backgroundColor: "rgba(167, 139, 250, 0.28)",
+    borderWidth: 1,
+    borderColor: "#A78BFA",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(4),
+    paddingHorizontal: scale(6),
+    overflow: "hidden",
+  },
+  voiceoverTrackBlockSelected: {
+    backgroundColor: "#A78BFA",
+    borderColor: "#C4B5FD",
+  },
+  voiceoverTrackLabel: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(8),
+    fontWeight: "700",
+  },
+
+  musicTrackBlock: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    borderRadius: scale(6),
+    backgroundColor: "rgba(52, 211, 153, 0.22)",
+    borderWidth: 1,
+    borderColor: "#34D399",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(4),
+    paddingHorizontal: scale(6),
+    overflow: "hidden",
+  },
+  musicTrackBlockSelected: {
+    backgroundColor: "#34D399",
+    borderColor: "#6EE7B7",
+  },
+  musicTrackLabel: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(8),
+    fontWeight: "700",
+  },
+
   // ── Live cursors (teammates' playheads) ──
   remoteCursor: {
     position: "absolute",
@@ -2333,3 +4655,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 });
+}
+let styles = __makeStyles();
+

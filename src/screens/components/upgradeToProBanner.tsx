@@ -1,4 +1,6 @@
 import React from 'react';
+import { useMemo } from "react";
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { s, ms, vs } from 'react-native-size-matters';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +11,8 @@ type Props = {
 };
 
 export default function UpgradeToProBanner({ onPress }: Props) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.glowWrap}>
       {/* Soft gold backdrop glow — sits behind the card, blurred by low opacity + radius */}
@@ -40,7 +44,8 @@ export default function UpgradeToProBanner({ onPress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   glowWrap: {
     marginBottom: vs(14),
   },
@@ -51,11 +56,11 @@ const styles = StyleSheet.create({
     right: s(4),
     bottom: vs(4),
     borderRadius: ms(16),
-    backgroundColor: '#F2C200',
+    backgroundColor: c.accent,
     opacity: Platform.OS === 'ios' ? 0.35 : 0.22,
     // iOS renders a real soft blur via shadow; Android falls back to this
     // semi-transparent backdrop since colored shadows aren't supported there.
-    shadowColor: '#F2C200',
+    shadowColor: c.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: ms(18),
     shadowOpacity: 1,
@@ -86,7 +91,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: '#F2C200',
+    color: c.accent,
     fontSize: ms(15),
     fontWeight: '700',
   },
@@ -96,3 +101,4 @@ const styles = StyleSheet.create({
     marginTop: vs(2),
   },
 });
+}

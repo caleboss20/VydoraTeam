@@ -5,10 +5,9 @@
  * 1. Prefix every path with `CONFIG.API_BASE`.
  * 2. Attach the access JWT as `Authorization: Bearer <token>`.
  * 3. On HTTP 401, attempt one silent refresh via `/auth/refresh`, then retry.
- * 4. If refresh fails, clear session and notify AuthContext so the user re-logs in.
+ * 4. Only clear the session when the refresh token is actually rejected —
+ *    never on a network blip (that was kicking users out mid-edit).
  * 5. Parse the backend error envelope: `{ error: { message, code, status } }`.
- *
- * Screens and contexts should keep calling services; only this module talks HTTP.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config';
@@ -24,7 +23,7 @@ let memoryAccessToken: string | null = null;
 let memoryRefreshToken: string | null = null;
 let handlers: AuthHandlers | null = null;
 /** Prevents parallel 401s from all firing refresh at once. */
-let refreshInFlight: Promise<boolean> | null = null;
+let refreshInFlight: Promise<'ok' | 'invalid' | 'network'> | null = null;
 
 export function setApiTokens(accessToken: string | null, refreshToken: string | null) {
   memoryAccessToken = accessToken;
@@ -36,13 +35,18 @@ export function registerAuthHandlers(next: AuthHandlers | null) {
 }
 
 async function readStoredTokens(): Promise<{ access: string | null; refresh: string | null }> {
-  if (memoryAccessToken || memoryRefreshToken) {
-    return { access: memoryAccessToken, refresh: memoryRefreshToken };
-  }
-  const [access, refresh] = await Promise.all([
+  // Prefer memory, but always fill any missing half from disk (access can be
+  // set while refresh was never loaded into memory).
+  let access = memoryAccessToken;
+  let refresh = memoryRefreshToken;
+  if (access && refresh) return { access, refresh };
+
+  const [storedAccess, storedRefresh] = await Promise.all([
     AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN),
     AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.REFRESH_TOKEN),
   ]);
+  access = access ?? storedAccess;
+  refresh = refresh ?? storedRefresh;
   memoryAccessToken = access;
   memoryRefreshToken = refresh;
   return { access, refresh };
@@ -81,15 +85,20 @@ async function parseErrorMessage(res: Response): Promise<string> {
 /**
  * Exchange the refresh token for a new access/refresh pair.
  * Backend refresh tokens are single-use — always store the new pair.
+ *
+ * Returns:
+ *  - true  → new tokens stored
+ *  - false → refresh rejected (session cleared) OR transient network error
+ *            (session kept — caller should NOT treat as "signed out")
  */
-async function tryRefresh(): Promise<boolean> {
+async function tryRefresh(): Promise<'ok' | 'invalid' | 'network'> {
   if (refreshInFlight) return refreshInFlight;
 
-  refreshInFlight = (async () => {
+  refreshInFlight = (async (): Promise<'ok' | 'invalid' | 'network'> => {
     const { refresh } = await readStoredTokens();
     if (!refresh) {
       await clearSession();
-      return false;
+      return 'invalid';
     }
     try {
       const res = await fetch(`${CONFIG.API_BASE}/auth/refresh`, {
@@ -98,19 +107,24 @@ async function tryRefresh(): Promise<boolean> {
         body: JSON.stringify({ refreshToken: refresh }),
       });
       if (!res.ok) {
-        await clearSession();
-        return false;
+        // Only wipe session when the server says the refresh token is dead.
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          await clearSession();
+          return 'invalid';
+        }
+        // 5xx / 429 — keep the user signed in; they'll retry later.
+        return 'network';
       }
       const data = await res.json();
       if (!data.accessToken || !data.refreshToken) {
         await clearSession();
-        return false;
+        return 'invalid';
       }
       await persistTokens(data.accessToken, data.refreshToken);
-      return true;
+      return 'ok';
     } catch {
-      await clearSession();
-      return false;
+      // Offline / Wi‑Fi blip — do NOT force re-login.
+      return 'network';
     } finally {
       refreshInFlight = null;
     }
@@ -165,7 +179,6 @@ export async function apiRequest<T = unknown>(
           'Make sure the backend is running and reachable from your phone.'
       );
     }
-    // Real fetch failure (not a mock) — phone usually cannot reach the PC API.
     throw new Error(
       `Cannot reach the Vydora API at ${CONFIG.API_BASE}. ` +
         'Make sure the backend is running, your phone is on the same Wi‑Fi, ' +
@@ -175,14 +188,20 @@ export async function apiRequest<T = unknown>(
     clearTimeout(timer);
   }
 
-  // Spring can return 403 for anonymous/expired JWT (not only 401). Treat both
-  // as a cue to refresh once, then retry the original request.
-  if ((res.status === 401 || res.status === 403) && !skipAuth && !skipRefresh) {
-    const refreshed = await tryRefresh();
-    if (refreshed) {
+  // Only 401 means "access JWT expired/missing". Real 403 FORBIDDEN must not
+  // burn the single-use refresh token or kick the user out.
+  if (res.status === 401 && !skipAuth && !skipRefresh) {
+    const outcome = await tryRefresh();
+    if (outcome === 'ok') {
       return apiRequest<T>(path, { ...options, skipRefresh: true });
     }
-    throw new Error('Session expired. Please sign in again.');
+    if (outcome === 'invalid') {
+      throw new Error('Session expired. Please sign in again.');
+    }
+    // Network hiccup during refresh — keep session, surface a soft error.
+    throw new Error(
+      'Connection dropped while renewing your session. Check Wi‑Fi and try again — you are still signed in.'
+    );
   }
 
   if (res.status === 204) {

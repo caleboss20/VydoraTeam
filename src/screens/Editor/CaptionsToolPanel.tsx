@@ -1,3 +1,7 @@
+/**
+ * AI auto-captions — opt-in Generate with professional style presets.
+ * Podcast / word-pop / phrases etc. Nothing runs until the user taps Generate.
+ */
 import React, { useState } from 'react';
 import {
   View,
@@ -6,11 +10,17 @@ import {
   StyleSheet,
   Modal,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { useAppPalette } from '../Contexts/ThemeContext';
+import {
+  CAPTION_STYLE_PRESETS,
+  CaptionStyleId,
+} from '../services/captionStylePresets';
 
-const COLORS = {
+let COLORS: Record<string, string> = {
   background: '#151821',
   yellow: '#F5C518',
   textPrimary: '#FFFFFF',
@@ -23,13 +33,12 @@ interface CaptionsToolPanelProps {
   visible: boolean;
   /** Number of caption overlays already on the active clip. */
   captionCount: number;
-  /** Kick off transcription; resolves with how many captions were added. */
-  onGenerate: () => Promise<number>;
+  /** Kick off transcription for the chosen style; resolves with count added. */
+  onGenerate: (styleId: CaptionStyleId) => Promise<number>;
   onClearCaptions: () => void;
   onClose: () => void;
 }
 
-// AI auto-captions panel — same bottom-sheet pattern as MusicToolPanel.
 export default function CaptionsToolPanel({
   visible,
   captionCount,
@@ -37,9 +46,23 @@ export default function CaptionsToolPanel({
   onClearCaptions,
   onClose,
 }: CaptionsToolPanelProps) {
+  const __palette = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    background: __palette.background,
+    surface: __palette.surface,
+    border: __palette.border,
+    yellow: __palette.yellow,
+    textPrimary: __palette.textPrimary,
+    textSecondary: __palette.textSecondary,
+    textMuted: __palette.textMuted,
+  };
+  styles = __makeStyles();
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastAdded, setLastAdded] = useState<number | null>(null);
+  const [styleId, setStyleId] = useState<CaptionStyleId>('karaoke');
 
   const handleGenerate = async () => {
     if (loading) return;
@@ -47,7 +70,7 @@ export default function CaptionsToolPanel({
       setLoading(true);
       setError(null);
       setLastAdded(null);
-      const added = await onGenerate();
+      const added = await onGenerate(styleId);
       setLastAdded(added);
     } catch (e: any) {
       setError(e?.message ?? 'Caption generation failed.');
@@ -72,8 +95,38 @@ export default function CaptionsToolPanel({
           </View>
 
           <Text style={styles.hint}>
-            Listens to this clip's audio and drops perfectly-timed captions onto
-            the timeline. You can reposition or restyle them like any text.
+            Pick a look, then Generate. Words sync to speech when timestamps are
+            available — nothing runs until you tap.
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.styleRow}
+          >
+            {CAPTION_STYLE_PRESETS.map((p) => {
+              const on = p.id === styleId;
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.styleChip, on && styles.styleChipOn]}
+                  onPress={() => setStyleId(p.id)}
+                  disabled={loading}
+                >
+                  <Ionicons
+                    name={p.icon}
+                    size={scale(14)}
+                    color={on ? COLORS.background : COLORS.textPrimary}
+                  />
+                  <Text style={[styles.styleChipText, on && styles.styleChipTextOn]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <Text style={styles.styleHint}>
+            {CAPTION_STYLE_PRESETS.find((p) => p.id === styleId)?.hint}
           </Text>
 
           {loading ? (
@@ -111,7 +164,8 @@ export default function CaptionsToolPanel({
   );
 }
 
-const styles = StyleSheet.create({
+function __makeStyles() {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -122,7 +176,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: scale(20),
     borderTopRightRadius: scale(20),
     padding: scale(20),
-    minHeight: verticalScale(220),
+    minHeight: verticalScale(280),
   },
   header: {
     flexDirection: 'row',
@@ -146,6 +200,39 @@ const styles = StyleSheet.create({
     lineHeight: moderateScale(18),
     marginBottom: verticalScale(10),
   },
+  styleRow: {
+    gap: scale(8),
+    paddingBottom: verticalScale(6),
+  },
+  styleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+    borderRadius: scale(16),
+    backgroundColor: '#0B0D13',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  styleChipOn: {
+    backgroundColor: COLORS.yellow,
+    borderColor: COLORS.yellow,
+  },
+  styleChipText: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(12),
+    fontWeight: '600',
+  },
+  styleChipTextOn: {
+    color: COLORS.background,
+  },
+  styleHint: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(11),
+    marginBottom: verticalScale(10),
+    lineHeight: moderateScale(15),
+  },
   pickBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -154,7 +241,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(14),
     backgroundColor: 'rgba(245,197,24,0.1)',
     borderRadius: scale(12),
-    marginTop: verticalScale(8),
+    marginTop: verticalScale(4),
   },
   pickBtnText: {
     color: COLORS.yellow,
@@ -194,3 +281,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+}
+let styles = __makeStyles();
+

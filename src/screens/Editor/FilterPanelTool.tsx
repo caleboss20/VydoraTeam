@@ -11,7 +11,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { VideoFilter } from '../types';
-const COLORS = {
+import { useAppPalette } from '../Contexts/ThemeContext';
+
+let COLORS: Record<string, string> = {
   background: '#0B0D13',
   surface: '#151821',
   border: '#222633',
@@ -37,6 +39,19 @@ export default function FilterToolPanel({
   clipUri,
   frameTimeMs = 0,
 }: FilterToolPanelProps) {
+  const __palette = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    background: __palette.background,
+    surface: __palette.surface,
+    border: __palette.border,
+    yellow: __palette.yellow,
+    textPrimary: __palette.textPrimary,
+    textSecondary: __palette.textSecondary,
+    textMuted: __palette.textMuted,
+  };
+  styles = __makeStyles();
+
   const [frameUri, setFrameUri] = useState<string | null>(null);
   const [frameError, setFrameError] = useState(false);
   useEffect(() => {
@@ -129,7 +144,8 @@ export default function FilterToolPanel({
     </View>
   );
 }
-const styles = StyleSheet.create({
+function __makeStyles() {
+  return StyleSheet.create({
   wrapper: {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
@@ -200,3 +216,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+}
+let styles = __makeStyles();

@@ -1,3 +1,4 @@
+import { useTheme } from "../Contexts/ThemeContext";
 
 import React, { useState } from 'react';
 import {
@@ -13,7 +14,7 @@ import {
 import { SafeAreaView,} from "react-native-safe-area-context"
 import { Ionicons } from '@expo/vector-icons';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const COLORS = {
+let COLORS: Record<string, string> = {
   bg: '#111111',
   surface: '#1C1C1C',
   surfaceAlt: '#252525',
@@ -25,7 +26,7 @@ const COLORS = {
   inputBg: '#1E1E1E',
   chipBg: '#2A2A2A',
   chipActive: '#F5C518',
-} as const;
+};
 const FONTS = ['Display', 'Sans', 'Serif', 'Mono'];
 const ANIMATIONS = ['None', 'Fade', 'Slide', 'Pop'];
 const TEXT_COLORS = ['#F5C518', '#FFFFFF', '#1A1A1A', '#FF6B6B', '#3ECFCF', '#8B5CF6', '#60B8FF'];
@@ -34,6 +35,30 @@ interface Props {
   navigation?: { goBack: () => void };
 }
 export default function AddTextScreen({ navigation }: Props) {
+  const { colors, isDark } = useTheme();
+  COLORS = {
+    ...COLORS,
+    bg: colors.background,
+    surface: colors.surface,
+    text: colors.text,
+    textPrimary: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    textDim: colors.textMuted,
+    textTertiary: colors.textMuted,
+    border: colors.border,
+    trackBg: colors.surface,
+    btnBg: colors.iconBg,
+    sheet: colors.surface,
+    compareBg: colors.surface,
+    yellow: colors.accent,
+    accent: colors.accent,
+    accentYellow: colors.accent,
+    pillBg: colors.iconBg,
+    trackEmpty: colors.border,
+  };
+  styles = makeStyles();
+
   const [caption, setCaption] = useState('Project');
   const [font, setFont] = useState('Display');
   const [alignment, setAlignment] = useState<Alignment>('center');
@@ -178,7 +203,8 @@ export default function AddTextScreen({ navigation }: Props) {
     </SafeAreaView>
   );
 }
-const styles = StyleSheet.create({
+function makeStyles() {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { paddingBottom: 32 },
   // Top bar
@@ -324,3 +350,5 @@ const styles = StyleSheet.create({
     borderColor: COLORS.text,
   },
 });
+}
+let styles = makeStyles();

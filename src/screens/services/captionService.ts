@@ -1,9 +1,8 @@
 /**
  * AI auto-captions — `/api/v1/ai/captions`.
  *
- * Sends the clip's public video URL; the backend extracts the audio,
- * transcribes it with Whisper, and returns timed segments. The editor turns
- * each segment into a styled text overlay on the timeline.
+ * Returns timed segments + words, with optional speaker diarization labels
+ * for multi-color captions.
  */
 import { CONFIG } from '../config';
 import { apiRequest } from './apiClient';
@@ -12,17 +11,48 @@ export type CaptionSegment = {
   startMs: number;
   endMs: number;
   text: string;
+  speakerId?: string;
+  speakerLabel?: string;
 };
 
-type CaptionsResponse = { items: CaptionSegment[] };
+export type CaptionWord = {
+  startMs: number;
+  endMs: number;
+  text: string;
+  speakerId?: string;
+  speakerLabel?: string;
+};
+
+export type CaptionsResult = {
+  items: CaptionSegment[];
+  words: CaptionWord[];
+};
+
+/** CapCut-style speaker palette. */
+export const SPEAKER_COLORS: Record<string, string> = {
+  SA: '#F5C518',
+  SB: '#4DA6FF',
+  SC: '#FF4D6D',
+  SD: '#4DFF88',
+};
+
+export function colorForSpeaker(speakerId?: string): string {
+  if (!speakerId) return '#FFFFFF';
+  return SPEAKER_COLORS[speakerId] ?? '#FFFFFF';
+}
+
+type CaptionsResponse = { items: CaptionSegment[]; words?: CaptionWord[] };
 
 export const captionService = {
-  generateCaptions: async (videoUrl: string): Promise<CaptionSegment[]> => {
+  generateCaptions: async (videoUrl: string): Promise<CaptionsResult> => {
     if (CONFIG.USE_MOCK) throw new Error('Mock captions disabled.');
     const data = await apiRequest<CaptionsResponse>('/ai/captions', {
       method: 'POST',
       body: JSON.stringify({ videoUrl }),
     });
-    return data.items || [];
+    return {
+      items: data.items || [],
+      words: data.words || [],
+    };
   },
 };

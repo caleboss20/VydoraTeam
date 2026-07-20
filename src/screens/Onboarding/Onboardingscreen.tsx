@@ -9,7 +9,8 @@ import {
   Animated,
   ViewToken,
 } from 'react-native'
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useMemo } from "react"
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import { s, vs, ms } from "react-native-size-matters";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -48,6 +49,8 @@ const slides: Slide[] = [
   },
 ];
 function Onboarding() {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { user } = useAuth();
   const flatListRef = useRef<FlatList>(null);
@@ -127,10 +130,11 @@ function Onboarding() {
 export default Onboarding;
 
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'black',
+    backgroundColor: c.background,
     alignItems: 'center',
   },
   // Slide
@@ -149,7 +153,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: ms(24),
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: c.text,
     textAlign: 'center',
     marginTop: vs(24),
     marginBottom: vs(12),
@@ -158,7 +162,7 @@ const styles = StyleSheet.create({
   // Description
   description: {
     fontSize: ms(14),
-    color: 'rgba(255,255,255,0.65)',
+    color: c.textSecondary,
     textAlign: 'center',
     lineHeight: ms(22),
     maxWidth: s(300),
@@ -174,15 +178,15 @@ const styles = StyleSheet.create({
     width: s(8),
     height: s(8),
     borderRadius: s(4),
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: c.border,
   },
   dotActive: {
-    backgroundColor: '#F5A623',
+    backgroundColor: c.accent,
     width: s(24),
   },
   // CTA
   cta: {
-    backgroundColor: '#F5C518',
+    backgroundColor: c.accent,
     borderRadius: s(50),
     paddingVertical: vs(11),
     paddingHorizontal: s(110),
@@ -192,8 +196,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: ms(15),
     fontWeight: '700',
-    color: '#13151c',
+    color: c.accentOn,
   },
 });
-
-
+}

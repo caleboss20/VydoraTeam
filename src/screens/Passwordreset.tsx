@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { useTheme, ThemeColors } from "./Contexts/ThemeContext";
 import {
   View,
   Text,
@@ -62,6 +64,8 @@ const validatePasswords = (
   return e;
 };
 function PasswordReset(){
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "passwordreset">>();
   const resetToken = route.params?.resetToken || "";
@@ -120,7 +124,7 @@ function PasswordReset(){
   };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#13151A" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -137,7 +141,7 @@ function PasswordReset(){
               navigation.navigate("verifyemail", { email: email || "" })
             }
           >
-            <Ionicons name="arrow-back" size={ms(20)} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={ms(20)} color={colors.text} />
           </Pressable>
           {/* Heading */}
           <Text style={styles.heading}>Create{"\n"}New password</Text>
@@ -157,13 +161,13 @@ function PasswordReset(){
             <Ionicons
               name="lock-closed-outline"
               size={ms(16)}
-              color="#ccc"
+              color={colors.textMuted}
               style={styles.inputIcon}
             />
             <TextInput
               style={styles.input}
               placeholder="New password"
-              placeholderTextColor="#cccccc"
+              placeholderTextColor={colors.textMuted}
               secureTextEntry={!showNew}
               value={newPassword}
               onChangeText={handleNewPasswordChange}
@@ -173,7 +177,7 @@ function PasswordReset(){
               <Ionicons
                 name={showNew ? "eye-outline" : "eye-off-outline"}
                 size={ms(16)}
-                color="#ccc"
+                color={colors.textMuted}
               />
             </Pressable>
           </View>
@@ -191,13 +195,13 @@ function PasswordReset(){
             <Ionicons
               name="lock-closed-outline"
               size={ms(16)}
-              color="#ccc"
+              color={colors.textMuted}
               style={styles.inputIcon}
             />
             <TextInput
               style={styles.input}
               placeholder="Confirm password"
-              placeholderTextColor="#cccccc"
+              placeholderTextColor={colors.textMuted}
               secureTextEntry={!showConfirm}
               value={confirmPassword}
               onChangeText={handleConfirmPasswordChange}
@@ -207,7 +211,7 @@ function PasswordReset(){
               <Ionicons
                 name={showConfirm ? "eye-outline" : "eye-off-outline"}
                 size={ms(16)}
-                color="#ccc"
+                color={colors.textMuted}
               />
             </Pressable>
           </View>
@@ -231,7 +235,7 @@ function PasswordReset(){
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#13151c" />
+              <ActivityIndicator size="small" color={colors.accentOn} />
             ) : (
               <Text style={styles.ctaText}>Reset Password</Text>
             )}
@@ -246,7 +250,7 @@ interface StrengthHintProps {
   label: string;
   met: boolean;
 }
-const StrengthHint = ({ label, met }: StrengthHintProps): JSX.Element => (
+const StrengthHint = ({ label, met }: StrengthHintProps): React.ReactElement => (
   <View style={hintStyles.row}>
     <Ionicons
       name={met ? "checkmark-circle" : "ellipse-outline"}
@@ -273,10 +277,11 @@ const hintStyles = StyleSheet.create({
   },
 });
 export default PasswordReset;
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#13151c",
+    backgroundColor: c.background,
   },
   scroll: {
     flexGrow: 1,
@@ -293,12 +298,12 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: ms(14),
-    color: "#FFFFFF",
+    color: c.text,
   },
   // Heading
   heading: {
     fontSize: s(32),
-    color: "#ffffff",
+    color: c.text,
     fontWeight: "800",
     lineHeight: s(40),
     marginBottom: vs(14),
@@ -314,7 +319,7 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1e1e1e",
+    backgroundColor: c.surface,
     borderRadius: s(10),
     paddingHorizontal: s(12),
     paddingVertical: vs(13),
@@ -335,7 +340,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: ms(14),
-    color: "#FFFFFF",
+    color: c.text,
     padding: 0,
   },
   errorText: {
@@ -353,7 +358,7 @@ const styles = StyleSheet.create({
   },
   // CTA
   cta: {
-    backgroundColor: "#F5A623",
+    backgroundColor: c.accent,
     borderRadius: s(50),
     paddingVertical: vs(11),
     alignItems: "center",
@@ -365,6 +370,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: ms(15),
     fontWeight: "700",
-    color: "#13151c",
+    color: c.background,
   },
 });
+}

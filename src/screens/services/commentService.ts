@@ -57,20 +57,39 @@ export const commentService = {
   },
 
   /**
-   * Post a comment on a clip.
-   * `timestampSeconds` defaults to 0 when the UI doesn’t pass a playhead yet.
+   * Post a comment on a clip at an optional playhead time (seconds),
+   * optionally pinned to a canvas position (0–1).
    */
   addComment: async (
     _projectId: string,
     clipId: string,
     text: string,
     _token: string,
-    timestampSeconds = 0
+    timestampSeconds = 0,
+    canvas?: { x: number; y: number } | null
   ): Promise<Comment> => {
     if (CONFIG.USE_MOCK) throw new Error('Mock comments disabled.');
+    const body: Record<string, unknown> = { text, timestampSeconds };
+    if (canvas) {
+      body.canvasX = canvas.x;
+      body.canvasY = canvas.y;
+    }
     const data = await apiRequest<ApiComment>(`/clips/${clipId}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ text, timestampSeconds }),
+      body: JSON.stringify(body),
+    });
+    return mapCommentFromApi(data);
+  },
+
+  resolveComment: async (
+    commentId: string,
+    resolved: boolean,
+    _token: string
+  ): Promise<Comment> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock comments disabled.');
+    const data = await apiRequest<ApiComment>(`/comments/${commentId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ resolved }),
     });
     return mapCommentFromApi(data);
   },

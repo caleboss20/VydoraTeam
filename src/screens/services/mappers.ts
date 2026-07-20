@@ -186,8 +186,13 @@ export type ApiMember = {
 };
 
 export function mapMemberFromApi(m: ApiMember): Member {
+  const raw = (m.status || 'ACTIVE').toUpperCase();
   const status =
-    (m.status || 'ACTIVE').toUpperCase() === 'INVITED' ? 'INVITED' : 'ACTIVE';
+    raw === 'INVITED'
+      ? 'INVITED'
+      : raw === 'PENDING_APPROVAL'
+        ? 'PENDING_APPROVAL'
+        : 'ACTIVE';
   return {
     // Screens key rows by `member.id`; backend membership PK is userId+projectId.
     id: m.userId,
@@ -200,6 +205,7 @@ export function mapMemberFromApi(m: ApiMember): Member {
     // Presence comes from WebSocket later; REST always starts offline.
     online: false,
     email: m.email || undefined,
+    avatarUrl: m.avatarUrl?.trim() || undefined,
     status,
     joinedAt: m.joinedAt,
   };
@@ -245,6 +251,8 @@ export type ApiComment = {
   authorName: string;
   text: string;
   timestampSeconds: number;
+  canvasX?: number | null;
+  canvasY?: number | null;
   resolved: boolean;
   createdAt: string;
 };
@@ -263,6 +271,15 @@ export function mapCommentFromApi(c: ApiComment): Comment {
     timestamp: dayjs(c.createdAt).fromNow(),
     timecodeMs: Math.round((c.timestampSeconds || 0) * 1000),
     timecodeLabel: formatDuration(secs),
+    canvasX:
+      typeof c.canvasX === 'number' && Number.isFinite(c.canvasX)
+        ? c.canvasX
+        : undefined,
+    canvasY:
+      typeof c.canvasY === 'number' && Number.isFinite(c.canvasY)
+        ? c.canvasY
+        : undefined,
+    resolved: !!c.resolved,
   };
 }
 

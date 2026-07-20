@@ -106,4 +106,62 @@ export const memberService = {
       { method: 'POST' }
     );
   },
+
+  /** Pending host-admit queue for a project (Owner only). */
+  listInviteRequests: async (
+    projectId: string,
+    _token: string
+  ): Promise<
+    Array<{
+      id: string;
+      projectId: string;
+      inviteeEmail: string;
+      role: string;
+      status: string;
+      requestedById: string;
+      requestedByName: string;
+      createdAt: string;
+    }>
+  > => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock members disabled.');
+    const data = await apiRequest<{
+      items: Array<{
+        id: string;
+        projectId: string;
+        inviteeEmail: string;
+        role: string;
+        status: string;
+        requestedById: string;
+        requestedByName: string;
+        createdAt: string;
+      }>;
+    }>(`/projects/${projectId}/members/invite-requests`);
+    return data.items || [];
+  },
+
+  /** Owner admits an Editor's proposed invite (Zoom-style). */
+  approveInviteRequest: async (
+    projectId: string,
+    requestId: string,
+    _token: string
+  ): Promise<Member> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock members disabled.');
+    const data = await apiRequest<ApiMember>(
+      `/projects/${projectId}/members/invite-requests/${requestId}/approve`,
+      { method: 'POST' }
+    );
+    return mapMemberFromApi(data);
+  },
+
+  rejectInviteRequest: async (
+    projectId: string,
+    requestId: string,
+    _token: string
+  ): Promise<void> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock members disabled.');
+    await apiRequest<void>(
+      `/projects/${projectId}/members/invite-requests/${requestId}/reject`,
+      { method: 'POST' }
+    );
+  },
 };

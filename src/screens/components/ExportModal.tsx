@@ -1,4 +1,6 @@
 
+import { useMemo } from "react";
+import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
@@ -8,6 +10,8 @@ interface ExportConfirmModalProps {
   onConfirm: () => void;
 }
 export function ExportConfirmModal({ visible, onCancel, onConfirm }: ExportConfirmModalProps) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Modal
       visible={visible}
@@ -37,7 +41,8 @@ export function ExportConfirmModal({ visible, onCancel, onConfirm }: ExportConfi
 
 
 
-const styles = StyleSheet.create({
+function makeStyles(c: ThemeColors) {
+  return StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -46,21 +51,21 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "80%",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 24,
     // borderWidth: 1,
-    borderColor: "#B8860B",
+    borderColor: c.accent,
   },
   title: {
-    color: "#FFFFFF",
+    color: c.text,
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 8,
     textAlign: "center",
   },
   subtitle: {
-    color: "#AAAAAA",
+    color: c.textSecondary,
     fontSize: 14,
     textAlign: "center",
     marginBottom: 20,
@@ -86,11 +91,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     borderRadius: 10,
-    backgroundColor: "#B8860B",
+    backgroundColor: c.accent,
     alignItems: "center",
   },
   confirmText: {
-    color: "#000000",
+    color: c.background,
     fontWeight: "700",
   },
 });
+}

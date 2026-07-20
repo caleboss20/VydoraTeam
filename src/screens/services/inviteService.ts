@@ -41,6 +41,8 @@ export interface SendInviteResult {
   invitesSent: number;
   invites: SentInvite[];
   inviteLink: string;
+  /** >0 when Editor invites need host (Owner) admit. */
+  pendingApprovalCount?: number;
 }
 
 export interface InviteDetails {
@@ -87,8 +89,17 @@ export async function sendInvite(
   const token = accessToken || '';
   const invites: SentInvite[] = [];
 
+  let pendingApprovalCount = 0;
   for (const email of emails) {
-    await memberService.inviteMember(projectId, email, role as InviteRole, token);
+    const member = await memberService.inviteMember(
+      projectId,
+      email,
+      role as InviteRole,
+      token
+    );
+    if ((member as { status?: string }).status === 'PENDING_APPROVAL') {
+      pendingApprovalCount += 1;
+    }
     invites.push({
       email,
       // Deep-link token === projectId (see file header).
@@ -102,6 +113,7 @@ export async function sendInvite(
     invitesSent: invites.length,
     invites,
     inviteLink: shareLinkForProject(projectId),
+    pendingApprovalCount,
   };
 }
 
