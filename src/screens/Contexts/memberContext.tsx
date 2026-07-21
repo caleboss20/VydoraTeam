@@ -26,9 +26,18 @@ interface MemberContextType {
   changeRole: (projectId: string, memberId: string, role: MemberRole | string) => Promise<void>;
   removeMember: (projectId: string, memberId: string) => Promise<void>;
   getMembersForProject: (projectId: string) => Member[];
+  /** Current user's role on a project (undefined if not a member yet). */
+  getMyRoleForProject: (projectId: string) => MemberRole | undefined;
+  /** Owner or Editor — can mutate timeline / export. */
+  canEditProject: (projectId: string) => boolean;
   setMemberOnline: (projectId: string, userId: string, online: boolean) => void;
   /** Replace the full online set for a project (from WebSocket presence broadcast). */
-  setOnlineMembers: (projectId: string, onlineUserIds: string[]) => void;
+  setOnlineMembers: (
+    projectId: string,
+    onlineUserIds: string[],
+    /** Always keep this user marked online (self) across empty/race broadcasts. */
+    keepOnlineUserId?: string | null
+  ) => void;
 }
 // ─── Context ─────────────────────────────────────────────────────────────────
 const MemberContext = createContext<MemberContextType | undefined>(undefined);
@@ -46,7 +55,7 @@ function withPresence(list: Member[], onlineIds: Set<string> | undefined): Membe
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 export function MemberProvider({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [members, setMembers] = useState<{ [projectId: string]: Member[] }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +176,20 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   const getMembersForProject = (projectId: string): Member[] => {
     return members[projectId] || [];
   };
+
+  const getMyRoleForProject = (projectId: string): MemberRole | undefined => {
+    if (!user?.id || !projectId) return undefined;
+    const me = (members[projectId] || []).find(
+      (m) => m.userId === user.id && (m.status || 'ACTIVE') === 'ACTIVE'
+    );
+    return me?.role;
+  };
+
+  const canEditProject = (projectId: string): boolean => {
+    const role = getMyRoleForProject(projectId);
+    return role === 'Owner' || role === 'Editor';
+  };
+
   // Called by WebSocket when member comes online/offline.
   const setMemberOnline = (
     projectId: string,
@@ -187,14 +210,21 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   };
   // Called by the WebSocket presence broadcast: the backend sends the full set
   // of userIds currently online in the project. Everyone else is offline.
-  const setOnlineMembers = (projectId: string, onlineUserIds: string[]) => {
+  // Always merge `keepOnlineUserId` (usually self) so a empty/race broadcast
+  // never flashes "0 online" while you're still connected.
+  const setOnlineMembers = (
+    projectId: string,
+    onlineUserIds: string[],
+    keepOnlineUserId?: string | null
+  ) => {
     const onlineSet = new Set(
       (onlineUserIds || []).map((id) => String(id)).filter(Boolean)
     );
+    if (keepOnlineUserId) onlineSet.add(String(keepOnlineUserId));
     onlineByProjectRef.current[projectId] = onlineSet;
     setMembers((prev) => {
       const list = prev[projectId] || [];
-      if (!list.length) return prev; // presence cached; applied on next fetchMembers
+      if (!list.length) return prev; // presence cached in ref; applied on next fetchMembers
       const updated = withPresence(list, onlineSet);
       let changed = false;
       for (let i = 0; i < list.length; i++) {
@@ -219,6 +249,8 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       changeRole,
       removeMember,
       getMembersForProject,
+      getMyRoleForProject,
+      canEditProject,
       setMemberOnline,
       setOnlineMembers,
     }}>

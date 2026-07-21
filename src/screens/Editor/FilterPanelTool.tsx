@@ -59,6 +59,18 @@ export default function FilterToolPanel({
     let cancelled = false;
     setFrameError(false);
     const generateFrame = async () => {
+      const lower = clipUri.toLowerCase();
+      const looksStill =
+        lower.includes('.png') ||
+        lower.includes('.jpg') ||
+        lower.includes('.jpeg') ||
+        lower.includes('.webp') ||
+        lower.includes('.gif') ||
+        lower.includes('image');
+      if (looksStill) {
+        if (!cancelled) setFrameUri(clipUri);
+        return;
+      }
       try {
         const { uri } = await VideoThumbnails.getThumbnailAsync(clipUri, {
           time: frameTimeMs,
@@ -66,7 +78,11 @@ export default function FilterToolPanel({
         if (!cancelled) setFrameUri(uri);
       } catch (e) {
         console.log('Filter preview thumbnail failed', e);
-        if (!cancelled) setFrameError(true);
+        // Flyer / still fallback — show the source itself.
+        if (!cancelled) {
+          setFrameUri(clipUri);
+          setFrameError(false);
+        }
       }
     };
     generateFrame();

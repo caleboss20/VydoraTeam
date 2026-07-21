@@ -9,6 +9,7 @@ import {
   ScrollView,
   PanResponder,
   Image,
+  Alert,
 } from "react-native";
 import ConfettiCannon from "react-native-confetti-cannon";
 import * as Sharing from "expo-sharing";
@@ -23,6 +24,13 @@ import { useAuth } from "../Contexts/Authcontext";
 import { useExport } from "../Contexts/exportContext";
 import { exportService } from "../services/exportService";
 import { Export, VideoProject } from "../types";
+import { ExportProgressSheet } from "../components/Exportsheet";
+import { File, Paths } from "expo-file-system";
+import { useRoute } from "@react-navigation/native";
+import {
+  isWowPathActive,
+  markWowPathDone,
+} from "../services/wowPathService";
 
 type Resolution = "720p" | "1080p" | "4K";
 type Format = "MP4" | "MOV" | "WebM";
@@ -46,15 +54,28 @@ export default function ExportReviewScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
   styles = makeStyles(colors);
   const confettiRef = useRef<any>(null);
-  const { currentVideoProject } = useVideoProject();
+  const route = useRoute<any>();
+  const { currentVideoProject, updateClipCrop } = useVideoProject();
   const { currentProject } = useProject();
   const [resolution, setResolution] = useState<Resolution>("1080p");
   const [format, setFormat] = useState<Format>("MP4");
   const [quality, setQuality] = useState(80);
+  const [aspectId, setAspectId] = useState<string>("tiktok");
   const [includeTextOverlays, setIncludeTextOverlays] = useState(true);
   const [includeFilters, setIncludeFilters] = useState(true);
   const [includeWatermark, setIncludeWatermark] = useState(false);
   const [showSuccessSheet, setShowSuccessSheet] = useState(false);
+  const [wowNudge, setWowNudge] = useState(route.params?.wow === true);
+
+  useEffect(() => {
+    if (route.params?.wow) {
+      setWowNudge(true);
+      return;
+    }
+    void isWowPathActive().then((active) => {
+      if (active) setWowNudge(true);
+    });
+  }, [route.params?.wow]);
 
   const { token } = useAuth();
   const { prependExport } = useExport();
@@ -129,8 +150,19 @@ export default function ExportReviewScreen({ navigation }: any) {
     setExportProgress(0);
     setExportError(null);
     try {
+      // Stamp platform aspect on every clip before bake.
+      (exportProject.clips ?? []).forEach((c) => {
+        if (c.id) updateClipCrop(c.id, { cropRatioId: aspectId });
+      });
+      const projectForBake: VideoProject = {
+        ...exportProject,
+        clips: (exportProject.clips ?? []).map((c) => ({
+          ...c,
+          cropRatioId: aspectId,
+        })),
+      };
       const result = await exportService.createExport(
-        exportProject,
+        projectForBake,
         {
           resolution,
           format,
@@ -181,7 +213,7 @@ export default function ExportReviewScreen({ navigation }: any) {
       <SafeAreaView style={styles.emptyState} edges={["top"]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation?.goBack()}>
-            <Ionicons name="arrow-back" size={scale(24)} color="#fff" />
+            <Ionicons name="arrow-back" size={scale(24)} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Export</Text>
           <View style={{ width: scale(24) }} />
@@ -201,7 +233,7 @@ export default function ExportReviewScreen({ navigation }: any) {
             onPress={() => navigation?.goBack()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="arrow-back" size={scale(24)} color="#fff" />
+            <Ionicons name="arrow-back" size={scale(24)} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Export</Text>
           <View style={{ width: scale(24) }} />
@@ -227,10 +259,36 @@ export default function ExportReviewScreen({ navigation }: any) {
             </View>
           )}
           <View style={styles.playButtonWrap}>
-            <Ionicons name="play" size={scale(22)} color="#fff" />
+            <Ionicons name="play" size={scale(22)} color={colors.text} />
           </View>
           <Text style={styles.durationLabel}>{durationLabel}</Text>
           <Text style={styles.filenameLabel}>{filename}</Text>
+        </View>
+        <Text style={styles.sectionLabel}>ASPECT · SHARE PRESET</Text>
+        <View style={styles.pillRow}>
+          {(
+            [
+              { id: "tiktok", label: "9:16" },
+              { id: "square", label: "1:1" },
+              { id: "youtube", label: "16:9" },
+              { id: "instagram_feed", label: "4:5" },
+            ] as const
+          ).map((a) => (
+            <TouchableOpacity
+              key={a.id}
+              style={[styles.pill, aspectId === a.id && styles.pillActive]}
+              onPress={() => setAspectId(a.id)}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  aspectId === a.id && styles.pillTextActive,
+                ]}
+              >
+                {a.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
         <Text style={styles.sectionLabel}>RESOLUTION</Text>
         <View style={styles.pillRow}>
@@ -313,7 +371,7 @@ export default function ExportReviewScreen({ navigation }: any) {
             </Text>
           ) : (
             <>
-              <Ionicons name="download" size={scale(18)} color="#111" />
+              <Ionicons name="download" size={scale(18)} color={colors.accentOn} />
               <Text style={styles.exportButtonText}>Export video</Text>
             </>
           )}
@@ -321,39 +379,101 @@ export default function ExportReviewScreen({ navigation }: any) {
         {exportError && <Text style={styles.errorText}>{exportError}</Text>}
       </ScrollView>
 
+      <ExportProgressSheet
+        visible={isExporting}
+        progress={exportProgress}
+        quote={
+          exportProgress < 15
+            ? "Uploading sources…"
+            : exportProgress < 90
+              ? "Rendering with FFmpeg…"
+              : "Finishing up…"
+        }
+        isDone={false}
+        onClose={() => {}}
+      />
+
       {showSuccessSheet && completedExport && (
         <View style={styles.sheetBackdrop}>
           <View style={styles.sheetCard}>
             <View style={styles.sheetIconWrap}>
-              <Ionicons name="checkmark" size={scale(28)} color="#111" />
+              <Ionicons name="checkmark" size={scale(28)} color={colors.accentOn} />
             </View>
             <Text style={styles.sheetTitle}>Export complete</Text>
             <Text style={styles.sheetSubtitle}>
               {completedExport.title}.{completedExport.format.toLowerCase()} ·{" "}
               {completedExport.resolution}
+              {"\n"}Open TikTok / Reels / Shorts from the share sheet and post.
             </Text>
 
             <TouchableOpacity
               style={styles.sheetPrimaryButton}
               onPress={async () => {
                 try {
-                  const available = await Sharing.isAvailableAsync();
-                  if (available && completedExport.fileUrl) {
-                    await Sharing.shareAsync(completedExport.fileUrl);
+                  const url = completedExport.fileUrl;
+                  if (!url) {
+                    Alert.alert("Unavailable", "No download URL for this export.");
+                    return;
                   }
-                } catch (e) {
+                  const available = await Sharing.isAvailableAsync();
+                  if (!available) {
+                    Alert.alert("Sharing unavailable", "Sharing is not supported on this device.");
+                    return;
+                  }
+                  // Remote HTTP URLs often fail with Sharing — cache locally first.
+                  let localUri = url;
+                  if (/^https?:\/\//i.test(url)) {
+                    const ext = (completedExport.format || "mp4").toLowerCase();
+                    const dest = new File(
+                      Paths.cache,
+                      `vydora-export-${completedExport.id}.${ext}`
+                    );
+                    const downloaded = await File.downloadFileAsync(url, dest, {
+                      idempotent: true,
+                    });
+                    localUri = downloaded.uri;
+                  }
+                  await Sharing.shareAsync(localUri, {
+                    mimeType: "video/mp4",
+                    UTI: "public.movie",
+                    dialogTitle: "Share to TikTok, Reels, Shorts…",
+                  });
+                } catch (e: any) {
                   console.log("share failed", e);
+                  Alert.alert(
+                    "Share failed",
+                    e?.message || "Could not share this file. Try again from the Exports tab."
+                  );
                 }
+                if (wowNudge) await markWowPathDone();
                 setShowSuccessSheet(false);
               }}
             >
-              <Ionicons name="share-outline" size={scale(16)} color="#111" />
-              <Text style={styles.sheetPrimaryText}>Share</Text>
+              <Ionicons name="share-outline" size={scale(16)} color={colors.accentOn} />
+              <Text style={styles.sheetPrimaryText}>Share MP4 to apps</Text>
             </TouchableOpacity>
+
+            {wowNudge ? (
+              <TouchableOpacity
+                style={styles.sheetInviteButton}
+                onPress={async () => {
+                  await markWowPathDone();
+                  setWowNudge(false);
+                  setShowSuccessSheet(false);
+                  navigation?.navigate("referral");
+                }}
+              >
+                <Ionicons name="gift-outline" size={scale(16)} color={colors.accent} />
+                <Text style={styles.sheetInviteText}>
+                  Invite a friend — both get Pro
+                </Text>
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity
               style={styles.sheetSecondaryButton}
-              onPress={() => {
+              onPress={async () => {
+                if (wowNudge) await markWowPathDone();
                 setShowSuccessSheet(false);
                 navigation?.navigate("export");
               }}
@@ -362,7 +482,10 @@ export default function ExportReviewScreen({ navigation }: any) {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.sheetSecondaryButton}
-              onPress={() => setShowSuccessSheet(false)}
+              onPress={async () => {
+                if (wowNudge) await markWowPathDone();
+                setShowSuccessSheet(false);
+              }}
             >
               <Text style={styles.sheetSecondaryText}>Done</Text>
             </TouchableOpacity>
@@ -672,6 +795,23 @@ function makeStyles(c: ThemeColors) {
     color: c.accentOn,
     fontWeight: "700",
     fontSize: moderateScale(14),
+  },
+  sheetInviteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(6),
+    width: "100%",
+    paddingVertical: verticalScale(13),
+    borderRadius: scale(10),
+    borderWidth: 1,
+    borderColor: c.accent,
+    marginBottom: verticalScale(8),
+  },
+  sheetInviteText: {
+    color: c.accent,
+    fontWeight: "700",
+    fontSize: moderateScale(13),
   },
   sheetSecondaryButton: { paddingVertical: verticalScale(10) },
   sheetSecondaryText: { color: c.textMuted, fontSize: moderateScale(13) },

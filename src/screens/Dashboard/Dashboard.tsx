@@ -28,6 +28,7 @@ import { Project } from "../types";
 import { useExport } from "../Contexts/exportContext";
 import UpgradeToProBanner from "../components/upgradeToProBanner";
 import { useTheme } from "../Contexts/ThemeContext";
+import { useWowPath } from "../Contexts/useWowPath";
 // ─── Palette ─────────────────────────────────────────────────────────────────
 type DashPalette = {
   bg: string;
@@ -146,27 +147,25 @@ const formatDate = (dateStr: string): string => {
   });
 };
 // ─── Quick Actions (static, flat icon style) ─────────────────────────────────
-const QUICK_ACTIONS: QuickAction[] = [
+/** Empty / first-run: only the three paths that finish a reel. */
+const QUICK_ACTIONS_BEGINNER: QuickAction[] = [
   {
-    id: "1",
-    label: "New project",
-    icon: "add-circle-outline",
-    navigate: "newproject",
+    id: "reel",
+    label: "Make a reel",
+    icon: "flash-outline",
+    navigate: "__wow__",
   },
   {
-    id: "2",
-    label: "Upload",
-    icon: "cloud-upload-outline",
-    navigate: "uploadvideo",
+    id: "templates",
+    label: "Templates",
+    icon: "layers-outline",
+    navigate: "__templates__",
   },
-  {
-    id: "3",
-    label: "Invite",
-    icon: "person-add-outline",
-    navigate: "invitemember",
-  },
-  { id: "4", label: "Export", icon: "film-outline", navigate: "export" },
+  { id: "export", label: "Export", icon: "share-outline", navigate: "export" },
 ];
+
+/** Returning users: same focused trio (Invite/Upload live in project detail). */
+const QUICK_ACTIONS_FULL: QuickAction[] = QUICK_ACTIONS_BEGINNER;
 
 
 
@@ -237,7 +236,11 @@ function DashboardScreen() {
   const { projects, isLoading, setCurrentProject,renameProject,deleteProject } = useProject();
  const {exports:exportsList}=useExport();
   const { notifications } = useNotification();
+  const { startWowPath, starting: wowStarting } = useWowPath();
   const [search, setSearch] = useState<string>("");
+
+  const isEmpty = projects.length === 0;
+  const quickActions = isEmpty ? QUICK_ACTIONS_BEGINNER : QUICK_ACTIONS_FULL;
 
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
@@ -427,12 +430,23 @@ localUri = downloaded.uri;
           </View>
           {/* ── Flat icon action row (EDIT+ style, no boxes) ── */}
           <View style={styles.quickActionsRow}>
-            {QUICK_ACTIONS.map((action) => (
+            {quickActions.map((action) => (
               <TouchableOpacity
                 key={action.id}
-                onPress={() => navigation.navigate(action.navigate)}
+                onPress={() => {
+                  if (action.navigate === "__wow__") {
+                    void startWowPath();
+                    return;
+                  }
+                  if (action.navigate === "__templates__") {
+                    void startWowPath("Templates");
+                    return;
+                  }
+                  navigation.navigate(action.navigate);
+                }}
                 style={styles.quickActionBtn}
                 activeOpacity={0.7}
+                disabled={action.navigate === "__wow__" && wowStarting}
               >
                 <View style={styles.quickActionIconWrap}>
                   <Ionicons
@@ -475,7 +489,29 @@ localUri = downloaded.uri;
 
 
 
-          {/* ── NEW PROJECT hero card (light teal, dashed CTA) ── */}
+          {/* ── Create-first hero: Make a reel (primary) + New project ── */}
+          <TouchableOpacity
+            style={styles.makeReelCard}
+            activeOpacity={0.9}
+            disabled={wowStarting}
+            onPress={() => void startWowPath()}
+          >
+            <View style={styles.heroTextBox}>
+              <Text style={styles.makeReelTitle}>MAKE A REEL</Text>
+              <Text style={styles.makeReelSubtitle}>
+                {wowStarting
+                  ? "Opening…"
+                  : "Finished Looks · captions · export"}
+              </Text>
+            </View>
+            <View style={styles.makeReelIcon}>
+              {wowStarting ? (
+                <ActivityIndicator color="#0B0D13" />
+              ) : (
+                <Ionicons name="flash" size={ms(22)} color="#0B0D13" />
+              )}
+            </View>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.heroCard}
             activeOpacity={0.9}
@@ -518,6 +554,24 @@ localUri = downloaded.uri;
                   ? "No projects match your search"
                   : "Your projects will appear here"}
               </Text>
+              {!search.trim() ? (
+                <TouchableOpacity
+                  style={styles.wowCta}
+                  activeOpacity={0.85}
+                  disabled={wowStarting}
+                  onPress={() => void startWowPath()}
+                >
+                  {wowStarting ? (
+                    <ActivityIndicator color={C.heroText} />
+                  ) : (
+                    <Text style={styles.wowCtaText}>
+                      {isEmpty
+                        ? "Try a 60-second edit"
+                        : "Make another auto edit"}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : (
             filteredProjects.map((project) => (
@@ -545,6 +599,44 @@ localUri = downloaded.uri;
                   <Text style={styles.projectTitle} numberOfLines={1}>
                     {project.name}
                   </Text>
+                  <View style={styles.accessBadgeRow}>
+                    {(() => {
+                      const owned = user?.id && project.ownerId === user.id;
+                      const role = project.myRole;
+                      const label = owned
+                        ? "Owned by you"
+                        : role === "Viewer"
+                          ? "Shared · Viewer"
+                          : role === "Editor"
+                            ? "Shared · Editor"
+                            : role === "Owner"
+                              ? "Shared · Owner"
+                              : "Shared";
+                      const shared = !owned;
+                      return (
+                        <View
+                          style={[
+                            styles.accessBadge,
+                            shared && styles.accessBadgeShared,
+                          ]}
+                        >
+                          <Ionicons
+                            name={owned ? "person" : "people"}
+                            size={ms(10)}
+                            color={shared ? C.accent : C.textSecondary}
+                          />
+                          <Text
+                            style={[
+                              styles.accessBadgeText,
+                              shared && styles.accessBadgeTextShared,
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                  </View>
                   <View style={styles.projectMetaRow}>
                     <StatusBadge status={project.status} />
                     <Text style={styles.projectMeta}>
@@ -774,6 +866,34 @@ function createDashboardStyles(C: DashPalette) {
     borderColor: C.border,
   },
   searchInput: { flex: 1, color: C.textPrimary, fontSize: ms(13) },
+  // Create-first yellow hero
+  makeReelCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.accent,
+    borderRadius: ms(18),
+    padding: s(18),
+    marginBottom: vs(10),
+  },
+  makeReelTitle: {
+    color: "#0B0D13",
+    fontSize: ms(16),
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  makeReelSubtitle: {
+    color: "rgba(11,13,19,0.72)",
+    fontSize: ms(12),
+    marginBottom: vs(2),
+  },
+  makeReelIcon: {
+    width: ms(44),
+    height: ms(44),
+    borderRadius: ms(22),
+    backgroundColor: "rgba(11,13,19,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   // Hero "NEW PROJECT" card — light teal like reference
   heroCard: {
     flexDirection: "row",
@@ -848,6 +968,20 @@ function createDashboardStyles(C: DashPalette) {
     marginTop: vs(10),
   },
   emptySubtitle: { color: C.textSecondary, fontSize: ms(12), marginTop: vs(4) },
+  wowCta: {
+    marginTop: vs(18),
+    backgroundColor: C.accent,
+    borderRadius: ms(24),
+    paddingHorizontal: s(22),
+    paddingVertical: vs(11),
+    minWidth: s(200),
+    alignItems: "center",
+  },
+  wowCtaText: {
+    color: C.heroText,
+    fontSize: ms(13),
+    fontWeight: "800",
+  },
   // Project row — thumbnail-led, matches reference list style
   projectRow: {
     backgroundColor: C.surface,
@@ -870,6 +1004,30 @@ function createDashboardStyles(C: DashPalette) {
   thumbnailImage: { width: "100%", height: "100%" },
   projectInfo: { flex: 1, gap: vs(3) },
   projectTitle: { color: C.textPrimary, fontSize: ms(14), fontWeight: "700" },
+  accessBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  accessBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(4),
+    backgroundColor: C.draftBg,
+    borderRadius: ms(8),
+    paddingHorizontal: s(8),
+    paddingVertical: vs(2),
+  },
+  accessBadgeShared: {
+    backgroundColor: "rgba(245,197,24,0.12)",
+  },
+  accessBadgeText: {
+    color: C.textSecondary,
+    fontSize: ms(10),
+    fontWeight: "700",
+  },
+  accessBadgeTextShared: {
+    color: C.accent,
+  },
   projectMetaRow: { flexDirection: "row", alignItems: "center", gap: s(8) },
   projectMeta: { color: C.textSecondary, fontSize: ms(10.5) },
   memberCountText: {

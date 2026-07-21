@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
@@ -56,6 +57,9 @@ interface VoiceoverToolPanelProps {
   onDelete: () => void;
   /** Pause timeline playback while the mic is live. */
   onRecordingChange?: (recording: boolean) => void;
+  /** Sync selected VO → karaoke captions on the active clip. */
+  onSyncKaraoke?: () => Promise<void>;
+  karaokeBusy?: boolean;
   onClose: () => void;
 }
 
@@ -69,6 +73,8 @@ export default function VoiceoverToolPanel({
   onVolumeChange,
   onDelete,
   onRecordingChange,
+  onSyncKaraoke,
+  karaokeBusy = false,
   onClose,
 }: VoiceoverToolPanelProps) {
   const __palette = useAppPalette();
@@ -237,6 +243,29 @@ export default function VoiceoverToolPanel({
             maximumTrackTintColor={COLORS.border}
             thumbTintColor={COLORS.vo}
           />
+          {onSyncKaraoke ? (
+            <TouchableOpacity
+              style={styles.syncBtn}
+              disabled={karaokeBusy}
+              onPress={() => {
+                void onSyncKaraoke().catch((e: any) =>
+                  Alert.alert(
+                    'Karaoke sync',
+                    e?.message ?? 'Could not sync captions to this voiceover.'
+                  )
+                );
+              }}
+            >
+              {karaokeBusy ? (
+                <ActivityIndicator color="#0B0D13" />
+              ) : (
+                <Ionicons name="text-outline" size={scale(16)} color="#0B0D13" />
+              )}
+              <Text style={styles.syncBtnText}>
+                {karaokeBusy ? 'Syncing…' : 'Sync karaoke to VO'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={styles.deleteBtn} onPress={onDelete}>
             <Ionicons name="trash-outline" size={scale(16)} color={COLORS.danger} />
             <Text style={styles.deleteBtnText}>Delete take</Text>
@@ -350,6 +379,21 @@ function __makeStyles() {
     color: COLORS.danger,
     fontSize: moderateScale(13),
     fontWeight: '600',
+  },
+  syncBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: scale(8),
+    backgroundColor: COLORS.yellow,
+    borderRadius: scale(10),
+    paddingVertical: verticalScale(10),
+    marginTop: verticalScale(10),
+  },
+  syncBtnText: {
+    color: '#0B0D13',
+    fontWeight: '800',
+    fontSize: moderateScale(12),
   },
 });
 }

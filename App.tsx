@@ -16,10 +16,24 @@ import { InviteProvider } from "./src/screens/Contexts/InviteContext";
 import { ThemeProvider, useTheme } from "./src/screens/Contexts/ThemeContext";
 
 const linking: LinkingOptions<any> = {
-  prefixes: ["vydora://", "https://vydora.io"],
+  prefixes: ["vydora://", "https://vydora.io", "https://vydora.app"],
   config: {
     screens: {
       AcceptInvite: "invite/:token",
+      GuestReview: "review/:token",
+      // Share links: vydora://referral/VYD-XXXXXX · https://vydora.app/r/VYD-XXXXXX
+      referral: {
+        path: "referral/:code",
+        parse: {
+          code: (code: string) => code?.toUpperCase?.() ?? code,
+        },
+      },
+      signup: {
+        path: "r/:referralCode",
+        parse: {
+          referralCode: (code: string) => code?.toUpperCase?.() ?? code,
+        },
+      },
     },
   },
 };

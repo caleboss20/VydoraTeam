@@ -11,6 +11,7 @@ import {
   Image,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -25,7 +26,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "./Contexts/Authcontext";
+import { useWowPath } from "./Contexts/useWowPath";
 import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere relative to this file
+import { useGoogleIdToken } from "./services/googleAuth";
 // ── Types ─────────────────────────────────────────────────────────
 // signup params + AcceptInvite added to support the invite-driven signup path:
 // - prefillEmail / pendingInviteToken arrive when AcceptInviteScreen sends a
@@ -42,8 +45,16 @@ type RootStackParamList = {
     | undefined;
   onboarding: undefined;
   projects: undefined;
-  signup: { prefillEmail?: string; pendingInviteToken?: string } | undefined;
+  signup:
+    | {
+        prefillEmail?: string;
+        pendingInviteToken?: string;
+        referralCode?: string;
+        resumeWow?: boolean;
+      }
+    | undefined;
   AcceptInvite: { token: string };
+  editorscreen: { wow?: boolean; initialTool?: string } | undefined;
 };
 interface ValidationFields {
   fullName: string;
@@ -65,13 +76,19 @@ export default function Signupscreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "signup">>();
-  const { register, logout, isLoadingAuth, error } = useAuth();
+  const { register, loginWithGoogle, isLoadingAuth, error } = useAuth();
+  const { startWowPath, starting } = useWowPath();
+  const { promptGoogle, ready: googleReady } = useGoogleIdToken();
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [fullName, setFullName] = useState<string>("");
   // Prefilled with the invited email address, if this screen was reached
   // via an invite link — reduces the chance of signing up with a
   // different email than the one that was actually invited.
   const [email, setEmail] = useState<string>(route.params?.prefillEmail ?? "");
   const [password, setPassword] = useState<string>("");
+  const [referralCode, setReferralCode] = useState<string>(
+    route.params?.referralCode?.trim().toUpperCase() ?? ""
+  );
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
@@ -102,6 +119,37 @@ export default function Signupscreen() {
     const e = validate({ fullName, email, password });
     setErrors(e);
   };
+  const handleGoogle = async (): Promise<void> => {
+    if (!googleReady || googleBusy || isLoadingAuth || starting) return;
+    try {
+      setGoogleBusy(true);
+      const idToken = await promptGoogle();
+      if (!idToken) return;
+      await loginWithGoogle(idToken, referralCode.trim() || undefined);
+      const pendingToken =
+        route.params?.pendingInviteToken ??
+        (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
+      if (pendingToken) {
+        navigation.navigate("AcceptInvite", { token: pendingToken });
+        return;
+      }
+      const resumeWow = !!route.params?.resumeWow;
+      if (resumeWow) {
+        await AsyncStorage.setItem("vydora:onboarding:done", "true");
+        await startWowPath();
+        return;
+      }
+      await AsyncStorage.removeItem("vydora:onboarding:done");
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "onboarding" }],
+      });
+    } catch (e: any) {
+      Alert.alert("Google sign-in", e?.message ?? "Could not sign in with Google.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
   const handleSignup = async (): Promise<void> => {
     setTouched({ fullName: true, email: true, password: true });
     const e = validate({ fullName, email, password });
@@ -109,7 +157,12 @@ export default function Signupscreen() {
     if (Object.keys(e).length === 0) {
       try {
         // Real API: POST /api/v1/auth/register → user row in Postgres + JWTs.
-        await register(fullName, email, password);
+        await register(
+          fullName,
+          email,
+          password,
+          referralCode.trim() || undefined
+        );
       } catch {
         return; // AuthContext already set `error` for the UI
       }
@@ -120,17 +173,21 @@ export default function Signupscreen() {
         navigation.navigate("AcceptInvite", { token: pendingToken });
         return;
       }
-      // New account → Sign In → tutorial (Onboardingscreen) → dashboard.
+      // Stay logged in — fresh accounts go straight into the create hook.
       await AsyncStorage.removeItem("vydora:onboarding:done");
-      await logout();
+      await AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.WOW_PATH_DONE);
+      await AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.WOW_PATH_ACTIVE);
+
+      const resumeWow = !!route.params?.resumeWow;
+      if (resumeWow) {
+        await AsyncStorage.setItem("vydora:onboarding:done", "true");
+        await startWowPath();
+        return;
+      }
+      // First-time signup → onboarding (create promise) → wow CTA on last slide.
       navigation.reset({
         index: 0,
-        routes: [
-          {
-            name: "signin",
-            params: { prefillEmail: email.trim(), needsOnboarding: true },
-          },
-        ],
+        routes: [{ name: "onboarding" }],
       });
     }
   };
@@ -226,16 +283,29 @@ export default function Signupscreen() {
             </TouchableOpacity>
           </View>
           {hasError("password") && <Text style={styles.errorText}>{errors.password}</Text>}
+          {/* Optional friend invite — same input row pattern */}
+          <View style={styles.inputRow}>
+            <Ionicons name="gift-outline" size={ms(18)} color={colors.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Invite code (optional)"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              value={referralCode}
+              onChangeText={(v: string) => setReferralCode(v.toUpperCase())}
+            />
+          </View>
           {/* Auth error from context */}
           {error && <Text style={styles.errorText}>{error}</Text>}
           {/* Sign Up CTA */}
           <TouchableOpacity
-            style={[styles.cta, isLoadingAuth && styles.ctaDisabled]}
+            style={[styles.cta, (isLoadingAuth || starting) && styles.ctaDisabled]}
             onPress={handleSignup}
             activeOpacity={0.85}
-            disabled={isLoadingAuth}
+            disabled={isLoadingAuth || starting}
           >
-            {isLoadingAuth ? (
+            {isLoadingAuth || starting ? (
               <ActivityIndicator size="small" color={colors.accentOn} />
             ) : (
               <Text style={styles.ctaText}>Sign Up</Text>
@@ -248,8 +318,17 @@ export default function Signupscreen() {
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
               <Image style={styles.logo} source={require("../../assets/facebook.png")} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
-              <Image style={styles.logo} source={require("../../assets/google.png")} />
+            <TouchableOpacity
+              style={styles.socialIconBtn}
+              activeOpacity={0.8}
+              onPress={() => void handleGoogle()}
+              disabled={!googleReady || googleBusy || isLoadingAuth || starting}
+            >
+              {googleBusy ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <Image style={styles.logo} source={require("../../assets/google.png")} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
               <Ionicons name="logo-apple" size={ms(22)} color={colors.text} />

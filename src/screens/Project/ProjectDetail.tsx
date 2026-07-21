@@ -10,7 +10,9 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
-  Image
+  Image,
+  Clipboard,
+  Share,
 } from "react-native";
 
 import { Modal, TextInput, KeyboardAvoidingView, Platform,} from "react-native";
@@ -28,6 +30,12 @@ import { useMember } from "../Contexts/memberContext";
 import { useComment } from "../Contexts/commentContext";
 import { useExport } from "../Contexts/exportContext";
 import { useAuth } from "../Contexts/Authcontext";
+import {
+  reviewService,
+  reviewDeepLink,
+  reviewWebLink,
+  ReviewCommentResponse,
+} from "../services/reviewService";
 import { useVersionHistory } from "../Contexts/VersionHistoryContext";
 import { uploadService } from "../services/uploadService";
 import { CONFIG } from "../config";
@@ -772,11 +780,161 @@ export default function ProjectDetailScreen() {
     }
   };
 
+  const handleShareForReview = async () => {
+    if (!currentProject) return;
+    try {
+      const link = await reviewService.createLink(currentProject.id);
+      const deep = reviewDeepLink(link.token);
+      const web = reviewWebLink(link.token);
+      Clipboard.setString(deep);
+      Alert.alert(
+        "Review link ready",
+        "Anyone with the link can watch and leave timestamped comments — no login required.\n\nLink copied to clipboard.",
+        [
+          {
+            text: "Share…",
+            onPress: () => {
+              void Share.share({
+                message: `Review "${currentProject.name}" on Vydora:\n${web}\n${deep}`,
+                url: deep,
+              });
+            },
+          },
+          {
+            text: "Open preview",
+            onPress: () =>
+              navigation.navigate("GuestReview", { token: link.token }),
+          },
+          { text: "Done", style: "cancel" },
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert(
+        "Couldn’t create review link",
+        e?.message ?? "Try again in a moment."
+      );
+    }
+  };
+
+  const handleManageReview = async () => {
+    if (!currentProject) return;
+    try {
+      const [links, guestComments] = await Promise.all([
+        reviewService.listLinks(currentProject.id),
+        reviewService.listGuestComments(currentProject.id).catch(() => [] as ReviewCommentResponse[]),
+      ]);
+      const active = links.filter((l) => !l.revoked);
+      const lines = [
+        `${active.length} active link${active.length === 1 ? "" : "s"}`,
+        `${guestComments.length} guest comment${guestComments.length === 1 ? "" : "s"}`,
+        guestComments
+          .slice(0, 3)
+          .map(
+            (c) =>
+              `• ${c.authorName} @ ${Math.floor(c.timestampSeconds)}s: ${c.text.slice(0, 40)}`
+          )
+          .join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const buttons: {
+        text: string;
+        style?: "cancel" | "destructive";
+        onPress?: () => void;
+      }[] = [
+        {
+          text: "New link",
+          onPress: () => void handleShareForReview(),
+        },
+      ];
+      if (active[0]) {
+        buttons.push({
+          text: "Revoke latest link",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                await reviewService.revokeLink(currentProject.id, active[0].id);
+                Alert.alert("Revoked", "That review link no longer works.");
+              } catch (e: any) {
+                Alert.alert("Revoke failed", e?.message ?? "Try again.");
+              }
+            })();
+          },
+        });
+        buttons.push({
+          text: "Open latest",
+          onPress: () =>
+            navigation.navigate("GuestReview", { token: active[0].token }),
+        });
+      }
+      if (guestComments.length > 0) {
+        buttons.push({
+          text: "Show all guest comments",
+          onPress: () => {
+            Alert.alert(
+              "Guest comments",
+              guestComments
+                .slice(0, 12)
+                .map(
+                  (c) =>
+                    `${c.authorName} (${Math.floor(c.timestampSeconds)}s): ${c.text}`
+                )
+                .join("\n\n") || "None yet."
+            );
+          },
+        });
+      }
+      buttons.push({ text: "Close", style: "cancel" });
+      Alert.alert("Review links", lines || "No review activity yet.", buttons);
+    } catch (e: any) {
+      Alert.alert("Review", e?.message ?? "Could not load review links.");
+    }
+  };
+
+  const handleToggleFinalLock = () => {
+    if (!currentProject) return;
+    const locked = currentProject.status === "FinalLocked";
+    Alert.alert(
+      locked ? "Unlock project?" : "Final Lock?",
+      locked
+        ? "Editors can change the project again."
+        : "Marks this cut as final. Content edits are blocked until the owner unlocks.",
+      [
+        {
+          text: locked ? "Unlock" : "Lock final",
+          onPress: () =>
+            void updateStatus(
+              currentProject.id,
+              locked ? "Active" : "FinalLocked"
+            ),
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  };
+
   const handleOverflow = () => {
     if (!currentProject) return;
     Alert.alert(currentProject.name, undefined, [
       { text: "Rename", onPress: openRenameSheet },
-      { text: "Share", onPress: () => void handleShareProject() },
+      { text: "Share file", onPress: () => void handleShareProject() },
+      {
+        text: "Share for review",
+        onPress: () => void handleShareForReview(),
+      },
+      {
+        text: "Manage review links",
+        onPress: () => void handleManageReview(),
+      },
+      {
+        text:
+          currentProject.status === "FinalLocked"
+            ? "Unlock (Final)"
+            : "Final Lock",
+        onPress: handleToggleFinalLock,
+      },
       {
         text: "Archive",
         style: "destructive",
@@ -925,6 +1083,18 @@ export default function ProjectDetailScreen() {
   ];
 
   const isActive = currentProject.status === "Active";
+  const isFinalLocked = currentProject.status === "FinalLocked";
+
+  const openEditor = () => {
+    if (isFinalLocked) {
+      Alert.alert(
+        "Final Locked",
+        "This project is locked. Unlock from ··· menu to edit."
+      );
+      return;
+    }
+    navigation.navigate("editorscreen");
+  };
 
   const renderTab = () => {
     switch (activeTab) {
@@ -934,12 +1104,12 @@ export default function ProjectDetailScreen() {
             clips={projectClips}
             isLoading={clipsLoading}
             onUpload={() => navigation.navigate("uploadvideo")}
-            onOpenClip={() => navigation.navigate("editorscreen")}
+            onOpenClip={openEditor}
             onClipMenu={(clip) => {
               Alert.alert(clip.title, undefined, [
                 {
                   text: "Open in editor",
-                  onPress: () => navigation.navigate("editorscreen"),
+                  onPress: openEditor,
                 },
                 {
                   text: "Delete clip",
@@ -1051,7 +1221,7 @@ export default function ProjectDetailScreen() {
       hitSlop={8}
       style={[styles.renamePencil, { flexShrink: 0 }]}
     >
-      <Ionicons name="pencil" size={moderateScale(15)} color="#fff" />
+      <Ionicons name="pencil" size={moderateScale(15)} color={TEXT_PRIMARY} />
     </TouchableOpacity>
   </Pressable>
 
@@ -1092,14 +1262,16 @@ export default function ProjectDetailScreen() {
           <TouchableOpacity
             style={styles.primaryBtn}
             activeOpacity={0.85}
-            onPress={() => navigation.navigate("editorscreen")}
+            onPress={openEditor}
           >
             <Ionicons
               name="create-outline"
               size={moderateScale(16)}
               color="#111"
             />
-            <Text style={styles.primaryBtnText}>Open editor</Text>
+            <Text style={styles.primaryBtnText}>
+              {isFinalLocked ? "Locked" : "Open editor"}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.secondaryBtn}
@@ -1114,6 +1286,42 @@ export default function ProjectDetailScreen() {
             <Text style={styles.secondaryBtnText}>Share</Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity
+          style={styles.reviewLinkBtn}
+          activeOpacity={0.85}
+          onPress={() => void handleShareForReview()}
+        >
+          <Ionicons
+            name="eye-outline"
+            size={moderateScale(16)}
+            color={YELLOW}
+          />
+          <Text style={styles.reviewLinkBtnText}>Share for review</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.reviewLinkBtn, { marginTop: verticalScale(8) }]}
+          activeOpacity={0.85}
+          onPress={() => void handleManageReview()}
+        >
+          <Ionicons
+            name="chatbubbles-outline"
+            size={moderateScale(16)}
+            color={YELLOW}
+          />
+          <Text style={styles.reviewLinkBtnText}>Guest comments & links</Text>
+        </TouchableOpacity>
+        {isFinalLocked && (
+          <Text
+            style={{
+              color: TEXT_MUTED,
+              fontSize: moderateScale(12),
+              marginTop: verticalScale(8),
+              textAlign: "center",
+            }}
+          >
+            Final Locked — unlock from ··· to edit
+          </Text>
+        )}
         {/* Tabs */}
         <View style={styles.tabBar}>
           {TABS.map((tab) => {
@@ -1321,7 +1529,7 @@ renamePencil: {
     flexDirection: "row",
     paddingHorizontal: scale(16),
     gap: scale(10),
-    marginBottom: verticalScale(25),
+    marginBottom: verticalScale(10),
   },
   primaryBtn: {
     flex: 1,
@@ -1353,6 +1561,24 @@ renamePencil: {
   secondaryBtnText: {
     color: TEXT_PRIMARY,
     fontWeight: "600",
+    fontSize: moderateScale(14),
+  },
+  reviewLinkBtn: {
+    flexDirection: "row",
+    marginHorizontal: scale(16),
+    marginBottom: verticalScale(25),
+    backgroundColor: CARD,
+    borderRadius: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(8),
+    borderWidth: 1,
+    borderColor: YELLOW + "55",
+  },
+  reviewLinkBtnText: {
+    color: YELLOW,
+    fontWeight: "700",
     fontSize: moderateScale(14),
   },
   // Tab Bar
@@ -1404,7 +1630,7 @@ renamePencil: {
   clipThumb: {
     width: scale(44),
     height: scale(44),
-    backgroundColor: "#2A2A2A",
+    backgroundColor: BORDER,
     borderRadius: moderateScale(8),
     justifyContent: "center",
     alignItems: "center",
@@ -1437,7 +1663,7 @@ renamePencil: {
     justifyContent: "center",
     gap: scale(8),
     marginTop: verticalScale(4),
-    backgroundColor: "#1A1A1A",
+    backgroundColor: BG,
   },
   uploadBtnText: {
     color: TEXT_MUTED,
@@ -1539,7 +1765,7 @@ renamePencil: {
     fontSize: moderateScale(11),
   },
   commentClipTag: {
-    backgroundColor: "#2A2A2A",
+    backgroundColor: BORDER,
     borderRadius: moderateScale(6),
     paddingHorizontal: scale(8),
     paddingVertical: verticalScale(2),
@@ -1622,12 +1848,12 @@ renamePencil: {
     width: scale(36),
     height: scale(36),
     borderRadius: scale(8),
-    backgroundColor: "#2A2000",
+    backgroundColor: CARD,
     justifyContent: "center",
     alignItems: "center",
   },
   draftBadge: {
-    backgroundColor: "#2A2A2A",
+    backgroundColor: BORDER,
   },
 
 //for the bottom sheet for editing project name//
@@ -1638,7 +1864,7 @@ sheetOverlay: {
   justifyContent: "flex-end",
 },
 sheetContainer: {
-  backgroundColor: "#1C1C1C",
+  backgroundColor: CARD,
   borderTopLeftRadius: moderateScale(20),
   borderTopRightRadius: moderateScale(20),
   paddingHorizontal: moderateScale(20),
@@ -1649,7 +1875,7 @@ sheetHandle: {
   width: moderateScale(36),
   height: moderateScale(4),
   borderRadius: moderateScale(2),
-  backgroundColor: "#2A2A2A",
+  backgroundColor: BORDER,
   alignSelf: "center",
   marginBottom: verticalScale(14),
 },
@@ -1665,9 +1891,9 @@ sheetTitle: {
   fontWeight: "600",
 },
 sheetInput: {
-  backgroundColor: "#141414",
+  backgroundColor: BG,
   borderWidth: 1,
-  borderColor: "#2A2A2A",
+  borderColor: BORDER,
   borderRadius: moderateScale(12),
   paddingHorizontal: moderateScale(14),
   paddingVertical: verticalScale(12),
@@ -1676,7 +1902,7 @@ sheetInput: {
   marginBottom: verticalScale(18),
 },
 sheetConfirmBtn: {
-  backgroundColor: "#2A2A2A",
+  backgroundColor: BORDER,
   borderRadius: moderateScale(12),
   paddingVertical: verticalScale(13),
   alignItems: "center",
@@ -1690,11 +1916,11 @@ sheetConfirmText: {
   fontWeight: "600",
 },
 sheetConfirmTextActive: {
-  color: "#141414",
+  color: BG,
 },
 teammembersText:{
 fontSize:scale(12),
-color:'#fff',
+color: TEXT_PRIMARY,
 textAlign:'center',
 },
 

@@ -49,7 +49,7 @@ export default function CollaborationSidebar({
   };
   const styles = useMemo(() => makeCollabStyles(COLORS), [colors, isDark]);
 
-  const { getMembersForProject } = useMember();
+  const { getMembersForProject, fetchMembers } = useMember();
   const { getCommentsForProject } = useComment();
   const {
     getMessagesForProject,
@@ -76,7 +76,10 @@ export default function CollaborationSidebar({
       ),
     [members, user?.id]
   );
-  const onlineCount = displayMembers.filter((m) => m.online).length;
+  const onlineCount = Math.max(
+    displayMembers.filter((m) => m.online).length,
+    user ? 1 : 0
+  );
 
   useEffect(() => {
     Animated.timing(slideAnim, {
@@ -86,10 +89,11 @@ export default function CollaborationSidebar({
     }).start();
   }, [visible]);
 
-  // Load history + clear the unread badge whenever the panel opens.
+  // Load history + members + clear the unread badge whenever the panel opens.
   useEffect(() => {
     if (visible && projectId) {
       fetchMessages(projectId);
+      fetchMembers(projectId);
       markProjectRead(projectId);
     }
   }, [visible, projectId]);
@@ -222,7 +226,7 @@ export default function CollaborationSidebar({
           <ScrollView
             ref={chatScrollRef}
             style={styles.body}
-            contentContainerStyle={{ paddingBottom: verticalScale(8) }}
+            contentContainerStyle={{ paddingBottom: verticalScale(8), paddingTop: verticalScale(4) }}
             onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: false })}
           >
             {messages.length === 0 ? (
@@ -233,18 +237,46 @@ export default function CollaborationSidebar({
               messages.map((m) => {
                 const mine = m.userId === user?.id;
                 return (
-                  <View key={m.id} style={styles.activityRow}>
-                    <View style={[styles.avatarSmall, { backgroundColor: m.color }]}>
-                      <Text style={styles.avatarTextSmall}>{m.initials}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.activityText}>
-                        <Text style={styles.activityActor}>
-                          {mine ? 'You' : m.author}{' '}
-                        </Text>
+                  <View
+                    key={m.id}
+                    style={[
+                      styles.bubbleRow,
+                      mine ? styles.bubbleRowMine : styles.bubbleRowTheirs,
+                    ]}
+                  >
+                    {!mine ? (
+                      <View style={[styles.avatarTiny, { backgroundColor: m.color }]}>
+                        <Text style={styles.avatarTextTiny}>{m.initials}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.avatarTinySpacer} />
+                    )}
+                    <View
+                      style={[
+                        styles.bubble,
+                        mine ? styles.bubbleMine : styles.bubbleTheirs,
+                      ]}
+                    >
+                      {!mine ? (
+                        <Text style={styles.bubbleAuthor}>{m.author}</Text>
+                      ) : null}
+                      <Text
+                        style={[
+                          styles.bubbleText,
+                          mine && styles.bubbleTextMine,
+                        ]}
+                      >
                         {m.text}
                       </Text>
-                      <Text style={styles.activityTime}>{m.timestamp}</Text>
+                      <Text
+                        style={[
+                          styles.bubbleTime,
+                          mine && styles.bubbleTimeMine,
+                        ]}
+                      >
+                        {m.timestamp || 'Now'}
+                        {m.id.startsWith('temp-') ? ' · sending' : ''}
+                      </Text>
                     </View>
                   </View>
                 );
@@ -457,6 +489,59 @@ function makeCollabStyles(COLORS: CollabColors) {
   activityText: { color: COLORS.textSecondary, fontSize: moderateScale(13) },
   activityActor: { color: COLORS.textPrimary, fontWeight: '700' },
   activityTime: { color: COLORS.textMuted, fontSize: moderateScale(10), marginTop: verticalScale(2) },
+  bubbleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: verticalScale(8),
+    maxWidth: '100%',
+  },
+  bubbleRowMine: { justifyContent: 'flex-end' },
+  bubbleRowTheirs: { justifyContent: 'flex-start' },
+  avatarTiny: {
+    width: scale(22),
+    height: scale(22),
+    borderRadius: scale(11),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: scale(6),
+  },
+  avatarTinySpacer: { width: scale(28) },
+  avatarTextTiny: { color: '#FFF', fontSize: moderateScale(9), fontWeight: '700' },
+  bubble: {
+    maxWidth: '78%',
+    borderRadius: scale(14),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+  },
+  bubbleMine: {
+    backgroundColor: COLORS.yellow,
+    borderBottomRightRadius: scale(4),
+  },
+  bubbleTheirs: {
+    backgroundColor: COLORS.surface,
+    borderBottomLeftRadius: scale(4),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+  },
+  bubbleAuthor: {
+    color: COLORS.yellow,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+    marginBottom: verticalScale(2),
+  },
+  bubbleText: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(14),
+    lineHeight: moderateScale(19),
+  },
+  bubbleTextMine: { color: COLORS.accentOn },
+  bubbleTime: {
+    color: COLORS.textMuted,
+    fontSize: moderateScale(10),
+    marginTop: verticalScale(4),
+    alignSelf: 'flex-end',
+  },
+  bubbleTimeMine: { color: 'rgba(26,14,0,0.55)' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',

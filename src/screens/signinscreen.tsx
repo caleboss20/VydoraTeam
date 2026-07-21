@@ -1,4 +1,3 @@
-
 import {
   View,
   Text,
@@ -12,6 +11,7 @@ import {
   Image,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useMemo } from "react";
@@ -27,6 +27,7 @@ import { s, vs, ms } from "react-native-size-matters";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "./Contexts/Authcontext";
 import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere relative to this file
+import { useGoogleIdToken } from "./services/googleAuth";
 // signin params + AcceptInvite added for the invite-driven login path —
 // same reasoning as Signupscreen: an invitee might already have an account
 // and land here instead of signup.
@@ -61,7 +62,9 @@ export default function SignInscreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "signin">>();
-  const { login, isLoadingAuth, error } = useAuth();
+  const { login, loginWithGoogle, isLoadingAuth, error } = useAuth();
+  const { promptGoogle, ready: googleReady } = useGoogleIdToken();
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [email, setEmail] = useState<string>(route.params?.prefillEmail ?? "");
   const [password, setPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -88,6 +91,43 @@ export default function SignInscreen() {
     const e = validate({ email, password });
     setErrors(e);
   };
+  const finishAfterAuth = async (): Promise<void> => {
+    const pendingToken =
+      route.params?.pendingInviteToken ??
+      (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
+    if (pendingToken) {
+      navigation.navigate("AcceptInvite", { token: pendingToken });
+      return;
+    }
+    const onboardingDone = await AsyncStorage.getItem("vydora:onboarding:done");
+    if (route.params?.needsOnboarding || !onboardingDone) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "onboarding" }],
+      });
+      return;
+    }
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "projects" }],
+    });
+  };
+
+  const handleGoogle = async (): Promise<void> => {
+    if (!googleReady || googleBusy || isLoadingAuth) return;
+    try {
+      setGoogleBusy(true);
+      const idToken = await promptGoogle();
+      if (!idToken) return;
+      await loginWithGoogle(idToken);
+      await finishAfterAuth();
+    } catch (e: any) {
+      Alert.alert("Google sign-in", e?.message ?? "Could not sign in with Google.");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
   const handleSignIn = async (): Promise<void> => {
     setTouched({ email: true, password: true });
     const e = validate({ email, password });
@@ -99,26 +139,7 @@ export default function SignInscreen() {
       } catch {
         return; // AuthContext already set `error` for the UI
       }
-      const pendingToken =
-        route.params?.pendingInviteToken ??
-        (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
-      if (pendingToken) {
-        navigation.navigate("AcceptInvite", { token: pendingToken });
-        return;
-      }
-      // New signups pass needsOnboarding; otherwise show tutorial until marked done.
-      const onboardingDone = await AsyncStorage.getItem("vydora:onboarding:done");
-      if (route.params?.needsOnboarding || !onboardingDone) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "onboarding" }],
-        });
-        return;
-      }
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "projects" }],
-      });
+      await finishAfterAuth();
     }
   };
   const hasError = (field: keyof ValidationErrors): boolean =>
@@ -232,8 +253,17 @@ export default function SignInscreen() {
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
               <Image style={styles.logo} source={require("../../assets/facebook.png")} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
-              <Image style={styles.logo} source={require("../../assets/google.png")} />
+            <TouchableOpacity
+              style={styles.socialIconBtn}
+              activeOpacity={0.8}
+              onPress={() => void handleGoogle()}
+              disabled={!googleReady || googleBusy || isLoadingAuth}
+            >
+              {googleBusy ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <Image style={styles.logo} source={require("../../assets/google.png")} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIconBtn} activeOpacity={0.8}>
               <Ionicons name="logo-apple" size={ms(22)} color={colors.text} />

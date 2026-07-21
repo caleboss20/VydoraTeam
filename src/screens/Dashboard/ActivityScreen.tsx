@@ -61,7 +61,7 @@ const LIGHT_C: ActPalette = {
 let C: ActPalette = DARK_C;
 let styles: any = {};
 
-/** Design filters — Mentions reserved until @mentions exist (stays empty). */
+/** Design filters — Mentions = comments with @handles in the body. */
 type FilterTab = 'All' | 'Mentions' | 'Comments' | 'Invites'
 const FILTER_TABS: FilterTab[] = ['All', 'Mentions', 'Comments', 'Invites']
 
@@ -83,6 +83,7 @@ const TYPE_PROJECT_ICON: Record<
   invite_approval: 'shield-checkmark-outline',
   clip_upload: 'cloud-upload-outline',
   role_change: 'checkmark-circle-outline',
+  role_upgrade: 'arrow-up-circle-outline',
 }
 
 function initialsFromName(name: string): string {
@@ -115,10 +116,17 @@ function timeAgo(dateStr: string): string {
 
 function matchesFilter(n: Notification, tab: FilterTab): boolean {
   if (tab === 'All') return true
-  // Mentions: no backend type yet — never invent rows.
-  if (tab === 'Mentions') return false
+  // Mentions: comments that @someone in the message body (composer supports @).
+  if (tab === 'Mentions') {
+    return n.type === 'comment' && /@[\w.-]+/.test(n.message || '')
+  }
   if (tab === 'Comments') return n.type === 'comment'
-  if (tab === 'Invites') return n.type === 'invite' || n.type === 'invite_approval'
+  if (tab === 'Invites')
+    return (
+      n.type === 'invite' ||
+      n.type === 'invite_approval' ||
+      n.type === 'role_upgrade'
+    )
   return true
 }
 
@@ -183,6 +191,7 @@ const ActivityScreen: React.FC = () => {
     fetchNotifications,
     clearLatestInvite,
     openPendingApprovals,
+    openPendingRoleUpgrades,
   } = useNotification()
   const [activeFilter, setActiveFilter] = React.useState<FilterTab>('All')
   const [refreshing, setRefreshing] = React.useState(false)
@@ -232,6 +241,13 @@ const ActivityScreen: React.FC = () => {
       )
       return
     }
+    if (notification.type === 'role_upgrade') {
+      await openPendingRoleUpgrades(
+        notification.projectId,
+        notification.projectName
+      )
+      return
+    }
     const preferTeam =
       notification.type === 'invite' || notification.type === 'role_change'
     await openProject(notification.projectId, preferTeam)
@@ -254,7 +270,27 @@ const ActivityScreen: React.FC = () => {
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={C.bg} />
 
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Notifications</Text>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity
+              onPress={() => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack()
+                } else {
+                  navigation.navigate('projects')
+                }
+              }}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <Ionicons
+                name="arrow-back"
+                size={s(24)}
+                color={C.textPrimary}
+              />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Notifications</Text>
+          </View>
           <TouchableOpacity
             onPress={markAllAsRead}
             disabled={notifications.length === 0}
@@ -374,8 +410,14 @@ function createActivityStyles(C: ActPalette) {
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: s(18),
-    paddingTop: vs(24),
+    paddingTop: vs(12),
     paddingBottom: vs(14),
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: s(12),
+    flexShrink: 1,
   },
   headerTitle: {
     color: C.textPrimary,

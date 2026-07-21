@@ -1,6 +1,5 @@
 /**
- * Flexible timeline assemble — pull 14–20s then 4–10s from a source, reorder,
- * delete pieces. CapCut-style “build your own cut”.
+ * Flexible timeline assemble — pull ranges, reorder, delete, plus Quik-style Auto Movie.
  */
 import React, { useState } from 'react';
 import {
@@ -11,12 +10,17 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import type { VideoClip } from '../types';
 import { useAppPalette } from '../Contexts/ThemeContext';
-
+import {
+  AUTO_MOVIE_STYLES,
+  buildAutoMoviePlan,
+  type AutoMovieStyleId,
+} from '../services/autoMovieService';
 
 let COLORS: Record<string, string> = {
   background: '#0B0D13',
@@ -46,6 +50,11 @@ interface AssembleToolPanelProps {
   onMoveClip: (clipId: string, direction: -1 | 1) => void;
   onDeleteClip: (clipId: string) => void;
   onResetClipEdits: (clipId: string) => void;
+  /** Quik-style one-tap: replace source with highlight reel. */
+  onAutoMovie?: (sourceClipId: string, styleId: AutoMovieStyleId) => void;
+  /** Multi-pick gallery / files → append clips to mix on the timeline. */
+  onAddVideos?: () => Promise<void> | void;
+  addVideosBusy?: boolean;
   onClose: () => void;
 }
 
@@ -59,6 +68,9 @@ export default function AssembleToolPanel({
   onMoveClip,
   onDeleteClip,
   onResetClipEdits,
+  onAutoMovie,
+  onAddVideos,
+  addVideosBusy = false,
   onClose,
 }: AssembleToolPanelProps) {
   const __palette = useAppPalette();
@@ -76,6 +88,8 @@ export default function AssembleToolPanel({
 
   const [startSec, setStartSec] = useState('4');
   const [endSec, setEndSec] = useState('10');
+  const [styleId, setStyleId] = useState<AutoMovieStyleId>('quik');
+  const [busy, setBusy] = useState(false);
 
   if (!visible) return null;
 
@@ -105,6 +119,39 @@ export default function AssembleToolPanel({
     onExtractRange(a, b);
   };
 
+  const runAutoMovie = () => {
+    if (!sourceClip || sourceClip.kind === 'title') {
+      Alert.alert('Pick a video', 'Select a longer clip, then tap Auto Movie.');
+      return;
+    }
+    if ((sourceClip.durationMs ?? 0) < 6000) {
+      Alert.alert('Too short', 'Need at least ~6s of footage for Auto Movie.');
+      return;
+    }
+    const plan = buildAutoMoviePlan(sourceClip.durationMs, styleId);
+    Alert.alert(
+      'Auto Movie',
+      `Replace this clip with ${plan.ranges.length} highlight beats (~${Math.round(
+        plan.ranges.reduce((a, r) => a + (r.endMs - r.startMs), 0) / 1000
+      )}s) + transitions? You can Undo.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Assemble',
+          onPress: () => {
+            if (!onAutoMovie) return;
+            setBusy(true);
+            try {
+              onAutoMovie(sourceClip.id, styleId);
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.wrapper}>
       <View style={styles.header}>
@@ -120,9 +167,80 @@ export default function AssembleToolPanel({
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.hint}>
-          Build one film from pieces: take 14s–20s, then 4s–10s, reorder, delete
-          what you don’t want. Title cards sit in the same list.
+          Mix videos into one timeline — add several clips, trim / split each,
+          reorder, then export joins them.
         </Text>
+
+        {onAddVideos ? (
+          <>
+            <Text style={styles.section}>ADD TO MIX</Text>
+            <TouchableOpacity
+              style={styles.mixBtn}
+              disabled={addVideosBusy}
+              onPress={() => {
+                void Promise.resolve(onAddVideos()).catch((e: any) =>
+                  Alert.alert('Add videos', e?.message ?? 'Could not add videos.')
+                );
+              }}
+            >
+              {addVideosBusy ? (
+                <ActivityIndicator color="#0B0D13" />
+              ) : (
+                <Ionicons name="film-outline" size={scale(18)} color="#0B0D13" />
+              )}
+              <Text style={styles.mixBtnText}>
+                {addVideosBusy ? 'Adding…' : 'Add videos to timeline'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.sub}>
+              Camera roll or Files — multi-select. Then Split, trim handles, or
+              reorder below. Export stitches everything into one video.
+            </Text>
+          </>
+        ) : null}
+
+        <Text style={styles.section}>AUTO MOVIE</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.styleRow}
+        >
+          {AUTO_MOVIE_STYLES.map((s) => (
+            <TouchableOpacity
+              key={s.id}
+              style={[styles.styleChip, styleId === s.id && styles.styleChipOn]}
+              onPress={() => setStyleId(s.id)}
+            >
+              <Ionicons
+                name={s.icon as any}
+                size={scale(14)}
+                color={styleId === s.id ? '#0B0D13' : COLORS.yellow}
+              />
+              <Text
+                style={[
+                  styles.styleChipText,
+                  styleId === s.id && styles.styleChipTextOn,
+                ]}
+              >
+                {s.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <TouchableOpacity
+          style={styles.autoBtn}
+          onPress={runAutoMovie}
+          disabled={busy}
+        >
+          {busy ? (
+            <ActivityIndicator color="#0B0D13" />
+          ) : (
+            <Ionicons name="flash" size={scale(16)} color="#0B0D13" />
+          )}
+          <Text style={styles.autoBtnText}>
+            {busy ? 'Building…' : 'One-tap Auto Movie'}
+          </Text>
+        </TouchableOpacity>
 
         <Text style={styles.section}>EXTRACT FROM SOURCE</Text>
         <Text style={styles.sub}>
@@ -183,101 +301,63 @@ export default function AssembleToolPanel({
 
         <Text style={styles.section}>TIMELINE ORDER</Text>
         {clips.length === 0 ? (
-          <Text style={styles.sub}>No clips yet.</Text>
-        ) : (
-          clips
-            .slice()
-            .sort((a, b) => a.order - b.order)
-            .map((c, i) => {
-              const sel = c.id === selectedClipId;
-              const isTitle = c.kind === 'title';
-              const len =
-                (c.trimEndMs ?? c.durationMs) - (c.trimStartMs ?? 0);
-              return (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[styles.piece, sel && styles.pieceOn]}
-                  onPress={() => onSelectClip(c.id)}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.pieceLeft}>
-                    <Text style={styles.pieceIdx}>{i + 1}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.pieceTitle} numberOfLines={1}>
-                        {isTitle
-                          ? `📄 ${c.titleCard?.title || 'Title card'}`
-                          : `🎬 ${fmt(c.trimStartMs ?? 0)} → ${fmt(c.trimEndMs ?? c.durationMs)}`}
-                      </Text>
-                      <Text style={styles.pieceMeta}>
-                        {isTitle
-                          ? `${(c.durationMs / 1000).toFixed(1)}s · ${c.titleCard?.backgroundColor ?? ''}`
-                          : `${(len / 1000).toFixed(1)}s on timeline`}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.pieceActions}>
-                    <TouchableOpacity
-                      onPress={() => onMoveClip(c.id, -1)}
-                      hitSlop={8}
-                      disabled={i === 0}
-                    >
-                      <Ionicons
-                        name="chevron-up"
-                        size={scale(18)}
-                        color={i === 0 ? COLORS.border : COLORS.textPrimary}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => onMoveClip(c.id, 1)}
-                      hitSlop={8}
-                      disabled={i === clips.length - 1}
-                    >
-                      <Ionicons
-                        name="chevron-down"
-                        size={scale(18)}
-                        color={
-                          i === clips.length - 1
-                            ? COLORS.border
-                            : COLORS.textPrimary
-                        }
-                      />
-                    </TouchableOpacity>
-                    {!isTitle && (
-                      <TouchableOpacity
-                        onPress={() => onResetClipEdits(c.id)}
-                        hitSlop={8}
-                      >
-                        <Ionicons
-                          name="refresh-outline"
-                          size={scale(16)}
-                          color={COLORS.textSecondary}
-                        />
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      onPress={() =>
-                        Alert.alert('Delete piece?', 'Remove this from the timeline.', [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: () => onDeleteClip(c.id),
-                          },
-                        ])
-                      }
-                      hitSlop={8}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={scale(16)}
-                        color={COLORS.danger}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-        )}
+          <Text style={styles.sub}>No clips yet — add videos above.</Text>
+        ) : null}
+        {clips.map((c) => {
+          const selected = c.id === selectedClipId;
+          const label =
+            c.kind === 'title'
+              ? `Card · ${c.titleCard?.title ?? 'Title'}`
+              : c.kind === 'flyer'
+                ? 'Flyer'
+                : `Clip · ${fmt((c.trimEndMs ?? c.durationMs) - (c.trimStartMs ?? 0))}`;
+          return (
+            <View
+              key={c.id}
+              style={[styles.clipRow, selected && styles.clipRowOn]}
+            >
+              <TouchableOpacity
+                style={{ flex: 1 }}
+                onPress={() => onSelectClip(c.id)}
+              >
+                <Text style={styles.clipTitle} numberOfLines={1}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => onMoveClip(c.id, -1)} hitSlop={6}>
+                <Ionicons
+                  name="chevron-up"
+                  size={scale(18)}
+                  color={COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => onMoveClip(c.id, 1)} hitSlop={6}>
+                <Ionicons
+                  name="chevron-down"
+                  size={scale(18)}
+                  color={COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onResetClipEdits(c.id)}
+                hitSlop={6}
+              >
+                <Ionicons
+                  name="refresh-outline"
+                  size={scale(16)}
+                  color={COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => onDeleteClip(c.id)} hitSlop={6}>
+                <Ionicons
+                  name="trash-outline"
+                  size={scale(16)}
+                  color={COLORS.danger}
+                />
+              </TouchableOpacity>
+            </View>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -285,140 +365,180 @@ export default function AssembleToolPanel({
 
 function __makeStyles() {
   return StyleSheet.create({
-  wrapper: {
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: scale(16),
-    borderTopRightRadius: scale(16),
-    maxHeight: verticalScale(440),
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  title: {
-    color: COLORS.textPrimary,
-    fontSize: moderateScale(16),
-    fontWeight: '700',
-  },
-  body: { maxHeight: verticalScale(380), paddingHorizontal: scale(16) },
-  hint: {
-    color: COLORS.textSecondary,
-    fontSize: moderateScale(11),
-    lineHeight: moderateScale(16),
-    marginTop: verticalScale(10),
-  },
-  section: {
-    color: COLORS.textSecondary,
-    fontSize: moderateScale(10),
-    fontWeight: '700',
-    letterSpacing: 0.7,
-    marginTop: verticalScale(14),
-    marginBottom: verticalScale(8),
-  },
-  sub: {
-    color: COLORS.textSecondary,
-    fontSize: moderateScale(11),
-    marginBottom: verticalScale(8),
-  },
-  rangeRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: scale(8),
-  },
-  field: { flex: 1 },
-  fieldLabel: {
-    color: COLORS.textSecondary,
-    fontSize: moderateScale(10),
-    marginBottom: verticalScale(4),
-  },
-  input: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: scale(10),
-    color: COLORS.textPrimary,
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(8),
-    fontSize: moderateScale(14),
-    fontWeight: '700',
-  },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(4),
-    backgroundColor: COLORS.yellow,
-    borderRadius: scale(10),
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(10),
-  },
-  addBtnText: {
-    color: '#0B0D13',
-    fontWeight: '800',
-    fontSize: moderateScale(12),
-  },
-  quickRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: scale(8),
-    marginTop: verticalScale(10),
-  },
-  quick: {
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(5),
-    borderRadius: scale(8),
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-  },
-  quickText: {
-    color: COLORS.textSecondary,
-    fontSize: moderateScale(10),
-    fontWeight: '600',
-  },
-  piece: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.surface,
-    borderRadius: scale(12),
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: scale(10),
-    marginBottom: verticalScale(8),
-  },
-  pieceOn: {
-    borderColor: COLORS.yellow,
-    backgroundColor: 'rgba(245,197,24,0.08)',
-  },
-  pieceLeft: { flexDirection: 'row', alignItems: 'center', gap: scale(10), flex: 1 },
-  pieceIdx: {
-    color: COLORS.yellow,
-    fontWeight: '800',
-    fontSize: moderateScale(14),
-    width: scale(20),
-  },
-  pieceTitle: {
-    color: COLORS.textPrimary,
-    fontWeight: '700',
-    fontSize: moderateScale(12),
-  },
-  pieceMeta: {
-    color: COLORS.textSecondary,
-    fontSize: moderateScale(10),
-    marginTop: 2,
-  },
-  pieceActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(10),
-    marginLeft: scale(8),
-  },
-});
+    wrapper: {
+      backgroundColor: COLORS.background,
+      borderTopWidth: 1,
+      borderTopColor: COLORS.border,
+      maxHeight: verticalScale(420),
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: scale(14),
+      paddingTop: verticalScale(10),
+      paddingBottom: verticalScale(6),
+    },
+    title: {
+      color: COLORS.textPrimary,
+      fontWeight: '800',
+      fontSize: moderateScale(15),
+    },
+    body: {
+      paddingHorizontal: scale(14),
+    },
+    hint: {
+      color: COLORS.textSecondary,
+      fontSize: moderateScale(11),
+      lineHeight: moderateScale(16),
+      marginBottom: verticalScale(10),
+    },
+    section: {
+      color: COLORS.textSecondary,
+      fontSize: moderateScale(10),
+      fontWeight: '700',
+      letterSpacing: 0.6,
+      marginTop: verticalScale(10),
+      marginBottom: verticalScale(6),
+    },
+    sub: {
+      color: COLORS.textSecondary,
+      fontSize: moderateScale(11),
+      marginBottom: verticalScale(8),
+    },
+    mixBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: scale(8),
+      backgroundColor: COLORS.yellow,
+      borderRadius: scale(12),
+      paddingVertical: verticalScale(12),
+      marginBottom: verticalScale(6),
+    },
+    mixBtnText: {
+      color: '#0B0D13',
+      fontWeight: '800',
+      fontSize: moderateScale(13),
+    },
+    styleRow: {
+      gap: scale(8),
+      paddingBottom: verticalScale(8),
+    },
+    styleChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: scale(6),
+      paddingHorizontal: scale(12),
+      paddingVertical: verticalScale(8),
+      borderRadius: scale(20),
+      borderWidth: 1,
+      borderColor: COLORS.border,
+      backgroundColor: COLORS.surface,
+    },
+    styleChipOn: {
+      backgroundColor: COLORS.yellow,
+      borderColor: COLORS.yellow,
+    },
+    styleChipText: {
+      color: COLORS.textPrimary,
+      fontSize: moderateScale(12),
+      fontWeight: '600',
+    },
+    styleChipTextOn: {
+      color: '#0B0D13',
+    },
+    autoBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: scale(8),
+      backgroundColor: COLORS.yellow,
+      borderRadius: scale(10),
+      paddingVertical: verticalScale(10),
+      opacity: 0.95,
+    },
+    autoBtnText: {
+      color: '#0B0D13',
+      fontWeight: '800',
+      fontSize: moderateScale(12),
+    },
+    rangeRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: scale(8),
+    },
+    field: {
+      flex: 1,
+    },
+    fieldLabel: {
+      color: COLORS.textSecondary,
+      fontSize: moderateScale(10),
+      marginBottom: verticalScale(4),
+    },
+    input: {
+      backgroundColor: COLORS.surface,
+      borderWidth: 1,
+      borderColor: COLORS.border,
+      borderRadius: scale(8),
+      color: COLORS.textPrimary,
+      paddingHorizontal: scale(10),
+      paddingVertical: verticalScale(8),
+      fontSize: moderateScale(13),
+    },
+    addBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: scale(4),
+      backgroundColor: COLORS.yellow,
+      borderRadius: scale(8),
+      paddingHorizontal: scale(12),
+      paddingVertical: verticalScale(10),
+    },
+    addBtnText: {
+      color: '#0B0D13',
+      fontWeight: '800',
+      fontSize: moderateScale(12),
+    },
+    quickRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: scale(6),
+      marginTop: verticalScale(8),
+    },
+    quick: {
+      paddingHorizontal: scale(10),
+      paddingVertical: verticalScale(6),
+      borderRadius: scale(8),
+      backgroundColor: COLORS.surface,
+      borderWidth: 1,
+      borderColor: COLORS.border,
+    },
+    quickText: {
+      color: COLORS.textSecondary,
+      fontSize: moderateScale(11),
+      fontWeight: '600',
+    },
+    clipRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: scale(8),
+      paddingVertical: verticalScale(10),
+      paddingHorizontal: scale(10),
+      borderRadius: scale(10),
+      backgroundColor: COLORS.surface,
+      borderWidth: 1,
+      borderColor: COLORS.border,
+      marginBottom: verticalScale(6),
+    },
+    clipRowOn: {
+      borderColor: COLORS.yellow,
+    },
+    clipTitle: {
+      color: COLORS.textPrimary,
+      fontSize: moderateScale(12),
+      fontWeight: '600',
+    },
+  });
 }
 let styles = __makeStyles();
-

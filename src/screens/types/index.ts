@@ -6,9 +6,14 @@ export interface User {
   initials: string;
   color: string;
   avatarUrl?: string;
+  /** Soft Pro from referral / promo. */
+  isPro?: boolean;
+  plan?: string;
+  proUntil?: string;
+  referralCode?: string;
 }
 // ─── Project ─────────────────────────────────────────────────────────────────
-export type ProjectStatus = 'Active' | 'Archived' | 'Draft';
+export type ProjectStatus = 'Active' | 'Archived' | 'Draft' | 'FinalLocked';
 export interface Project {
   id: string;
   name: string;
@@ -20,6 +25,8 @@ export interface Project {
   description: string;
   visibility: 'Private' | 'Team' | 'Public';
   members: Pick<Member, 'id' | 'initials' | 'color' | 'online'>[];
+  /** Caller's role on this project (from list/get API). */
+  myRole?: MemberRole;
 }
 // ─── Clip (collaboration/project-detail clip metadata) ────────────────────────
 export interface Clip {
@@ -97,7 +104,8 @@ export type NotificationType =
   | 'invite_approval'
   | 'comment'
   | 'clip_upload'
-  | 'role_change';
+  | 'role_change'
+  | 'role_upgrade';
 export interface Notification {
   id: string;
   type: NotificationType;
@@ -303,6 +311,7 @@ export type VideoClip = {
   /**
    * Media URI. Empty / unused when {@link kind} === 'title'
    * (solid color sheet generated on preview + export).
+   * For {@link kind} === 'flyer' this is the still-image URI.
    */
   uri: string;
   durationMs: number;
@@ -310,8 +319,8 @@ export type VideoClip = {
   height?: number;
   thumbnailUri?: string;
   order: number;
-  /** Default video; `title` = blank colored page with text. */
-  kind?: 'video' | 'title';
+  /** Default video; `title` = blank colored page; `flyer` = still image sheet. */
+  kind?: 'video' | 'title' | 'flyer';
   titleCard?: TitleCardSettings;
   textOverlays?: TextOverlay[];
   trimStartMs?: number; // ADDED: defaults to 0 if unset
@@ -348,6 +357,8 @@ export type VideoClip = {
   autoReframe?: AutoReframeSettings;
   /** Per-clip mix bus: NR, speech enhance, EQ, compressor. */
   audioFx?: ClipAudioFx;
+  /** Dark / gradient color wash (preview + export). */
+  lookOverlay?: ClipLookOverlay;
   /**
    * CapCut-style property keyframes (clip-local ms). Scalars above are the
    * baseline when a curve is empty.
@@ -381,8 +392,51 @@ export type VideoClip = {
   bgRemove?: BgRemoveSettings;
   colorGradeKeyframes?: ColorGradeKeyframe[];
   cropKeyframes?: CropKeyframe[];
+  /**
+   * When set, this clip belongs to a compound/nested group (CapCut compound clip).
+   * Export flattens — groups are a timeline UX convenience.
+   */
+  compoundId?: string;
+  /** RGB master curves (−1…1 control points simplified to mid lift). */
+  colorCurves?: ColorCurves;
+  /** Local/cached .cube LUT path applied on export via lut3d. */
+  lutUri?: string;
+  lutIntensity?: number;
 };
 
+/** CapCut-style RGB curves — mid control per channel (−1…1). */
+export type ColorCurves = {
+  master: number;
+  r: number;
+  g: number;
+  b: number;
+};
+
+export const DEFAULT_COLOR_CURVES: ColorCurves = {
+  master: 0,
+  r: 0,
+  g: 0,
+  b: 0,
+};
+
+/** Time-ranged look applied over clips without mutating them. */
+export type AdjustmentLayer = {
+  id: string;
+  startMs: number;
+  durationMs: number;
+  colorGrade?: ColorGrade;
+  opacity?: number;
+  effectId?: ClipEffectId;
+  effectIntensity?: number;
+  name?: string;
+};
+
+/** Compound / nested clip group metadata. */
+export type CompoundGroup = {
+  id: string;
+  name: string;
+  collapsed: boolean;
+};
 /** Canva-style cutout — subject kept, backdrop keyed out onto canvasColor. */
 export type BgRemoveSettings = {
   enabled: boolean;
@@ -437,31 +491,80 @@ export type ClipAudioFx = {
   noiseReduction?: number;
   /** Presence boost + light compression for dialogue. */
   enhanceSpeech?: boolean;
-  /** 3-band EQ gains in dB-ish units (−1…1 → ≈ −12…+12 dB). */
+  /** 0–1 strength when enhanceSpeech is on (default 0.75). */
+  enhanceStrength?: number;
+  /** 5-band EQ gains (−1…1 → ≈ −12…+12 dB). */
+  eqSub?: number;
   eqLow?: number;
   eqMid?: number;
+  eqPresence?: number;
   eqHigh?: number;
+  eqAir?: number;
   /** Compressor on/off. */
   compressor?: boolean;
   /** −40…−5 dB threshold (default −18). */
   compThreshold?: number;
   /** 1–8 ratio (default 3). */
   compRatio?: number;
+  /** 0–1 de-esser (cuts harsh 6–8 kHz sibilance). */
+  deEsser?: number;
+  /** 0–1 noise gate (cuts quiet hiss between words). */
+  gate?: number;
 };
 
 export const DEFAULT_AUDIO_FX: ClipAudioFx = {
   noiseReduction: 0,
   enhanceSpeech: false,
+  enhanceStrength: 0.75,
+  eqSub: 0,
   eqLow: 0,
   eqMid: 0,
+  eqPresence: 0,
   eqHigh: 0,
+  eqAir: 0,
   compressor: false,
   compThreshold: -18,
   compRatio: 3,
+  deEsser: 0,
+  gate: 0,
+};
+
+/** Dark scrim + gradient wash over a clip (CapCut-style look overlay). */
+export type ClipLookOverlay = {
+  /** Black dim 0–1. */
+  darkOpacity?: number;
+  /** Gradient wash strength 0–1. */
+  gradientOpacity?: number;
+  gradientColorTop?: string;
+  gradientColorBottom?: string;
+  /** 0 = top→bottom, 90 = left→right (degrees). */
+  gradientAngle?: number;
+};
+
+export const DEFAULT_LOOK_OVERLAY: ClipLookOverlay = {
+  darkOpacity: 0,
+  gradientOpacity: 0,
+  gradientColorTop: '#000000',
+  gradientColorBottom: '#F5C518',
+  gradientAngle: 0,
 };
 
 /** Motion / polish effects baked with FFmpeg (preview approximates). */
-export type ClipEffectId = 'none' | 'blur' | 'vignette' | 'shake' | 'zoomPunch';
+export type ClipEffectId =
+  | 'none'
+  | 'blur'
+  | 'vignette'
+  | 'shake'
+  | 'zoomPunch'
+  | 'zoomIn'
+  | 'zoomOut'
+  | 'panLeft'
+  | 'panRight'
+  | 'bounce'
+  | 'spin'
+  | 'filmGrain'
+  | 'lightning'
+  | 'dust';
 
 /** One-tap cinematic look bundles (see movieEffectsService). */
 export type MovieEffectId =
@@ -472,7 +575,10 @@ export type MovieEffectId =
   | 'slowMo'
   | 'memory'
   | 'impact'
-  | 'vhs';
+  | 'vhs'
+  | 'beauty'
+  | 'enhance'
+  | 'glow';
 
 /** Manual grade knobs — all centered at 0 = unchanged. */
 export type ColorGrade = {
@@ -606,6 +712,12 @@ export type MediaOverlay = {
   mask?: OverlayMask;
   flipH?: boolean;
   flipV?: boolean;
+  /** CapCut entrance animation for stickers / PiP. */
+  animationIn?: TextAnimationType;
+  /** Guest / speaker name shown under profile photos. */
+  label?: string;
+  /** Optional role line under the label (e.g. “Keynote”). */
+  role?: string;
 };
 
 export type VideoProject = {
@@ -637,8 +749,23 @@ export type VideoProject = {
    * nearest marker within a small window — CapCut-style beat sync.
    */
   beatMarkersMs?: number[];
+  /** Nested compound clip groups (timeline UX). */
+  compounds?: CompoundGroup[];
+  /** Adjustment layers spanning project time. */
+  adjustmentLayers?: AdjustmentLayer[];
+  /** Shared team brand kit (synced via version / AsyncStorage for now). */
+  brandKit?: BrandKitSnapshot;
 };
 
+/** Lightweight brand kit persisted on the project for all members. */
+export type BrandKitSnapshot = {
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  fontFamily?: string;
+  logoUri?: string;
+  updatedAt?: string;
+};
 export interface VideoFilter{
 id:string;
 name:string;

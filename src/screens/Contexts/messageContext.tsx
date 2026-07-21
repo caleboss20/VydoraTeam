@@ -3,12 +3,9 @@
  *
  * - `fetchMessages` loads history over REST.
  * - `sendMessage` POSTs (backend persists + broadcasts to every member).
- * - `receiveMessage` is called by the WebSocket layer (useProjectSocket) when a
- *   broadcast arrives; it upserts by id so a sender never double-renders their
- *   own message (POST response + broadcast share the same id).
- * - Unread tracking powers the badge on the editor header icon. Messages from
- *   other users increment the count until `markProjectRead` is called (when the
- *   chat panel opens).
+ * - Optimistic local bubble appears immediately (WhatsApp-style), then swaps
+ *   to the server id when POST returns / socket echoes.
+ * - `receiveMessage` is called by the WebSocket layer (useProjectSocket).
  */
 import React, {
   createContext,
@@ -18,9 +15,12 @@ import React, {
   ReactNode,
 } from 'react';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import { ChatMessage } from '../types';
 import { messageService } from '../services/messageService';
 import { useAuth } from './Authcontext';
+
+dayjs.extend(relativeTime);
 
 interface MessageContextType {
   messages: { [projectId: string]: ChatMessage[] };
@@ -44,6 +44,17 @@ function sortByCreatedAt(list: ChatMessage[]): ChatMessage[] {
   );
 }
 
+function withDisplayTime(message: ChatMessage): ChatMessage {
+  const iso = message.createdAt || new Date().toISOString();
+  return {
+    ...message,
+    createdAt: iso,
+    timestamp: dayjs(iso).isValid()
+      ? dayjs(iso).format('h:mm A')
+      : message.timestamp || '',
+  };
+}
+
 export function MessageProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<{ [projectId: string]: ChatMessage[] }>({});
@@ -57,7 +68,19 @@ export function MessageProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       setError(null);
       const data = await messageService.getMessages(projectId);
-      setMessages((prev) => ({ ...prev, [projectId]: sortByCreatedAt(data) }));
+      setMessages((prev) => {
+        const incoming = sortByCreatedAt(data.map(withDisplayTime));
+        const pending = (prev[projectId] || []).filter((m) =>
+          m.id.startsWith('temp-')
+        );
+        const merged = [...incoming];
+        for (const p of pending) {
+          if (!merged.some((m) => m.text === p.text && m.userId === p.userId)) {
+            merged.push(p);
+          }
+        }
+        return { ...prev, [projectId]: sortByCreatedAt(merged) };
+      });
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load messages');
     } finally {
@@ -65,40 +88,71 @@ export function MessageProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Upsert a single message by id (dedupes POST-response vs. socket broadcast).
   const upsert = useCallback((projectId: string, message: ChatMessage) => {
+    const normalized = withDisplayTime(message);
     setMessages((prev) => {
       const list = prev[projectId] || [];
-      if (list.some((m) => m.id === message.id)) {
+      const withoutTemp = list.filter(
+        (m) =>
+          !(
+            m.id.startsWith('temp-') &&
+            m.userId === normalized.userId &&
+            m.text === normalized.text
+          )
+      );
+      if (withoutTemp.some((m) => m.id === normalized.id)) {
         return {
           ...prev,
-          [projectId]: list.map((m) => (m.id === message.id ? message : m)),
+          [projectId]: withoutTemp.map((m) =>
+            m.id === normalized.id ? normalized : m
+          ),
         };
       }
-      return { ...prev, [projectId]: sortByCreatedAt([...list, message]) };
+      return {
+        ...prev,
+        [projectId]: sortByCreatedAt([...withoutTemp, normalized]),
+      };
     });
   }, []);
 
-  const sendMessage = useCallback(async (projectId: string, text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || !projectId) return;
-    try {
-      const saved = await messageService.sendMessage(projectId, trimmed);
-      upsert(projectId, saved);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to send message');
-      throw e;
-    }
-  }, [upsert]);
+  const sendMessage = useCallback(
+    async (projectId: string, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || !projectId || !user) return;
+
+      const tempId = `temp-${Date.now()}`;
+      const optimistic: ChatMessage = withDisplayTime({
+        id: tempId,
+        projectId,
+        userId: user.id,
+        author: user.name,
+        initials: user.initials,
+        color: user.color,
+        avatarUrl: user.avatarUrl,
+        text: trimmed,
+        timestamp: '',
+        createdAt: new Date().toISOString(),
+      });
+      upsert(projectId, optimistic);
+
+      try {
+        const saved = await messageService.sendMessage(projectId, trimmed);
+        upsert(projectId, saved);
+      } catch (e: any) {
+        setMessages((prev) => ({
+          ...prev,
+          [projectId]: (prev[projectId] || []).filter((m) => m.id !== tempId),
+        }));
+        setError(e?.message ?? 'Failed to send message');
+        throw e;
+      }
+    },
+    [upsert, user]
+  );
 
   const receiveMessage = useCallback(
     (projectId: string, message: ChatMessage) => {
-      const normalized: ChatMessage = {
-        ...message,
-        timestamp: message.timestamp || dayjs(message.createdAt).fromNow(),
-      };
-      upsert(projectId, normalized);
-      // Count as unread only if it's from someone else.
+      upsert(projectId, message);
       if (message.userId !== user?.id) {
         setUnreadByProject((prev) => ({
           ...prev,

@@ -1,6 +1,7 @@
 /**
  * AI auto-captions — opt-in Generate with professional style presets.
  * Podcast / word-pop / phrases etc. Nothing runs until the user taps Generate.
+ * After generate, Export .srt shares a SubRip sidecar.
  */
 import React, { useState } from 'react';
 import {
@@ -11,9 +12,12 @@ import {
   Modal,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
 import { useAppPalette } from '../Contexts/ThemeContext';
 import {
   CAPTION_STYLE_PRESETS,
@@ -33,8 +37,12 @@ interface CaptionsToolPanelProps {
   visible: boolean;
   /** Number of caption overlays already on the active clip. */
   captionCount: number;
-  /** Kick off transcription for the chosen style; resolves with count added. */
-  onGenerate: (styleId: CaptionStyleId) => Promise<number>;
+  /** Kick off transcription for the chosen style; resolves with count + optional srt. */
+  onGenerate: (
+    styleId: CaptionStyleId
+  ) => Promise<{ added: number; srt?: string } | number>;
+  /** Rebuild SRT from existing AI overlays when last generate SRT is missing. */
+  getSrt?: () => string;
   onClearCaptions: () => void;
   onClose: () => void;
 }
@@ -43,6 +51,7 @@ export default function CaptionsToolPanel({
   visible,
   captionCount,
   onGenerate,
+  getSrt,
   onClearCaptions,
   onClose,
 }: CaptionsToolPanelProps) {
@@ -60,8 +69,11 @@ export default function CaptionsToolPanel({
   styles = __makeStyles();
 
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastAdded, setLastAdded] = useState<number | null>(null);
+  const [lastStyle, setLastStyle] = useState<CaptionStyleId | null>(null);
+  const [lastSrt, setLastSrt] = useState<string | null>(null);
   const [styleId, setStyleId] = useState<CaptionStyleId>('karaoke');
 
   const handleGenerate = async () => {
@@ -70,12 +82,47 @@ export default function CaptionsToolPanel({
       setLoading(true);
       setError(null);
       setLastAdded(null);
-      const added = await onGenerate(styleId);
+      const result = await onGenerate(styleId);
+      const added =
+        typeof result === 'number' ? result : result?.added ?? 0;
+      const srt = typeof result === 'number' ? undefined : result?.srt;
       setLastAdded(added);
+      setLastStyle(styleId);
+      if (srt?.trim()) setLastSrt(srt);
     } catch (e: any) {
       setError(e?.message ?? 'Caption generation failed.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportSrt = async () => {
+    const srt = (lastSrt?.trim() || getSrt?.() || '').trim();
+    if (!srt) {
+      Alert.alert(
+        'No captions',
+        'Generate captions first, then export the .srt file.'
+      );
+      return;
+    }
+    try {
+      setExporting(true);
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Sharing not available on this device');
+        return;
+      }
+      const file = new File(Paths.cache, `vydora-captions-${Date.now()}.srt`);
+      file.create({ overwrite: true });
+      file.write(srt);
+      await Sharing.shareAsync(file.uri, {
+        mimeType: 'application/x-subrip',
+        dialogTitle: 'Export captions (.srt)',
+      });
+    } catch (e: any) {
+      Alert.alert('Export failed', e?.message ?? 'Could not share .srt file.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -145,10 +192,35 @@ export default function CaptionsToolPanel({
 
           {lastAdded !== null && !loading && (
             <Text style={styles.successText}>
-              Added {lastAdded} caption{lastAdded === 1 ? '' : 's'} to the timeline.
+              Added {lastAdded} caption{lastAdded === 1 ? '' : 's'}
+              {lastStyle
+                ? ` · ${CAPTION_STYLE_PRESETS.find((p) => p.id === lastStyle)?.label ?? lastStyle}`
+                : ''}
+              .
             </Text>
           )}
           {error && !loading && <Text style={styles.errorText}>{error}</Text>}
+
+          {(captionCount > 0 || !!lastSrt) && !loading && (
+            <TouchableOpacity
+              style={styles.exportBtn}
+              onPress={handleExportSrt}
+              disabled={exporting}
+            >
+              {exporting ? (
+                <ActivityIndicator color={COLORS.yellow} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="download-outline"
+                    size={scale(16)}
+                    color={COLORS.yellow}
+                  />
+                  <Text style={styles.exportBtnText}>Export .srt</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
 
           {captionCount > 0 && !loading && (
             <TouchableOpacity style={styles.clearBtn} onPress={onClearCaptions}>
@@ -268,12 +340,24 @@ function __makeStyles() {
     fontSize: moderateScale(12),
     marginTop: verticalScale(10),
   },
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(8),
+    paddingVertical: verticalScale(10),
+    marginTop: verticalScale(10),
+  },
+  exportBtnText: {
+    color: COLORS.yellow,
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+  },
   clearBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: scale(8),
     paddingVertical: verticalScale(10),
-    marginTop: verticalScale(8),
+    marginTop: verticalScale(4),
   },
   clearBtnText: {
     color: COLORS.danger,
@@ -283,4 +367,3 @@ function __makeStyles() {
 });
 }
 let styles = __makeStyles();
-

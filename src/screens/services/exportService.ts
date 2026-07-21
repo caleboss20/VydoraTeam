@@ -82,8 +82,13 @@ async function resolveClipUrls(
 
   const resolved: Record<string, string> = {};
   const durations: Record<string, number> = {};
-  const mediaClips = timeline.filter((c) => c.kind !== 'title' && !!c.uri);
-  if (mediaClips.length === 0 && timeline.every((c) => c.kind === 'title')) {
+  const mediaClips = timeline.filter(
+    (c) => c.kind !== 'title' && !!c.uri
+  );
+  if (
+    mediaClips.length === 0 &&
+    timeline.every((c) => c.kind === 'title')
+  ) {
     // Title-only projects are fine — server generates color sheets.
     onProgress(8);
     return resolved;
@@ -97,6 +102,14 @@ async function resolveClipUrls(
     }
     if (isRemoteUrl(clip.uri)) {
       resolved[clip.id] = clip.uri.trim();
+    } else if (clip.kind === 'flyer') {
+      const name =
+        clip.uri.toLowerCase().includes('.png')
+          ? `export_flyer_${i + 1}.png`
+          : `export_flyer_${i + 1}.jpg`;
+      const mime = name.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const uploaded = await uploadService.uploadImage(clip.uri, name, mime);
+      resolved[clip.id] = uploaded.url;
     } else {
       const uploaded = await uploadService.uploadVideo(
         clip.uri,
@@ -118,7 +131,8 @@ async function resolveClipUrls(
     let order = 0;
     for (let i = 0; i < timeline.length; i++) {
       const clip = timeline[i];
-      if (clip.kind === 'title' || !resolved[clip.id]) continue;
+      if (clip.kind === 'title' || clip.kind === 'flyer' || !resolved[clip.id])
+        continue;
       const durationSeconds =
         durations[clip.id] ?? Math.max(1, Math.round((clip.durationMs || 1000) / 1000));
       await clipService.addClip(
@@ -242,11 +256,46 @@ function buildRenderTimeline(
   voiceoverUrls: Record<string, string>,
   settings: ExportSettings
 ) {
-  const clips = [...(project.clips || [])]
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    .map((c) => {
+  const sorted = [...(project.clips || [])].sort(
+    (a, b) => (a.order ?? 0) - (b.order ?? 0)
+  );
+  const adj = project.adjustmentLayers ?? [];
+  let timelineCursor = 0;
+  const clips = sorted.map((c) => {
+      const trimStart = c.trimStartMs ?? 0;
+      const trimEnd = c.trimEndMs ?? c.durationMs;
+      const visibleMs = Math.max(0, trimEnd - trimStart);
+      const clipStart = timelineCursor;
+      const clipEnd = timelineCursor + visibleMs;
+      timelineCursor = clipEnd;
+
+      // Bake overlapping adjustment layers into this clip's grade for export.
+      let mergedGrade = { ...(c.colorGrade ?? {}) } as Record<string, number>;
+      let mergedEffectId = c.effectId;
+      let mergedEffectIntensity = c.effectIntensity;
+      for (const layer of adj) {
+        const ls = layer.startMs;
+        const le = layer.startMs + layer.durationMs;
+        if (le <= clipStart || ls >= clipEnd) continue;
+        if (layer.colorGrade) {
+          for (const [k, v] of Object.entries(layer.colorGrade)) {
+            if (typeof v === 'number') {
+              mergedGrade[k] = Math.max(
+                -1,
+                Math.min(1, (mergedGrade[k] ?? 0) + v)
+              );
+            }
+          }
+        }
+        if (layer.effectId && layer.effectId !== 'none') {
+          mergedEffectId = layer.effectId;
+          mergedEffectIntensity = layer.effectIntensity ?? 0.55;
+        }
+      }
+
       const filter = settings.includeFilters ? getFilterById(c.filterId) : getFilterById('none');
       const isTitle = c.kind === 'title';
+      const isFlyer = c.kind === 'flyer';
       const titleTexts =
         isTitle && c.titleCard
           ? [
@@ -303,7 +352,7 @@ function buildRenderTimeline(
             ]
           : null;
       return {
-        kind: isTitle ? 'title' : 'video',
+        kind: isTitle ? 'title' : isFlyer ? 'flyer' : 'video',
         titleCard: isTitle && c.titleCard
           ? {
               backgroundColor: c.titleCard.backgroundColor,
@@ -314,8 +363,11 @@ function buildRenderTimeline(
             }
           : null,
         url: isTitle ? '' : clipUrls[c.id] ?? c.uri,
-        trimStartMs: isTitle ? 0 : c.trimStartMs ?? 0,
-        trimEndMs: isTitle ? c.durationMs : c.trimEndMs ?? c.durationMs,
+        trimStartMs: isTitle || isFlyer ? 0 : c.trimStartMs ?? 0,
+        trimEndMs:
+          isTitle || isFlyer
+            ? c.durationMs
+            : c.trimEndMs ?? c.durationMs,
         // When a curve is set, bake its segments; otherwise use constant speed.
         speed:
           c.speedCurve && c.speedCurve !== 'none'
@@ -361,9 +413,15 @@ function buildRenderTimeline(
           : null,
         tintColor: filter.tintColor,
         tintOpacity: filter.tintOpacity,
-        effectId: c.effectId ?? 'none',
-        effectIntensity: c.effectIntensity ?? 0.55,
-        colorGrade: c.colorGrade ?? null,
+        effectId: mergedEffectId ?? 'none',
+        effectIntensity: mergedEffectIntensity ?? 0.55,
+        colorGrade:
+          Object.keys(mergedGrade).length > 0
+            ? mergedGrade
+            : c.colorGrade ?? null,
+        colorCurves: c.colorCurves ?? null,
+        lutUri: c.lutUri ?? null,
+        lutIntensity: c.lutIntensity ?? 1,
         colorGradeKeyframes: (c.colorGradeKeyframes ?? []).map((k) => ({
           timeMs: k.timeMs,
           grade: k.grade,
@@ -395,12 +453,28 @@ function buildRenderTimeline(
           ? {
               noiseReduction: c.audioFx.noiseReduction ?? 0,
               enhanceSpeech: !!c.audioFx.enhanceSpeech,
+              enhanceStrength: c.audioFx.enhanceStrength ?? 0.75,
+              eqSub: c.audioFx.eqSub ?? 0,
               eqLow: c.audioFx.eqLow ?? 0,
               eqMid: c.audioFx.eqMid ?? 0,
+              eqPresence: c.audioFx.eqPresence ?? 0,
               eqHigh: c.audioFx.eqHigh ?? 0,
+              eqAir: c.audioFx.eqAir ?? 0,
               compressor: !!c.audioFx.compressor,
               compThreshold: c.audioFx.compThreshold ?? -18,
               compRatio: c.audioFx.compRatio ?? 3,
+              deEsser: c.audioFx.deEsser ?? 0,
+              gate: c.audioFx.gate ?? 0,
+            }
+          : null,
+        lookOverlay: c.lookOverlay
+          ? {
+              darkOpacity: c.lookOverlay.darkOpacity ?? 0,
+              gradientOpacity: c.lookOverlay.gradientOpacity ?? 0,
+              gradientColorTop: c.lookOverlay.gradientColorTop ?? '#000000',
+              gradientColorBottom:
+                c.lookOverlay.gradientColorBottom ?? '#F5C518',
+              gradientAngle: c.lookOverlay.gradientAngle ?? 0,
             }
           : null,
         transitionType: c.transitionOut?.type ?? 'none',
@@ -505,6 +579,9 @@ function buildRenderTimeline(
       opacity: o.opacity,
       flipH: !!o.flipH,
       flipV: !!o.flipV,
+      label: o.label ?? null,
+      role: o.role ?? null,
+      animationIn: o.animationIn ?? null,
       keyframes: (o.keyframes ?? []).map((k) => ({
         timeMs: k.timeMs,
         x: k.x,
@@ -676,6 +753,7 @@ async function createExport(
 
   // 3. Poll until terminal status — real renders can take minutes.
   let latest = created;
+  let timedOut = true;
   for (let i = 0; i < 900; i++) {
     await sleep(1000);
     latest = await apiRequest<ApiExport>(`/exports/${created.id}`);
@@ -683,13 +761,26 @@ async function createExport(
     const status = (latest.status || '').toUpperCase();
     // Backend enum is Ready | Processing | Failed (not COMPLETED).
     if (status === 'READY' || status === 'COMPLETED' || status === 'FAILED') {
+      timedOut = false;
       break;
     }
   }
 
   const mapped = mapExportFromApi(latest, project.title);
+  if (timedOut && mapped.status === 'Processing') {
+    throw new Error(
+      'Export is still processing on the server. Check the Exports tab in a minute — it will update when ready.'
+    );
+  }
   if (mapped.status === 'Failed') {
-    throw new Error(mapped.errorMessage || 'Export failed on the server. Please try again.');
+    throw new Error(
+      mapped.errorMessage ||
+        latest.errorMessage ||
+        'Export failed on the server. Please try again.'
+    );
+  }
+  if (!mapped.fileUrl) {
+    throw new Error('Export finished but no download URL was returned.');
   }
   onProgress(100);
   return mapped;

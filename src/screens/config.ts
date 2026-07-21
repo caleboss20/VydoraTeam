@@ -8,6 +8,7 @@
  * Override via `.env.local`:
  *   EXPO_PUBLIC_API_BASE=http://<host>:8080/api/v1
  *   EXPO_PUBLIC_WS_BASE=http://<host>:8080/ws
+ *   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=….apps.googleusercontent.com
  *
  * Device tips:
  * - iOS simulator / web: `localhost` works.
@@ -21,6 +22,10 @@ const API_BASE =
 const WS_BASE =
   process.env.EXPO_PUBLIC_WS_BASE?.replace(/\/$/, '') ||
   'http://localhost:8080/ws';
+
+const GOOGLE_WEB_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() ||
+  '241574699947-th6as6vgkvarafrmjrgi6rqvigchup20.apps.googleusercontent.com';
 
 /**
  * Raw-WebSocket STOMP broker URL for the Expo client.
@@ -50,6 +55,9 @@ export const CONFIG = {
   /** Raw-WebSocket STOMP broker URL (ws://host:8080/ws-native) for @stomp/stompjs. */
   WS_BROKER_URL,
 
+  /** Google OAuth Web client ID (ID token audience). */
+  GOOGLE_WEB_CLIENT_ID,
+
   ASYNC_STORAGE_KEYS: {
     USER: 'vydora:user',
     /** Short-lived JWT used as `Authorization: Bearer …` on every API call. */
@@ -69,6 +77,10 @@ export const CONFIG = {
     SETTINGS: 'vydora:settings',
     /** Per-project prefs prefix — append projectId. */
     PROJECT_PREFS_PREFIX: 'vydora:projectPrefs:',
+    /** First-run 5-minute wow path completed (never auto-restart). */
+    WOW_PATH_DONE: 'vydora:wowPath:done',
+    /** Active guided session — coach bar in editor + post-export invite nudge. */
+    WOW_PATH_ACTIVE: 'vydora:wowPath:active',
   },
 
   /**

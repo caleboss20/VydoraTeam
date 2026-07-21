@@ -15,15 +15,18 @@ import NewProjectScreen from "./Dashboard/NewProject";
 import InviteMemberScreen from "./Dashboard/InviteMember";
 import UploadVideoScreen from "./Dashboard/UploadVideo";
 import SettingsScreen from "./Dashboard/Settings";
+import ReferralScreen from "./Dashboard/Referral";
 import ProjectDetailScreen from "./Project/ProjectDetail";
 import ActivityScreen from "./Dashboard/ActivityScreen";
 import ExportLibraryScreen from "./Editor/Export";
 import VersionHistoryScreen from "./Dashboard/VersionHistory";
 import ProScreen from "./ProVersion/ProVersion";
 import AcceptInviteScreen from "./AcceptInvite/AcceptInvitescreen";
+import GuestReviewScreen from "./Review/GuestReviewScreen";
 import ExportReviewScreen from "./Editor/ReviewExport";
 import TeamMembersScreen from "./Dashboard/TeamMembers";
 import EditorFullscreenPreview from "./Editor/EditorFullscreenPreview";
+import LibraryScreen from "./Dashboard/LibraryScreen";
 
 const Stack=createNativeStackNavigator();
 
@@ -56,10 +59,12 @@ function MainStackNavigator(){
                   <Stack.Screen name="invitemember" component={InviteMemberScreen} />
                    <Stack.Screen name="uploadvideo" component={UploadVideoScreen} />
                     <Stack.Screen name="settings" component={SettingsScreen} />
+                    <Stack.Screen name="referral" component={ReferralScreen} />
                      <Stack.Screen name="activities" component={ActivityScreen} />
                           <Stack.Screen name="proscreen" component={ProScreen} />
                             <Stack.Screen name="AcceptInvite" component={AcceptInviteScreen} />
-                          
+                            <Stack.Screen name="GuestReview" component={GuestReviewScreen} />
+                            <Stack.Screen name="MediaLibrary" component={LibraryScreen} />
                     <Stack.Screen name="teammember" component={TeamMembersScreen} />   
                     <Stack.Screen name="export" component={ExportLibraryScreen} />
                       <Stack.Screen name="reviewexport" component={ExportReviewScreen} />

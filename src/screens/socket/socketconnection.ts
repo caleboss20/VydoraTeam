@@ -30,16 +30,18 @@ import {
   LiveCursor,
   bindEditorSocket,
   emitRemoteCursor,
+  emitEditToast,
   unbindEditorSocket,
   publishHello,
   publishState,
+  setLocalActorName,
 } from './editorSync';
 
 export function useProjectSocket(projectId: string) {
   const { token, user } = useAuth();
   const { fetchComments } = useComment();
   const { setOnlineMembers, setMemberOnline } = useMember();
-  const { receiveMessage } = useMessage();
+  const { receiveMessage, fetchMessages } = useMessage();
   const { applyRemoteProjectState, currentVideoProject } = useVideoProject();
   const clientRef = useRef<Client | null>(null);
 
@@ -50,24 +52,30 @@ export function useProjectSocket(projectId: string) {
     setOnlineMembers,
     setMemberOnline,
     receiveMessage,
+    fetchMessages,
     applyRemoteProjectState,
     currentVideoProject,
     userId: user?.id as string | undefined,
+    userName: user?.name as string | undefined,
   });
   handlersRef.current = {
     fetchComments,
     setOnlineMembers,
     setMemberOnline,
     receiveMessage,
+    fetchMessages,
     applyRemoteProjectState,
     currentVideoProject,
     userId: user?.id,
+    userName: user?.name,
   };
 
   useEffect(() => {
     if (!projectId || !token) return;
 
     let cancelled = false;
+
+    if (user?.name) setLocalActorName(user.name);
 
     const client = new Client({
       brokerURL: CONFIG.WS_BROKER_URL,
@@ -92,7 +100,11 @@ export function useProjectSocket(projectId: string) {
               : Array.isArray(raw?.userIds)
                 ? raw.userIds.map((id: unknown) => String(id))
                 : [];
-            handlersRef.current.setOnlineMembers(projectId, ids);
+            handlersRef.current.setOnlineMembers(
+              projectId,
+              ids,
+              handlersRef.current.userId
+            );
             // Keep yourself online even if the first broadcast raced without you.
             const myId = handlersRef.current.userId;
             if (myId && !ids.includes(myId)) {
@@ -110,6 +122,11 @@ export function useProjectSocket(projectId: string) {
         if (myId) {
           handlersRef.current.setMemberOnline(projectId, myId, true);
         }
+
+        // After (re)connect, reload chat history so messages sent while offline
+        // aren't missing from the panel.
+        void handlersRef.current.fetchMessages(projectId);
+        void handlersRef.current.fetchComments(projectId);
 
         // Project group chat
         client.subscribe(`/topic/project/${projectId}/messages`, (msg: IMessage) => {
@@ -138,7 +155,13 @@ export function useProjectSocket(projectId: string) {
                 !mine ||
                 mine.projectId !== projectId ||
                 (evt.project.updatedAt ?? '') >= (mine.updatedAt ?? '');
-              if (adopt) handlersRef.current.applyRemoteProjectState(evt.project);
+              if (adopt) {
+                handlersRef.current.applyRemoteProjectState(evt.project);
+                emitEditToast({
+                  actorName: evt.actorName || 'Teammate',
+                  summary: evt.summary || 'updated the timeline',
+                });
+              }
             } else if (evt.type === 'hello') {
               // A member just joined — send them our current timeline.
               const mine = handlersRef.current.currentVideoProject;
@@ -171,6 +194,17 @@ export function useProjectSocket(projectId: string) {
         console.log('[Socket] STOMP error', frame.headers['message'], frame.body),
       onWebSocketError: (e: any) =>
         console.log('[Socket] WebSocket error', e?.message ?? e),
+      onWebSocketClose: () => {
+        // Drop peer presence on disconnect; keep yourself marked online
+        // optimistically so reconnect doesn't flash "0 online" for you.
+        const myId = handlersRef.current.userId;
+        handlersRef.current.setOnlineMembers(projectId, [], myId);
+        console.log('[Socket] disconnected — will reconnect');
+      },
+      onDisconnect: () => {
+        const myId = handlersRef.current.userId;
+        handlersRef.current.setOnlineMembers(projectId, [], myId);
+      },
     });
 
     clientRef.current = client;

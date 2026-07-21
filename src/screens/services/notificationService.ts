@@ -27,6 +27,7 @@ const VALID_TYPES: NotificationType[] = [
   'comment',
   'clip_upload',
   'role_change',
+  'role_upgrade',
 ];
 
 function mapNotification(n: ApiNotification): Notification {

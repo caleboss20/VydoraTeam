@@ -17,7 +17,8 @@ import Slider from '@react-native-community/slider';
 import * as DocumentPicker from 'expo-document-picker';
 import { createAudioPlayer } from 'expo-audio';
 import { BackgroundMusic } from '../types';
-import { MUSIC_LIBRARY, SFX_LIBRARY, FOOTAGE_LIBRARY } from '../services/musicLibrary';
+import { MUSIC_LIBRARY, SFX_LIBRARY, FOOTAGE_LIBRARY, MUSIC_MOODS, filterLibrary } from '../services/musicLibrary';
+import { WEEKLY_DROP_LABEL } from '../services/weeklyMusicDrop';
 import { musicAudibleMs } from '../services/BackgroundmusicService';
 import { useAppPalette } from '../Contexts/ThemeContext';
 
@@ -72,9 +73,11 @@ export default function MusicToolPanel({
   styles = __makeStyles();
 
   const [tab, setTab] = useState<'tracks' | 'library'>('tracks');
+  const [mood, setMood] = useState<string>('All');
   const selected =
     tracks.find((t) => (t.id ?? 'legacy') === selectedTrackId) ?? tracks[0] ?? null;
   const selectedId = selected ? selected.id ?? 'legacy' : null;
+  const musicRows = filterLibrary(MUSIC_LIBRARY, '', mood);
 
   if (!visible) return null;
 
@@ -124,9 +127,32 @@ export default function MusicToolPanel({
       </View>
 
       {tab === 'library' ? (
-        <ScrollView style={{ maxHeight: verticalScale(180) }}>
-          <Text style={styles.section}>Music</Text>
-          {MUSIC_LIBRARY.map((t) => (
+        <ScrollView style={{ maxHeight: verticalScale(220) }}>
+          <Text style={styles.section}>Mood packs</Text>
+          <Text style={styles.weeklyHint}>{WEEKLY_DROP_LABEL}</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.moodRow}
+          >
+            {MUSIC_MOODS.map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.moodChip, mood === m && styles.moodChipOn]}
+                onPress={() => setMood(m)}
+              >
+                <Text
+                  style={[styles.moodChipText, mood === m && styles.moodChipTextOn]}
+                >
+                  {m}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <Text style={styles.section}>
+            Music{mood !== 'All' ? ` · ${mood}` : ''}
+          </Text>
+          {musicRows.map((t) => (
             <TouchableOpacity
               key={t.id}
               style={styles.libRow}
@@ -142,6 +168,9 @@ export default function MusicToolPanel({
               <Ionicons name="add" size={scale(18)} color={COLORS.textPrimary} />
             </TouchableOpacity>
           ))}
+          {musicRows.length === 0 ? (
+            <Text style={styles.empty}>No tracks in this mood — try All.</Text>
+          ) : null}
           <Text style={styles.section}>SFX</Text>
           {SFX_LIBRARY.map((t) => (
             <TouchableOpacity
@@ -344,6 +373,36 @@ function __makeStyles() {
     fontSize: moderateScale(10),
     marginTop: verticalScale(8),
     marginBottom: verticalScale(4),
+  },
+  weeklyHint: {
+    color: COLORS.yellow,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+    marginBottom: verticalScale(6),
+  },
+  moodRow: {
+    gap: scale(8),
+    paddingBottom: verticalScale(6),
+  },
+  moodChip: {
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(6),
+    borderRadius: scale(16),
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+  },
+  moodChipOn: {
+    backgroundColor: COLORS.yellow,
+    borderColor: COLORS.yellow,
+  },
+  moodChipText: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(11),
+    fontWeight: '600',
+  },
+  moodChipTextOn: {
+    color: '#0B0D13',
   },
   libRow: {
     flexDirection: 'row',

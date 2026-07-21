@@ -21,6 +21,7 @@ import {
 } from 'react-native-size-matters';
 import { CONFIG } from '../config';
 import { useTheme, ThemeColors } from '../Contexts/ThemeContext';
+import { setDevUnlockPro } from '../Contexts/subscription';
 
 export type AppSettings = {
   darkMode: boolean;
@@ -30,6 +31,8 @@ export type AppSettings = {
   presence: boolean;
   language: string;
   exportQuality: '720p' | '1080p' | '4K';
+  /** Soft unlock Pro templates until Paystack is live. */
+  devUnlockPro: boolean;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -40,6 +43,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   presence: true,
   language: 'English',
   exportQuality: '1080p',
+  devUnlockPro: false,
 };
 
 export async function loadAppSettings(): Promise<AppSettings> {
@@ -297,6 +301,32 @@ const SettingsScreen: FC = () => {
             title="Proxy editing on cellular"
             switchValue={prefs.proxyEditing}
             onSwitch={(v) => patch({ proxyEditing: v })}
+          />
+          <View style={styles.divider} />
+          <SettingItem
+            colors={colors}
+            styles={styles}
+            icon="diamond-outline"
+            title="Unlock Pro features (dev)"
+            subtitle="Demo Pro templates until Paystack is live"
+            switchValue={prefs.devUnlockPro}
+            onSwitch={(v) => {
+              void patch({ devUnlockPro: v });
+              void setDevUnlockPro(v);
+            }}
+          />
+        </View>
+
+        <Text style={styles.section}>GROWTH</Text>
+        <View style={styles.card}>
+          <SettingItem
+            colors={colors}
+            styles={styles}
+            icon="gift-outline"
+            title="Invite & earn"
+            subtitle="Share your code — both get Pro days"
+            showArrow
+            onPress={() => navigation.navigate('referral')}
           />
         </View>
 

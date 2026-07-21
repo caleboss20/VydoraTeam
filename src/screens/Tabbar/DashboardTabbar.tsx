@@ -21,7 +21,7 @@ export type DashboardTabParamList = {
 const Tab = createBottomTabNavigator<DashboardTabParamList>()
 
 export default function Dashboardtabbar() {
-  const { colors, isDark } = useTheme()
+  const { colors } = useTheme()
   const tabBarStyle = useMemo(
     () => [
       styles.tabBar,
@@ -42,9 +42,13 @@ export default function Dashboardtabbar() {
       }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
+        // Never leave label color undefined — RN Navigation falls back to black.
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle,
-        tabBarLabelStyle: { color: isDark ? undefined : colors.textSecondary },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+        },
         tabBarIcon: ({
           color,
           focused,

@@ -40,6 +40,9 @@ export type MovieEffectPatch = {
 
 export const MOVIE_EFFECT_PRESETS: MovieEffectPreset[] = [
   { id: 'none', label: 'None', hint: 'Clear movie look', icon: 'ban-outline' },
+  { id: 'beauty', label: 'Beauty', hint: 'Soft · warm · glow', icon: 'sparkles-outline' },
+  { id: 'enhance', label: 'Enhance', hint: 'Punchy contrast', icon: 'sunny-outline' },
+  { id: 'glow', label: 'Glow', hint: 'Dream halo', icon: 'moon-outline' },
   { id: 'flashback', label: 'Flashback', hint: 'Reverse · desat · blur', icon: 'hourglass-outline' },
   { id: 'dream', label: 'Dream', hint: 'Soft · warm · slow', icon: 'cloudy-night-outline' },
   { id: 'rewind', label: 'Rewind', hint: 'Playback reverse', icon: 'play-back-outline' },
@@ -89,6 +92,65 @@ export function buildMovieEffectPatch(
   }
 
   switch (id) {
+    case 'beauty':
+      return {
+        movieEffectId: id,
+        reversed: false,
+        speed: 1,
+        speedCurve: 'none',
+        effectId: 'blur',
+        effectIntensity: 0.22,
+        filterId: 'warm',
+        colorGrade: {
+          brightness: 0.14,
+          contrast: -0.1,
+          saturation: 0.06,
+          temperature: 0.32,
+        },
+        opacity: 1,
+        volume: 1,
+      };
+    case 'enhance':
+      return {
+        movieEffectId: id,
+        reversed: false,
+        speed: 1,
+        speedCurve: 'none',
+        effectId: 'none',
+        effectIntensity: 0.55,
+        filterId: 'kodak',
+        colorGrade: {
+          brightness: 0.1,
+          contrast: 0.32,
+          saturation: 0.25,
+          temperature: 0.08,
+        },
+        opacity: 1,
+        volume: 1,
+      };
+    case 'glow':
+      return {
+        movieEffectId: id,
+        reversed: false,
+        speed: 0.9,
+        speedCurve: 'none',
+        effectId: 'vignette',
+        effectIntensity: 0.55,
+        filterId: 'dream',
+        colorGrade: {
+          brightness: 0.16,
+          contrast: -0.12,
+          saturation: 0.12,
+          temperature: 0.2,
+        },
+        opacity: 1,
+        opacityKeyframes: [
+          { timeMs: 0, value: 0.4 },
+          { timeMs: Math.min(500, windowMs * 0.15), value: 1 },
+          { timeMs: windowMs, value: 1 },
+        ],
+        volume: 0.9,
+      };
     case 'flashback':
       return {
         movieEffectId: id,

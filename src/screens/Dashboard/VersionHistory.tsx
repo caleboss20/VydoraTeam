@@ -1,5 +1,4 @@
-import React, { useEffect } from "react";
-import { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
 import {
   View,
@@ -20,34 +19,67 @@ import { ProjectVersion, VersionListItem } from "../types";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-function parseApiDate(iso: string): Date {
-  if (!iso) return new Date(NaN);
-  // Spring Instant is UTC; if the zone suffix is missing, treat as UTC (not local).
-  const hasZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
-  const d = new Date(hasZone ? iso : `${iso}Z`);
+/** Normalize Spring Instant / epoch / ISO strings into a valid Date. */
+function parseApiDate(raw: string | number | null | undefined): Date {
+  if (raw == null || raw === "") return new Date(NaN);
+
+  // Epoch seconds or millis (Jackson WRITE_DATES_AS_TIMESTAMPS).
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const ms = raw < 1e12 ? raw * 1000 : raw;
+    return new Date(ms);
+  }
+
+  const iso = String(raw).trim();
+  if (/^\d+$/.test(iso)) {
+    const n = Number(iso);
+    const ms = n < 1e12 ? n * 1000 : n;
+    return new Date(ms);
+  }
+
+  // "2026-07-21 12:00:00" → ISO-ish
+  let normalized = iso.includes(" ") && !iso.includes("T")
+    ? iso.replace(" ", "T")
+    : iso;
+
+  // Spring Instant is UTC; missing zone → treat as UTC (not local).
+  const hasZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized);
+  if (!hasZone) normalized = `${normalized}Z`;
+
+  const d = new Date(normalized);
   return d;
 }
 
-function formatRelativeTime(iso: string): string {
-  const then = parseApiDate(iso).getTime();
+function formatRelativeTime(raw: string | number, nowMs: number): string {
+  const then = parseApiDate(raw).getTime();
   if (Number.isNaN(then)) return "";
-  let diffMs = Date.now() - then;
+  let diffMs = nowMs - then;
   // Clock skew / future timestamps → treat as now.
   if (diffMs < 0) diffMs = 0;
+
+  const secs = Math.floor(diffMs / 1000);
+  if (secs < 45) return "Just now";
+
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return mins + " min ago";
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return hrs + " hr ago";
+  if (mins < 60) return mins === 1 ? "1 min ago" : `${mins} min ago`;
+
+  const hrs = Math.floor(diffMs / 3600000);
+  if (hrs < 24) return hrs === 1 ? "1 hr ago" : `${hrs} hr ago`;
+
   const days = Math.floor(hrs / 24);
   if (days === 1) {
-    const time = parseApiDate(iso).toLocaleTimeString([], {
+    const time = parseApiDate(raw).toLocaleTimeString([], {
       hour: "numeric",
       minute: "2-digit",
     });
     return "Yesterday, " + time;
   }
-  return days + " days ago";
+  if (days < 7) return `${days} days ago`;
+
+  return parseApiDate(raw).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function versionLabel(v: ProjectVersion): string {
@@ -56,8 +88,8 @@ function versionLabel(v: ProjectVersion): string {
   return `Version ${v.versionNumber}`;
 }
 
-function toListItem(v: ProjectVersion): VersionListItem {
-  return { ...v, relativeTime: formatRelativeTime(v.createdAt) };
+function toListItem(v: ProjectVersion, nowMs: number): VersionListItem {
+  return { ...v, relativeTime: formatRelativeTime(v.createdAt, nowMs) };
 }
 export default function VersionHistoryScreen() {
   const { colors, isDark } = useTheme();
@@ -75,6 +107,14 @@ export default function VersionHistoryScreen() {
     restoreVersion,
     createVersion,
   } = useVersionHistory();
+
+  // Tick so "Just now" / "3 min ago" stay accurate while the screen is open.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     if (projectId) fetchVersions(projectId);
   }, [projectId, fetchVersions]);
@@ -165,7 +205,7 @@ export default function VersionHistoryScreen() {
       </View>
     );
   }
-  const listItems: VersionListItem[] = versions.map(toListItem);
+  const listItems: VersionListItem[] = versions.map((v) => toListItem(v, nowMs));
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
