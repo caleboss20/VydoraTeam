@@ -1,16 +1,12 @@
 /**
- * Invite service — adapted to the backend’s email-membership flow.
+ * Invite service — hybrid join (best-product path).
  *
- * The UI still speaks “invite tokens” and deep links (`vydora://invite/:token`).
- * The Spring API has no opaque invite tokens; instead:
- *   1. Owner calls POST /projects/{id}/members/invite { email, role }
- *   2. Invitee (logged in as that email) calls
- *        POST /projects/{id}/members/{userId}/accept|decline
+ * - Email invite → push + membership INVITED for that account
+ * - Share link `vydora://invite/<projectId>` → always opens Accept screen
+ * - Wrong account → clear CTA to request join (Owner admits)
+ * - Matching account → Accept
  *
- * We therefore treat the deep-link “token” as the **projectId**. Share links
- * look like `vydora.io/invite/<projectId>` so AcceptInviteScreen keeps working
- * without UI changes. Auth is required for accept/decline and for loading
- * project details when logged in.
+ * Deep-link token === projectId (backend has no opaque invite tokens yet).
  */
 import { CONFIG } from '../config';
 import { apiRequest } from './apiClient';
@@ -22,6 +18,14 @@ import {
 import { memberService } from './membersServvice';
 
 export type InviteRole = 'Owner' | 'Editor' | 'Viewer';
+
+export type InvitePreviewState =
+  | 'LOGIN_REQUIRED'
+  | 'CAN_ACCEPT'
+  | 'ALREADY_ACTIVE'
+  | 'JOIN_REQUEST_PENDING'
+  | 'CAN_REQUEST_JOIN'
+  | 'NOT_FOUND';
 
 export interface SendInvitePayload {
   projectId: string;
@@ -52,9 +56,12 @@ export interface InviteDetails {
   projectThumbnailUrl: string;
   inviterName: string;
   inviteeEmail: string;
+  yourEmail?: string;
   role: InviteRole;
   message?: string;
   status: 'pending' | 'accepted' | 'declined' | 'expired';
+  /** Hybrid accept-screen state from invite-preview. */
+  state?: InvitePreviewState;
 }
 
 export interface AcceptInviteResult {
@@ -70,10 +77,12 @@ function shareLinkForProject(projectId: string): string {
   return `vydora.io/invite/${projectId}`;
 }
 
+function deepLinkForProject(projectId: string): string {
+  return `vydora://invite/${projectId}`;
+}
+
 /**
  * Invite each email via the members API.
- * `accessToken` is unused directly (apiClient holds it) but kept so call sites
- * can pass auth explicitly once InviteContext wires useAuth.
  */
 export async function sendInvite(
   projectId: string,
@@ -102,7 +111,6 @@ export async function sendInvite(
     }
     invites.push({
       email,
-      // Deep-link token === projectId (see file header).
       token: projectId,
       inviteLink: shareLinkForProject(projectId),
     });
@@ -117,9 +125,43 @@ export async function sendInvite(
   };
 }
 
+type ApiInvitePreview = {
+  projectId: string;
+  projectTitle: string;
+  thumbnailUrl?: string | null;
+  inviterName?: string | null;
+  yourEmail?: string | null;
+  state: InvitePreviewState;
+  role?: string | null;
+  message?: string | null;
+};
+
+function mapPreview(projectId: string, data: ApiInvitePreview): InviteDetails {
+  const role = (data.role as InviteRole) || 'Editor';
+  const state = data.state;
+  let status: InviteDetails['status'] = 'pending';
+  if (state === 'ALREADY_ACTIVE') status = 'accepted';
+  if (state === 'NOT_FOUND') status = 'expired';
+
+  return {
+    token: projectId,
+    projectId: data.projectId || projectId,
+    projectName: data.projectTitle || 'Project invite',
+    projectThumbnailUrl:
+      data.thumbnailUrl ||
+      'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
+    inviterName: data.inviterName || 'A teammate',
+    inviteeEmail: data.yourEmail || '',
+    yourEmail: data.yourEmail || undefined,
+    role,
+    message: data.message || undefined,
+    status,
+    state,
+  };
+}
+
 /**
- * Load invite presentation data for AcceptInviteScreen.
- * `token` is the projectId embedded in the deep link.
+ * Load invite presentation + personalized join state for AcceptInviteScreen.
  */
 export async function getInviteByToken(token: string): Promise<InviteDetails> {
   if (CONFIG.USE_MOCK) {
@@ -128,39 +170,64 @@ export async function getInviteByToken(token: string): Promise<InviteDetails> {
 
   const projectId = token;
   try {
-    const project = await apiRequest<ApiProject>(`/projects/${projectId}`);
-    return {
-      token: projectId,
-      projectId: project.id,
-      projectName: project.title,
-      projectThumbnailUrl:
-        project.thumbnailUrl ||
-        'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
-      inviterName: 'A teammate',
-      inviteeEmail: '',
-      role: 'Editor',
-      status: 'pending',
-    };
+    const data = await apiRequest<ApiInvitePreview>(
+      `/projects/${projectId}/members/invite-preview`,
+      { skipRefresh: true }
+    );
+    return mapPreview(projectId, data);
   } catch {
-    // Logged-out users (or non-members) cannot GET the project yet.
-    // Still return enough for the Accept screen to render and prompt login.
-    return {
-      token: projectId,
-      projectId,
-      projectName: 'Project invite',
-      projectThumbnailUrl:
-        'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
-      inviterName: 'A teammate',
-      inviteeEmail: '',
-      role: 'Editor',
-      status: 'pending',
-    };
+    // Offline / old server fallback.
+    try {
+      const project = await apiRequest<ApiProject>(`/projects/${projectId}`);
+      return {
+        token: projectId,
+        projectId: project.id,
+        projectName: project.title,
+        projectThumbnailUrl:
+          project.thumbnailUrl ||
+          'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
+        inviterName: 'A teammate',
+        inviteeEmail: '',
+        role: 'Editor',
+        status: 'pending',
+        state: 'CAN_REQUEST_JOIN',
+        message: 'Request to join this project — the Owner will Admit you.',
+      };
+    } catch {
+      return {
+        token: projectId,
+        projectId,
+        projectName: 'Project invite',
+        projectThumbnailUrl:
+          'https://placehold.co/400x225/1a1a1a/F5C518?text=Vydora',
+        inviterName: 'A teammate',
+        inviteeEmail: '',
+        role: 'Editor',
+        status: 'pending',
+        state: 'LOGIN_REQUIRED',
+        message: 'Sign in to accept this invite or request to join.',
+      };
+    }
   }
 }
 
 /**
+ * Current user requests to join via the share link (Owner admit queue).
+ */
+export async function requestJoinViaLink(
+  projectId: string,
+  role: InviteRole = 'Editor'
+): Promise<{ status: string }> {
+  if (CONFIG.USE_MOCK) throw new Error('Mock invites disabled.');
+  const data = await apiRequest<{ status: string }>(
+    `/projects/${projectId}/members/join-request?role=${encodeURIComponent(role)}`,
+    { method: 'POST' }
+  );
+  return { status: data.status || 'PENDING_APPROVAL' };
+}
+
+/**
  * Accept membership for the logged-in user.
- * Requires `userId` of the current user (from AuthContext).
  */
 export async function acceptInvite(
   token: string,
@@ -190,5 +257,4 @@ export async function declineInvite(
   return { success: true };
 }
 
-// Re-export helpers used by invite UI if role labels need mapping later.
-export { mapMemberRoleFromApi, mapMemberRoleToApi };
+export { mapMemberRoleFromApi, mapMemberRoleToApi, deepLinkForProject, shareLinkForProject };

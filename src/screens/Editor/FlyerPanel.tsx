@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_LIST, TOOL_SHEET_MAX } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import * as ImagePicker from 'expo-image-picker';
 import { useAppPalette } from '../Contexts/ThemeContext';
@@ -123,7 +124,7 @@ export default function FlyerPanel({
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={{ maxHeight: verticalScale(280) }}>
+      <ScrollView style={{ maxHeight: TOOL_SHEET_LIST }} showsVerticalScrollIndicator={false}>
         <TouchableOpacity style={styles.pickBtn} onPress={pickImage}>
           {pickedUri ? (
             <Image source={{ uri: pickedUri }} style={styles.pickPreview} />
@@ -294,6 +295,8 @@ function makeStyles() {
       borderTopWidth: 1,
       borderTopColor: COLORS.border,
       padding: scale(14),
+      maxHeight: TOOL_SHEET_MAX,
+      minHeight: Math.round(TOOL_SHEET_MAX * 0.72),
     },
     header: {
       flexDirection: 'row',
@@ -325,7 +328,7 @@ function makeStyles() {
       marginBottom: verticalScale(6),
     },
     pickBtn: {
-      height: verticalScale(88),
+      height: verticalScale(120),
       borderRadius: scale(12),
       borderWidth: 1,
       borderColor: COLORS.border,

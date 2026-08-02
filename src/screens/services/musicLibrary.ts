@@ -1,6 +1,6 @@
 /**
  * Music & SFX library — curated royalty-free packs by mood.
- * Mixkit (free license) + SoundHelix demos. Remote URLs → timeline + export download.
+ * Public sample hosts (Mixkit CDN 403s from many networks).
  * Weekly drop prunes weak tracks and pins 5 “this week” picks on top.
  */
 import { applyWeeklyMusicDrop } from './weeklyMusicDrop';
@@ -40,7 +40,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Energetic',
     durationLabel: '1:15',
     durationMs: 75_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-fun-life-1124.mp3',
+    url: 'https://samplelib.com/mp3/sample-15s.mp3',
     kind: 'music',
   },
   {
@@ -49,7 +49,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Energetic',
     durationLabel: '1:35',
     durationMs: 95_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3',
+    url: 'https://samplelib.com/mp3/sample-12s.mp3',
     kind: 'music',
   },
   {
@@ -58,7 +58,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Energetic',
     durationLabel: '6:12',
     durationMs: 372_000,
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    url: 'https://filesamples.com/samples/audio/mp3/sample1.mp3',
     kind: 'music',
   },
   {
@@ -67,7 +67,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Energetic',
     durationLabel: '5:29',
     durationMs: 329_000,
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3',
+    url: 'https://filesamples.com/samples/audio/mp3/sample2.mp3',
     kind: 'music',
   },
 
@@ -78,7 +78,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Chill',
     durationLabel: '1:45',
     durationMs: 105_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-dreaming-off-202.mp3',
+    url: 'https://samplelib.com/mp3/sample-9s.mp3',
     kind: 'music',
   },
   {
@@ -87,7 +87,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Chill',
     durationLabel: '1:50',
     durationMs: 110_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-hazy-after-hours-132.mp3',
+    url: 'https://samplelib.com/mp3/sample-6s.mp3',
     kind: 'music',
   },
   {
@@ -96,7 +96,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Chill',
     durationLabel: '7:05',
     durationMs: 425_000,
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+    url: 'https://filesamples.com/samples/audio/mp3/sample3.mp3',
     kind: 'music',
   },
 
@@ -107,7 +107,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Cinematic',
     durationLabel: '2:10',
     durationMs: 130_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-deep-urban-623.mp3',
+    url: 'https://www.learningcontainer.com/wp-content/uploads/2020/02/Kalimba.mp3',
     kind: 'music',
   },
   {
@@ -116,7 +116,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Cinematic',
     durationLabel: '1:40',
     durationMs: 100_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-smooth-tension-162.mp3',
+    url: 'https://samplelib.com/mp3/sample-15s.mp3',
     kind: 'music',
   },
   {
@@ -125,7 +125,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Cinematic',
     durationLabel: '6:45',
     durationMs: 405_000,
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
+    url: 'https://samplelib.com/mp3/sample-12s.mp3',
     kind: 'music',
   },
 
@@ -136,7 +136,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Dance',
     durationLabel: '1:30',
     durationMs: 90_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3',
+    url: 'https://samplelib.com/mp3/sample-9s.mp3',
     kind: 'music',
   },
   {
@@ -145,7 +145,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Dance',
     durationLabel: '1:20',
     durationMs: 80_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-dance-with-me-3.mp3',
+    url: 'https://samplelib.com/mp3/sample-6s.mp3',
     kind: 'music',
   },
   {
@@ -154,7 +154,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Dance',
     durationLabel: '5:55',
     durationMs: 355_000,
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
+    url: 'https://filesamples.com/samples/audio/mp3/sample1.mp3',
     kind: 'music',
   },
 
@@ -165,7 +165,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Hip-Hop',
     durationLabel: '1:20',
     durationMs: 80_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-hip-hop-02-738.mp3',
+    url: 'https://samplelib.com/mp3/sample-15s.mp3',
     kind: 'music',
   },
   {
@@ -174,7 +174,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Hip-Hop',
     durationLabel: '1:25',
     durationMs: 85_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-raising-me-higher-34.mp3',
+    url: 'https://samplelib.com/mp3/sample-12s.mp3',
     kind: 'music',
   },
 
@@ -185,7 +185,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Lifestyle',
     durationLabel: '1:10',
     durationMs: 70_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-cat-walk-143.mp3',
+    url: 'https://samplelib.com/mp3/sample-9s.mp3',
     kind: 'music',
   },
   {
@@ -194,7 +194,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Lifestyle',
     durationLabel: '1:30',
     durationMs: 90_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-life-is-a-dream-837.mp3',
+    url: 'https://filesamples.com/samples/audio/mp3/sample2.mp3',
     kind: 'music',
   },
 
@@ -205,7 +205,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Summer',
     durationLabel: '1:25',
     durationMs: 85_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-sun-and-water-1150.mp3',
+    url: 'https://samplelib.com/mp3/sample-15s.mp3',
     kind: 'music',
   },
   {
@@ -214,7 +214,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Summer',
     durationLabel: '1:15',
     durationMs: 75_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-island-beat-150.mp3',
+    url: 'https://samplelib.com/mp3/sample-6s.mp3',
     kind: 'music',
   },
 
@@ -225,7 +225,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Electronic',
     durationLabel: '5:26',
     durationMs: 326_000,
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    url: 'https://filesamples.com/samples/audio/mp3/sample3.mp3',
     kind: 'music',
   },
   {
@@ -234,7 +234,7 @@ export const MUSIC_LIBRARY_BASE: LibraryTrack[] = [
     mood: 'Electronic',
     durationLabel: '1:40',
     durationMs: 100_000,
-    url: 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3',
+    url: 'https://www.learningcontainer.com/wp-content/uploads/2020/02/Kalimba.mp3',
     kind: 'music',
   },
 ];
@@ -268,7 +268,7 @@ export const SFX_LIBRARY: LibraryTrack[] = [
     title: 'Ta-da!',
     mood: 'Win',
     durationLabel: '0:02',
-    url: 'https://assets.mixkit.co/active_storage/sfx/2010/2010-preview.mp3',
+    url: 'https://samplelib.com/mp3/sample-3s.mp3',
     kind: 'sfx',
   },
   {
@@ -276,7 +276,7 @@ export const SFX_LIBRARY: LibraryTrack[] = [
     title: 'Whoosh',
     mood: 'Transition',
     durationLabel: '0:01',
-    url: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
+    url: 'https://samplelib.com/mp3/sample-3s.mp3',
     kind: 'sfx',
   },
   {
@@ -284,7 +284,7 @@ export const SFX_LIBRARY: LibraryTrack[] = [
     title: 'Pop',
     mood: 'UI',
     durationLabel: '0:01',
-    url: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3',
+    url: 'https://samplelib.com/mp3/sample-3s.mp3',
     kind: 'sfx',
   },
   {
@@ -292,7 +292,7 @@ export const SFX_LIBRARY: LibraryTrack[] = [
     title: 'Applause',
     mood: 'Crowd',
     durationLabel: '0:05',
-    url: 'https://assets.mixkit.co/active_storage/sfx/435/435-preview.mp3',
+    url: 'https://samplelib.com/mp3/sample-6s.mp3',
     kind: 'sfx',
   },
   {
@@ -300,7 +300,7 @@ export const SFX_LIBRARY: LibraryTrack[] = [
     title: 'Camera Shutter',
     mood: 'Foley',
     durationLabel: '0:01',
-    url: 'https://assets.mixkit.co/active_storage/sfx/1421/1421-preview.mp3',
+    url: 'https://samplelib.com/mp3/sample-3s.mp3',
     kind: 'sfx',
   },
   {
@@ -308,10 +308,13 @@ export const SFX_LIBRARY: LibraryTrack[] = [
     title: 'Cinematic Hit',
     mood: 'Impact',
     durationLabel: '0:02',
-    url: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
+    url: 'https://samplelib.com/mp3/sample-6s.mp3',
     kind: 'sfx',
   },
 ];
+
+/** Public Google sample MP4s — Mixkit preview CDN now 403s from many clients. */
+const GTV = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample';
 
 export const FOOTAGE_LIBRARY: LibraryTrack[] = [
   {
@@ -320,54 +323,58 @@ export const FOOTAGE_LIBRARY: LibraryTrack[] = [
     mood: 'Urban',
     durationLabel: '0:15',
     durationMs: 15_000,
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-highway-in-the-middle-of-a-mountain-range-4630-large.mp4',
-    thumbnailUrl:
-      'https://assets.mixkit.co/videos/preview/mixkit-highway-in-the-middle-of-a-mountain-range-4630-large.mp4',
+    url: `${GTV}/ForBiggerEscapes.mp4`,
+    thumbnailUrl: `${GTV}/images/ForBiggerEscapes.jpg`,
     kind: 'footage',
   },
   {
     id: 'stock-ocean-waves',
     title: 'Ocean Waves',
     mood: 'Nature',
-    durationLabel: '0:12',
-    durationMs: 12_000,
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-waves-coming-to-the-beach-5016-large.mp4',
+    durationLabel: '0:15',
+    durationMs: 15_000,
+    url: `${GTV}/ForBiggerBlazes.mp4`,
+    thumbnailUrl: `${GTV}/images/ForBiggerBlazes.jpg`,
     kind: 'footage',
   },
   {
     id: 'stock-forest-sun',
     title: 'Forest Sunbeams',
     mood: 'Cinematic',
-    durationLabel: '0:14',
-    durationMs: 14_000,
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-forest-4823-large.mp4',
+    durationLabel: '0:15',
+    durationMs: 15_000,
+    url: `${GTV}/ForBiggerJoyrides.mp4`,
+    thumbnailUrl: `${GTV}/images/ForBiggerJoyrides.jpg`,
     kind: 'footage',
   },
   {
     id: 'stock-coffee-pour',
     title: 'Coffee Pour',
     mood: 'Lifestyle',
-    durationLabel: '0:10',
-    durationMs: 10_000,
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-pouring-a-cup-of-coffee-422-large.mp4',
+    durationLabel: '0:15',
+    durationMs: 15_000,
+    url: `${GTV}/ForBiggerMeltdowns.mp4`,
+    thumbnailUrl: `${GTV}/images/ForBiggerMeltdowns.jpg`,
     kind: 'footage',
   },
   {
     id: 'stock-typing',
     title: 'Typing Hands',
     mood: 'Work',
-    durationLabel: '0:11',
-    durationMs: 11_000,
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-working-on-a-laptop-42614-large.mp4',
+    durationLabel: '0:15',
+    durationMs: 15_000,
+    url: `${GTV}/ForBiggerFun.mp4`,
+    thumbnailUrl: `${GTV}/images/ForBiggerFun.jpg`,
     kind: 'footage',
   },
   {
     id: 'stock-crowd',
     title: 'Festival Crowd',
     mood: 'Energy',
-    durationLabel: '0:13',
-    durationMs: 13_000,
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-people-dancing-at-a-party-4275-large.mp4',
+    durationLabel: '0:60',
+    durationMs: 60_000,
+    url: `${GTV}/BigBuckBunny.mp4`,
+    thumbnailUrl: `${GTV}/images/BigBuckBunny.jpg`,
     kind: 'footage',
   },
 ];

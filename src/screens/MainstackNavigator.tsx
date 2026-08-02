@@ -8,6 +8,7 @@ import VerifyEmail from "./OtpVerification";
 import PasswordReset from "./Passwordreset";
 import PasswordSuccess from "./Passwordsuccess";
 import Onboarding from "./Onboarding/Onboardingscreen";
+import ProfileSetupScreen from "./Onboarding/ProfileSetupScreen";
 import EditorScreen from "./Editor/Editorscreen";
 import TimelineScreen from "./Editor/TimeLine";
 import Dashboardtabbar from "./Tabbar/DashboardTabbar";
@@ -46,6 +47,7 @@ function MainStackNavigator(){
                  <Stack.Screen name="passwordreset" component={PasswordReset} />
                  <Stack.Screen name="passwordsuccess" component={PasswordSuccess} />
              <Stack.Screen name="onboarding" component={Onboarding} />
+             <Stack.Screen name="profilesetup" component={ProfileSetupScreen} />
 
               <Stack.Screen name="editorscreen" component={EditorScreen} />
               <Stack.Screen

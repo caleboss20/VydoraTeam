@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_LIST } from './toolSheetLayout';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import { useAppPalette } from '../Contexts/ThemeContext';
@@ -248,7 +249,7 @@ function __makeStyles() {
     borderTopLeftRadius: scale(20),
     borderTopRightRadius: scale(20),
     padding: scale(20),
-    minHeight: verticalScale(280),
+    minHeight: TOOL_SHEET_LIST,
   },
   header: {
     flexDirection: 'row',

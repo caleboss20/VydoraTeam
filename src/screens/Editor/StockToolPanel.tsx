@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import { useAppPalette } from '../Contexts/ThemeContext';
 import {
   MUSIC_LIBRARY,
@@ -169,7 +170,7 @@ export default function StockToolPanel({
           style={{ marginVertical: verticalScale(24) }}
         />
       ) : (
-        <ScrollView style={{ maxHeight: verticalScale(200) }}>
+        <ScrollView style={{ maxHeight: TOOL_SHEET_LIST }}>
           <Text style={styles.hint}>
             {tab === 'footage'
               ? 'Tap to append B-roll on the timeline.'

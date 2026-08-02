@@ -10,6 +10,7 @@ import {
   Animated,
   Dimensions,
   Image,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
@@ -27,6 +28,8 @@ interface CollaborationSidebarProps {
   onClose: () => void;
   projectId: string;
   clipId?: string;
+  /** Same leave path as the editor header X. */
+  onLeaveEditor?: () => void;
 }
 
 export default function CollaborationSidebar({
@@ -34,6 +37,7 @@ export default function CollaborationSidebar({
   onClose,
   projectId,
   clipId: _clipId,
+  onLeaveEditor,
 }: CollaborationSidebarProps) {
   const { colors, isDark } = useTheme();
   const COLORS = {
@@ -113,13 +117,18 @@ export default function CollaborationSidebar({
   const handleSend = async () => {
     const text = message.trim();
     if (!text || sending) return;
+    if (!projectId) {
+      Alert.alert('Chat', 'Open a project before sending messages.');
+      return;
+    }
     setMessage('');
     try {
       setSending(true);
       await sendMessage(projectId, text);
-    } catch {
+    } catch (e: any) {
       // Restore the text so the user can retry on failure.
       setMessage(text);
+      Alert.alert('Message not sent', e?.message ?? 'Check your connection and try again.');
     } finally {
       setSending(false);
     }
@@ -334,6 +343,17 @@ export default function CollaborationSidebar({
             </TouchableOpacity>
           </View>
         )}
+
+        {onLeaveEditor ? (
+          <TouchableOpacity
+            style={styles.leaveRow}
+            onPress={onLeaveEditor}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="exit-outline" size={scale(16)} color={COLORS.textSecondary} />
+            <Text style={styles.leaveText}>Leave editor</Text>
+          </TouchableOpacity>
+        ) : null}
       </Animated.View>
     </View>
   );
@@ -567,6 +587,20 @@ function makeCollabStyles(COLORS: CollabColors) {
     borderRadius: scale(17),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  leaveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: scale(8),
+    paddingVertical: verticalScale(14),
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  leaveText: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(13),
+    fontWeight: '600',
   },
 });
 }

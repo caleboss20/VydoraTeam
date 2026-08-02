@@ -14,7 +14,7 @@
  * comments live and tears the connection down on unmount. UI is unchanged —
  * this only feeds the existing contexts.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Client, IMessage } from '@stomp/stompjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config';
@@ -44,6 +44,7 @@ export function useProjectSocket(projectId: string) {
   const { receiveMessage, fetchMessages } = useMessage();
   const { applyRemoteProjectState, currentVideoProject } = useVideoProject();
   const clientRef = useRef<Client | null>(null);
+  const [connected, setConnected] = useState(false);
 
   // Keep the latest context callbacks/state in a ref so ordinary re-renders
   // never tear down and rebuild the socket (only projectId / auth changes should).
@@ -71,7 +72,10 @@ export function useProjectSocket(projectId: string) {
   };
 
   useEffect(() => {
-    if (!projectId || !token) return;
+    if (!projectId || !token) {
+      setConnected(false);
+      return;
+    }
 
     let cancelled = false;
 
@@ -84,11 +88,14 @@ export function useProjectSocket(projectId: string) {
       heartbeatOutgoing: 10000,
       // Always send the freshest token (apiClient rotates it on refresh).
       beforeConnect: async () => {
+        // Pick up LAN/cloud failover without rebuilding the client.
+        client.brokerURL = CONFIG.WS_BROKER_URL;
         const stored = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN);
         client.connectHeaders = { Authorization: `Bearer ${stored ?? token}` };
       },
       onConnect: () => {
         if (cancelled) return;
+        setConnected(true);
 
         // Presence — server pushes the full set of online userIds. Subscribing
         // to this destination is also what registers THIS user as online.
@@ -195,6 +202,7 @@ export function useProjectSocket(projectId: string) {
       onWebSocketError: (e: any) =>
         console.log('[Socket] WebSocket error', e?.message ?? e),
       onWebSocketClose: () => {
+        setConnected(false);
         // Drop peer presence on disconnect; keep yourself marked online
         // optimistically so reconnect doesn't flash "0 online" for you.
         const myId = handlersRef.current.userId;
@@ -202,6 +210,7 @@ export function useProjectSocket(projectId: string) {
         console.log('[Socket] disconnected — will reconnect');
       },
       onDisconnect: () => {
+        setConnected(false);
         const myId = handlersRef.current.userId;
         handlersRef.current.setOnlineMembers(projectId, [], myId);
       },
@@ -212,11 +221,12 @@ export function useProjectSocket(projectId: string) {
 
     return () => {
       cancelled = true;
+      setConnected(false);
       unbindEditorSocket();
       client.deactivate().catch(() => {});
       clientRef.current = null;
     };
   }, [projectId, token]);
 
-  return clientRef;
+  return { clientRef, connected };
 }

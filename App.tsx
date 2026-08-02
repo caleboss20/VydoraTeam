@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import MainStackNavigator from "./src/screens/MainstackNavigator";
 import { NavigationContainer, LinkingOptions, DefaultTheme, DarkTheme } from "@react-navigation/native";
@@ -14,6 +14,7 @@ import { VideoProjectProvider } from "./src/screens/Contexts/VideoProjectContext
 import { VersionHistoryProvider } from "./src/screens/Contexts/VersionHistoryContext";
 import { InviteProvider } from "./src/screens/Contexts/InviteContext";
 import { ThemeProvider, useTheme } from "./src/screens/Contexts/ThemeContext";
+import { resolveApiEndpoint } from "./src/screens/services/apiEndpoint";
 
 const linking: LinkingOptions<any> = {
   prefixes: ["vydora://", "https://vydora.io", "https://vydora.app"],
@@ -60,6 +61,10 @@ function AppNavigation() {
 }
 
 export default function App() {
+  useEffect(() => {
+    void resolveApiEndpoint();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>

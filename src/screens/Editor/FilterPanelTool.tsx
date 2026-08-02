@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX } from './toolSheetLayout';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { VideoFilter } from '../types';
 import { useAppPalette } from '../Contexts/ThemeContext';
@@ -167,6 +168,8 @@ function __makeStyles() {
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
     paddingBottom: verticalScale(16),
+    maxHeight: TOOL_SHEET_MAX,
+    minHeight: Math.round(TOOL_SHEET_MAX * 0.55),
   },
   header: {
     flexDirection: 'row',

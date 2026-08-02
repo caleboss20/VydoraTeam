@@ -96,6 +96,49 @@ export async function pickVideosFromFiles(): Promise<PickedMixVideo[]> {
   });
 }
 
+export type PickedMixImage = {
+  uri: string;
+  /** Still shown this long on the timeline ( CapCut-style photo clip ). */
+  durationMs: number;
+  title: string;
+  fileName: string;
+  mimeType: string;
+};
+
+/** Pick one or more photos to place on the timeline as still “video” clips. */
+export async function pickImagesFromGallery(
+  selectionLimit = 12,
+  durationMs = 5000
+): Promise<PickedMixImage[]> {
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (status !== 'granted') {
+    throw new Error('Allow photo library access to add photos to the timeline.');
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsMultipleSelection: true,
+    selectionLimit,
+    quality: 1,
+  });
+
+  if (result.canceled || !result.assets?.length) return [];
+
+  const dur = Math.max(1000, Math.round(durationMs));
+  return result.assets
+    .filter((a) => !!a.uri)
+    .map((a, i) => {
+      const fileName = a.fileName || `photo_${Date.now()}_${i}.jpg`;
+      return {
+        uri: a.uri,
+        durationMs: dur,
+        title: titleFromName(fileName),
+        fileName,
+        mimeType: a.mimeType || 'image/jpeg',
+      };
+    });
+}
+
 /** Upload a local mix clip; returns CDN URL + duration when the server reports it. */
 export async function uploadMixVideo(
   picked: PickedMixVideo

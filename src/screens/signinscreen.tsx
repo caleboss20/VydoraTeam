@@ -28,6 +28,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "./Contexts/Authcontext";
 import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere relative to this file
 import { useGoogleIdToken } from "./services/googleAuth";
+import { resolvePostAuthRoute } from "./services/profileSetupGate";
 // signin params + AcceptInvite added for the invite-driven login path —
 // same reasoning as Signupscreen: an invitee might already have an account
 // and land here instead of signup.
@@ -95,21 +96,17 @@ export default function SignInscreen() {
     const pendingToken =
       route.params?.pendingInviteToken ??
       (await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.PENDING_INVITE_TOKEN));
-    if (pendingToken) {
-      navigation.navigate("AcceptInvite", { token: pendingToken });
-      return;
-    }
-    const onboardingDone = await AsyncStorage.getItem("vydora:onboarding:done");
-    if (route.params?.needsOnboarding || !onboardingDone) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "onboarding" }],
-      });
+    const dest = await resolvePostAuthRoute({
+      needsOnboarding: !!route.params?.needsOnboarding,
+      pendingInviteToken: pendingToken,
+    });
+    if (dest.name === "AcceptInvite") {
+      navigation.navigate("AcceptInvite", dest.params as { token: string });
       return;
     }
     navigation.reset({
       index: 0,
-      routes: [{ name: "projects" }],
+      routes: [{ name: dest.name as any, params: dest.params as any }],
     });
   };
 

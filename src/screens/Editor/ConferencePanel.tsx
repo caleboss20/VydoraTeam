@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import * as ImagePicker from 'expo-image-picker';
 import { useAppPalette } from '../Contexts/ThemeContext';
@@ -366,7 +367,7 @@ export default function ConferencePanel({
         ))}
       </ScrollView>
 
-      <ScrollView style={{ maxHeight: verticalScale(300) }}>
+      <ScrollView style={{ maxHeight: TOOL_SHEET_LIST }}>
         {tab === 'slate' && (
           <>
             <TouchableOpacity style={styles.presetBtn} onPress={applySummitPreset}>

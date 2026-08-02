@@ -819,7 +819,7 @@ export interface ProjectVersion {
   /** Optional named checkpoint label. */
   name?: string;
   kind?: VersionKind;
-  author: Pick<Member, 'id' | 'name' | 'initials' | 'color'>;
+  author: Pick<Member, 'id' | 'name' | 'initials' | 'color' | 'avatarUrl'>;
   createdAt: string;
   isCurrent: boolean;
   isRestored: boolean;

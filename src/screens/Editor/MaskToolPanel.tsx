@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import type {
   MediaOverlay,
@@ -407,7 +408,7 @@ function __makeStyles() {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
-    maxHeight: verticalScale(420),
+    maxHeight: TOOL_SHEET_MAX,
     paddingBottom: verticalScale(12),
   },
   header: {
@@ -424,7 +425,7 @@ function __makeStyles() {
     fontSize: moderateScale(16),
     fontWeight: '700',
   },
-  body: { maxHeight: verticalScale(360) },
+  body: { maxHeight: TOOL_SHEET_BODY },
   bodyContent: { paddingBottom: verticalScale(20) },
   empty: {
     padding: scale(24),

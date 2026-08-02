@@ -154,7 +154,7 @@ export default function ReferralScreen() {
           <Text style={styles.heroTitle}>Share Vydora. Unlock Pro.</Text>
           <Text style={styles.heroSub}>
             Friends who join with your code give you both{' '}
-            {stats?.rewardDays ?? 14} days of Pro templates & tools — no
+            {stats?.rewardDays ?? 14} days of Pro tools — no
             Paystack needed yet.
           </Text>
         </View>

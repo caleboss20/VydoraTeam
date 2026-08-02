@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_LIST } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import * as DocumentPicker from 'expo-document-picker';
 import { createAudioPlayer } from 'expo-audio';
@@ -127,7 +128,7 @@ export default function MusicToolPanel({
       </View>
 
       {tab === 'library' ? (
-        <ScrollView style={{ maxHeight: verticalScale(220) }}>
+        <ScrollView style={{ maxHeight: TOOL_SHEET_LIST }}>
           <Text style={styles.section}>Mood packs</Text>
           <Text style={styles.weeklyHint}>{WEEKLY_DROP_LABEL}</Text>
           <ScrollView

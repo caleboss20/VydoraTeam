@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import { useAppPalette } from '../Contexts/ThemeContext';
 import { TextOverlay } from '../types';
@@ -84,7 +85,7 @@ export default function CaptionEditPanel({
           <Ionicons name="checkmark" size={scale(22)} color={COLORS.yellow} />
         </TouchableOpacity>
       </View>
-      <ScrollView style={{ maxHeight: verticalScale(240) }}>
+      <ScrollView style={{ maxHeight: TOOL_SHEET_LIST }}>
         <Text style={styles.label}>Text</Text>
         <TextInput
           style={styles.input}

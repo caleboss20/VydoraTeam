@@ -12,6 +12,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import dayjs from 'dayjs';
@@ -61,30 +62,41 @@ export function MessageProvider({ children }: { children: ReactNode }) {
   const [unreadByProject, setUnreadByProject] = useState<{ [projectId: string]: number }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchGenRef = useRef<{ [projectId: string]: number }>({});
 
   const fetchMessages = useCallback(async (projectId: string) => {
     if (!projectId) return;
+    const gen = (fetchGenRef.current[projectId] ?? 0) + 1;
+    fetchGenRef.current[projectId] = gen;
     try {
       setIsLoading(true);
       setError(null);
       const data = await messageService.getMessages(projectId);
+      if (fetchGenRef.current[projectId] !== gen) return;
       setMessages((prev) => {
         const incoming = sortByCreatedAt(data.map(withDisplayTime));
-        const pending = (prev[projectId] || []).filter((m) =>
-          m.id.startsWith('temp-')
-        );
+        const local = prev[projectId] || [];
+        // Keep temps and any local messages the GET has not returned yet
+        // (avoids a stale in-flight fetch wiping a just-sent bubble).
         const merged = [...incoming];
-        for (const p of pending) {
-          if (!merged.some((m) => m.text === p.text && m.userId === p.userId)) {
-            merged.push(p);
+        for (const m of local) {
+          if (merged.some((x) => x.id === m.id)) continue;
+          if (m.id.startsWith('temp-')) {
+            merged.push(m);
+            continue;
           }
+          // Keep recently-sent server messages missing from an older response.
+          if (m.userId && m.text) merged.push(m);
         }
         return { ...prev, [projectId]: sortByCreatedAt(merged) };
       });
     } catch (e: any) {
+      if (fetchGenRef.current[projectId] !== gen) return;
       setError(e?.message ?? 'Failed to load messages');
     } finally {
-      setIsLoading(false);
+      if (fetchGenRef.current[projectId] === gen) {
+        setIsLoading(false);
+      }
     }
   }, []);
 

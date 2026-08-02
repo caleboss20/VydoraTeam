@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import { useAppPalette } from '../Contexts/ThemeContext';
 import { TextAnimationType } from '../types';
 import {
@@ -107,7 +108,7 @@ export default function AnimationBrowserPanel({
           </View>
           <ScrollView
             contentContainerStyle={styles.grid}
-            style={{ maxHeight: verticalScale(220) }}
+            style={{ maxHeight: TOOL_SHEET_LIST }}
           >
             <View style={styles.gridInner}>
               {presets.map((pr) => {

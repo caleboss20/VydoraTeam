@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import { useAppPalette } from '../Contexts/ThemeContext';
 import { CompoundGroup, VideoClip } from '../types';
 
@@ -88,7 +89,7 @@ export default function CompoundPanel({
         </Text>
       </TouchableOpacity>
 
-      <ScrollView style={{ maxHeight: verticalScale(140) }}>
+      <ScrollView style={{ maxHeight: TOOL_SHEET_LIST_SM }}>
         {compounds.length === 0 ? (
           <Text style={styles.empty}>No compounds yet.</Text>
         ) : (

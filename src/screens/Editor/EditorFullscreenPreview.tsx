@@ -309,7 +309,7 @@ export default function EditorFullscreenPreview() {
                   transform: [
                     { translateX: -50 },
                     { translateY: -50 },
-                    ...anim.transform,
+                    ...(anim.transform as any[]),
                   ],
                 },
               ]}

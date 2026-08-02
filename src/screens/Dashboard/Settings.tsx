@@ -29,9 +29,11 @@ export type AppSettings = {
   proxyEditing: boolean;
   notifications: boolean;
   presence: boolean;
+  /** Soft join/leave chime when teammates enter the editor. */
+  collabSounds: boolean;
   language: string;
   exportQuality: '720p' | '1080p' | '4K';
-  /** Soft unlock Pro templates until Paystack is live. */
+  /** Soft unlock Pro features until Paystack is live. */
   devUnlockPro: boolean;
 };
 
@@ -41,6 +43,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxyEditing: false,
   notifications: true,
   presence: true,
+  collabSounds: true,
   language: 'English',
   exportQuality: '1080p',
   devUnlockPro: false,
@@ -308,7 +311,7 @@ const SettingsScreen: FC = () => {
             styles={styles}
             icon="diamond-outline"
             title="Unlock Pro features (dev)"
-            subtitle="Demo Pro templates until Paystack is live"
+            subtitle="Demo Pro unlock until Paystack is live"
             switchValue={prefs.devUnlockPro}
             onSwitch={(v) => {
               void patch({ devUnlockPro: v });
@@ -348,6 +351,16 @@ const SettingsScreen: FC = () => {
             title="Show presence to others"
             switchValue={prefs.presence}
             onSwitch={(v) => patch({ presence: v })}
+          />
+          <View style={styles.divider} />
+          <SettingItem
+            colors={colors}
+            styles={styles}
+            icon="notifications-outline"
+            title="Teammate join sounds"
+            subtitle="Soft chime when someone enters or leaves the editor"
+            switchValue={prefs.collabSounds}
+            onSwitch={(v) => patch({ collabSounds: v })}
           />
         </View>
 

@@ -36,6 +36,8 @@ export type MovieEffectPatch = {
   opacityKeyframes?: ScalarKeyframe[];
   volume?: number;
   volumeKeyframes?: ScalarKeyframe[];
+  rotation?: number;
+  rotationKeyframes?: ScalarKeyframe[];
 };
 
 export const MOVIE_EFFECT_PRESETS: MovieEffectPreset[] = [

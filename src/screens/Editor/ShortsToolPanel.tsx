@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import type { ShortSuggestion } from '../services/shortsService';
 import { useAppPalette } from '../Contexts/ThemeContext';
 
@@ -150,7 +151,7 @@ function __makeStyles() {
     paddingHorizontal: scale(16),
     paddingTop: verticalScale(12),
     paddingBottom: verticalScale(16),
-    maxHeight: verticalScale(340),
+    maxHeight: TOOL_SHEET_BODY,
   },
   header: {
     flexDirection: 'row',

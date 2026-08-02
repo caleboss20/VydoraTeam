@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX } from './toolSheetLayout';
 import { CropRatioPreset } from '../types';
 import { useAppPalette } from '../Contexts/ThemeContext';
 
@@ -123,6 +124,8 @@ function __makeStyles() {
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
     paddingBottom: verticalScale(16),
+    maxHeight: TOOL_SHEET_MAX,
+    minHeight: Math.round(TOOL_SHEET_MAX * 0.5),
   },
   header: {
     flexDirection: 'row',

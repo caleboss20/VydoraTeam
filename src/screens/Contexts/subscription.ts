@@ -1,9 +1,9 @@
 /**
  * Soft Pro subscription gate.
  *
- * Until Paystack is wired, `devUnlockPro` in Settings unlocks premium
- * templates / future Pro features for demos. Real billing will flip
- * `user.plan === 'pro'` from the backend and this still works.
+ * Paystack initialize is attempted from the Pro screen; until that backend
+ * route exists, checkout falls back to `devUnlockPro` for demos. Real billing
+ * will set `user.plan === 'pro'` from the backend and this still works.
  */
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';

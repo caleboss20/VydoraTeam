@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import { useAppPalette } from '../Contexts/ThemeContext';
 import type { ClipAudioFx } from '../types';
@@ -312,9 +313,9 @@ function makeStyles() {
       borderTopColor: COLORS.border,
       paddingHorizontal: scale(14),
       paddingTop: scale(10),
-      maxHeight: verticalScale(360),
+      maxHeight: TOOL_SHEET_BODY,
     },
-    scroll: { maxHeight: verticalScale(310) },
+    scroll: { maxHeight: TOOL_SHEET_BODY },
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',

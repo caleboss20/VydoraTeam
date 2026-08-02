@@ -4,17 +4,20 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   ScrollView,
   Image,
   Dimensions,
   StatusBar,
   Alert,
+  Modal,
   PanResponder,
   Animated,
   TextInput,
 } from "react-native";
 import { useMember } from "../Contexts/memberContext";
 import CollaborationSidebar from "../components/Editorsidebar";
+import { LeaveEditorSheet, LeaveEditorReason } from "../components/LeaveEditorSheet";
 import WowCoachBar from "../components/WowCoachBar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,6 +50,10 @@ import { useAuth } from "../Contexts/Authcontext";
 import { memberService } from "../services/membersServvice";
 import { useProjectSocket } from "../socket/socketconnection";
 import { publishCursor, useLiveCursors, useEditToasts } from "../socket/editorSync";
+import {
+  playCollabJoinChime,
+  playCollabLeaveChime,
+} from "../services/collabPresenceSound";
 import EditToolPanel from "./EditToolPanel";
 import { FILTER_LIST, getFilterById } from "../services/FilterService";
 import FilterToolPanel from "./FilterPanelTool";
@@ -70,11 +77,11 @@ import BeatsToolPanel from "./BeatsToolPanel";
 import ShortsToolPanel from "./ShortsToolPanel";
 import BrandKitPanel from "./BrandKitPanel";
 import MultiCamToolPanel from "./MultiCamToolPanel";
+import EpisodeFactoryPanel from "./EpisodeFactoryPanel";
 import StabilizeToolPanel from "./StabilizeToolPanel";
 import StockToolPanel from "./StockToolPanel";
 import MotionTrackPanel from "./MotionTrackPanel";
 import MovieEffectsPanel from "./MovieEffectsPanel";
-import TemplatesPanel from "./TemplatesPanel";
 import AnimationBrowserPanel from "./AnimationBrowserPanel";
 import CaptionEditPanel from "./CaptionEditPanel";
 import KeyframesPanel from "./KeyframesPanel";
@@ -86,7 +93,6 @@ import StickersPanel from "./StickersPanel";
 import PublishPanel from "./PublishPanel";
 import CommentComposerBubble from "./CommentComposerBubble";
 import { clipService } from "../services/clipService";
-import { editTemplateService, type EditTemplate } from "../services/editTemplateService";
 import { curveAverageSpeed } from "../services/speedCurves";
 import { getAnimatedTextProps } from "../services/textAnimationUtils";
 import { captionService, overlaysToSrt } from "../services/captionService";
@@ -99,6 +105,10 @@ import {
   BrandKit,
 } from "../services/brandKitService";
 import { multicamService } from "../services/multicamService";
+import {
+  buildEpisodePlan,
+  type EpisodeFactoryPlan,
+} from "../services/episodeFactoryService";
 import { uploadService } from "../services/uploadService";
 import { reframeService } from "../services/reframeService";
 import { motionTrackService } from "../services/motionTrackService";
@@ -116,14 +126,11 @@ import { buildKaraokeFromVoiceover } from "../services/voiceoverKaraokeService";
 import {
   pickVideosFromGallery,
   pickVideosFromFiles,
+  pickImagesFromGallery,
   uploadMixVideo,
   type PickedMixVideo,
+  type PickedMixImage,
 } from "../services/mixMediaService";
-import {
-  getTemplateMusicTrack,
-  libraryTrackDurationMs,
-  pickTemplatePhoto,
-} from "../services/filledTemplateService";
 import { LinearGradient } from "expo-linear-gradient";
 import { CROP_RATIO_PRESETS } from '../services/cropService';
 import { getMusicTracks, musicAudibleMs } from "../services/BackgroundmusicService";
@@ -596,6 +603,7 @@ function DraggableOverlay({
   localTimeMs,
   isEditing,
   onTap,
+  onLongPress,
   onDragEnd,
   onChangeText,
 }: {
@@ -606,6 +614,8 @@ function DraggableOverlay({
   /** CapCut-style: type directly on the preview box. */
   isEditing?: boolean;
   onTap: () => void;
+  /** Long-press → delete / edit menu. */
+  onLongPress?: () => void;
   onDragEnd: (x: number, y: number) => void;
   onChangeText?: (text: string) => void;
 }) {
@@ -623,16 +633,28 @@ function DraggableOverlay({
   });
   const [dragging, setDragging] = useState(false);
   const movedRef = useRef(false);
+  const longPressedRef = useRef(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isEditingRef = useRef(!!isEditing);
   const posRef = useRef(pos);
   const previewSizeRef = useRef(previewSize);
   const onTapRef = useRef(onTap);
+  const onLongPressRef = useRef(onLongPress);
   const onDragEndRef = useRef(onDragEnd);
   isEditingRef.current = !!isEditing;
   posRef.current = pos;
   previewSizeRef.current = previewSize;
   onTapRef.current = onTap;
+  onLongPressRef.current = onLongPress;
   onDragEndRef.current = onDragEnd;
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
   useEffect(() => {
     if (dragging) return;
     setPos({
@@ -640,6 +662,9 @@ function DraggableOverlay({
       y: sampled.y * previewSize.height,
     });
   }, [sampled.x, sampled.y, previewSize.width, previewSize.height, dragging]);
+
+  useEffect(() => () => clearLongPressTimer(), []);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => !isEditingRef.current,
@@ -648,11 +673,21 @@ function DraggableOverlay({
         startXRef.current = posRef.current.x;
         startYRef.current = posRef.current.y;
         movedRef.current = false;
+        longPressedRef.current = false;
         setDragging(true);
+        clearLongPressTimer();
+        if (onLongPressRef.current) {
+          longPressTimerRef.current = setTimeout(() => {
+            longPressedRef.current = true;
+            setDragging(false);
+            onLongPressRef.current?.();
+          }, 420);
+        }
       },
       onPanResponderMove: (_, gesture) => {
         if (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4) {
           movedRef.current = true;
+          clearLongPressTimer();
         }
         const size = previewSizeRef.current;
         const nextX = Math.max(0, Math.min(size.width, startXRef.current + gesture.dx));
@@ -660,7 +695,9 @@ function DraggableOverlay({
         setPos({ x: nextX, y: nextY });
       },
       onPanResponderRelease: () => {
+        clearLongPressTimer();
         setDragging(false);
+        if (longPressedRef.current) return;
         if (movedRef.current) {
           const size = previewSizeRef.current;
           const normX = posRef.current.x / size.width;
@@ -669,6 +706,10 @@ function DraggableOverlay({
         } else {
           onTapRef.current();
         }
+      },
+      onPanResponderTerminate: () => {
+        clearLongPressTimer();
+        setDragging(false);
       },
     })
   ).current;
@@ -838,7 +879,7 @@ function DraggableOverlay({
           left: pos.x,
           top: pos.y,
           opacity: anim.opacity,
-          transform: anim.transform,
+          transform: anim.transform as any,
           zIndex: isEditing ? 40 : 12,
         },
       ]}
@@ -1204,13 +1245,14 @@ export default function EditorScreen() {
     textSecondary: __palette.textSecondary,
     textMuted: __palette.textMuted,
   };
-  styles = __makeStyles();
+  styles = __makeStyles(isDark);
 
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
 const {
   currentVideoProject,
+  setCurrentVideoProject,
   updateClipTrim,
   deleteClip,
   duplicateClip,
@@ -1223,6 +1265,7 @@ const {
   resetClipEdits,
   attachMultiCam,
   cutToMultiCamAngle,
+  applyEpisodeFactoryPack,
   addFlyer,
   updateStillDuration,
 } = useVideoProject();
@@ -1232,16 +1275,26 @@ const { currentProject } = useProject();
 
   //for the exporting modal//
 const [showExportConfirm, setShowExportConfirm] = useState(false);
+const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+const [leaveReason, setLeaveReason] = useState<LeaveEditorReason>('generic');
 const [exportState, setExportState] = useState<'idle' | 'exporting' | 'done'>('idle');
 const [progress, setProgress] = useState(0);
 const [quote, setQuote] = useState(getRandomQuote());
 const quoteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-const project = currentVideoProject && currentVideoProject.projectId === currentProject?.id
-    ? currentVideoProject
-    : null;
+// Prefer an exact project match; keep the wow-path seed even if currentProject
+  // lags a tick behind createProject / navigation reset.
+  const project =
+    currentVideoProject &&
+    (currentVideoProject.projectId === currentProject?.id ||
+      route.params?.wow === true ||
+      (!!currentVideoProject.clips?.length && !currentProject))
+      ? currentVideoProject
+      : currentVideoProject?.projectId === currentProject?.id
+        ? currentVideoProject
+        : null;
 
-const projectId = project?.id;
+const projectId = project?.projectId || currentProject?.id || '';
 
   const {
     updateClipSpeed,
@@ -1267,13 +1320,13 @@ const projectId = project?.id;
     clearTextPositionKeyframes,
     appendRemoteClip,
     updateClipMedia,
+    clearProjectTimelineExtras,
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
     updateClipFilter,
     updateClipEffect,
     applyMovieEffect,
-    applyEditTemplate,
     updateClipColorGrade,
     updateClipStabilize,
     updateClipAutoReframe,
@@ -1311,11 +1364,17 @@ const projectId = project?.id;
     canRedo,
   } = useVideoProject();
 
-  const { fetchComments, addComment, getCommentsForProject } = useComment();
+  const {
+    fetchComments,
+    addComment,
+    getCommentsForProject,
+    resolveComment,
+    deleteComment,
+  } = useComment();
   const { fetchMessages, markProjectRead, getUnreadForProject } = useMessage();
   const { user, token } = useAuth();
 
-  const collabProjectId = currentProject?.id ?? '';
+  const collabProjectId = projectId;
   const myRole = collabProjectId
     ? getMyRoleForProject(collabProjectId)
     : undefined;
@@ -1367,7 +1426,7 @@ const projectId = project?.id;
   // Opens a STOMP connection for this project: live group chat, presence
   // (online avatars), and clip-comment sync. Presence auto-marks this user
   // online for everyone else on connect.
-  useProjectSocket(projectId ?? "");
+  const { connected: collabConnected } = useProjectSocket(projectId ?? "");
   const unreadCount = projectId ? getUnreadForProject(projectId) : 0;
 
   // Figma-style live cursors: teammates' playheads rendered on our timeline.
@@ -1382,6 +1441,8 @@ const projectId = project?.id;
   //for the video volume//
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
   const [toolSearchOpen, setToolSearchOpen] = useState(false);
+  /** True when the open tool sheet was entered from More tools — show back to that modal. */
+  const [toolOpenedFromSearch, setToolOpenedFromSearch] = useState(false);
   const [wowActive, setWowActive] = useState(false);
   const [wowStep, setWowStep] = useState<'captions' | 'export' | 'invite'>(
     'captions'
@@ -1472,7 +1533,96 @@ const handleExportConfirm = () => {
   goToReviewExport();
 };
 
+const handleExportPodcastReel = () => {
+  if (isViewer || !canEdit) {
+    promptViewerGate();
+    return;
+  }
+  if (activeClip && activeClip.kind !== "title" && activeClip.kind !== "flyer") {
+    updateClipCrop(activeClip.id, { cropRatioId: "tiktok" });
+  }
+  goToReviewExport();
+};
 
+const handleBuildEpisodePlan = async (): Promise<EpisodeFactoryPlan> => {
+  if (!activeClip) throw new Error("Select the interview clip first.");
+  if (activeClip.kind === "title" || activeClip.kind === "flyer") {
+    throw new Error("Episode Factory needs a video clip with speech.");
+  }
+  if (isViewer || !canEdit) {
+    promptViewerGate();
+    throw new Error("Editors only.");
+  }
+
+  let uri = activeClip.uri || "";
+  if (!/^https?:\/\//i.test(uri)) {
+    const pending = pendingClipUploadsRef.current.get(activeClip.id);
+    if (pending) {
+      try {
+        uri = await pending;
+      } catch {
+        /* still build from captions / local ranges */
+      }
+    } else if (uri) {
+      try {
+        const uploaded = await uploadService.uploadVideo(uri);
+        uri = uploaded.url;
+        updateClipMedia(activeClip.id, { uri });
+      } catch {
+        /* offline / local — captions fallback still works */
+      }
+    }
+  }
+
+  const segments =
+    (activeClip.textOverlays ?? [])
+      .filter((o) => o.isAiGenerated || (o.text || "").trim().length > 0)
+      .map((o) => ({
+        startMs: o.startMs,
+        endMs: o.startMs + (o.durationMs ?? 2000),
+        text: o.text || "",
+      })) ?? [];
+
+  return buildEpisodePlan({
+    seriesTitle:
+      currentVideoProject?.title ?? currentProject?.name ?? "Cocoa Stories",
+    sourceClipId: activeClip.id,
+    videoUrl: uri,
+    durationMs: activeClip.durationMs,
+    segments,
+  });
+};
+
+const handleApplyEpisodePack = async (plan: EpisodeFactoryPlan) => {
+  if (!activeClip) throw new Error("Select the interview clip first.");
+  if (isViewer || !canEdit) {
+    promptViewerGate();
+    throw new Error("Editors only.");
+  }
+
+  const added = applyEpisodeFactoryPack(activeClip.id, {
+    introTitle: plan.introTitle,
+    introSubtitle: plan.introSubtitle,
+    outroTitle: plan.outroTitle,
+    outroSubtitle: plan.outroSubtitle,
+    coldOpen: plan.coldOpen
+      ? { startMs: plan.coldOpen.startMs, endMs: plan.coldOpen.endMs }
+      : null,
+    hooks: plan.hooks.map((h) => ({
+      startMs: h.startMs,
+      endMs: h.endMs,
+    })),
+    cropRatioId: "tiktok",
+  });
+
+  return {
+    added,
+    message:
+      added > 0
+        ? `Added ${added} pieces — cold open, intro/outro, and Shorts on the timeline.`
+        : "Nothing added — try Build pack again with captions or a longer clip.",
+  };
+};
 
   useEffect(() => {
     if (projectId) {
@@ -1502,6 +1652,13 @@ const handleExportConfirm = () => {
 
   //--------------for the sidebar--------------//
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  /** CapCut-style export quality pill */
+  const [exportQuality, setExportQuality] = useState<"AI UHD" | "1080p" | "720p">(
+    "AI UHD"
+  );
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
+  /** CapCut layers toggle — hide overlay/text pins when off */
+  const [layersOn, setLayersOn] = useState(true);
   /** Canva-style comment pin mode on the preview. */
   const [commentPinMode, setCommentPinMode] = useState(false);
   const [commentComposer, setCommentComposer] = useState<{
@@ -1518,6 +1675,34 @@ const handleExportConfirm = () => {
     : [];
   // Teammates (excluding yourself) currently online — drives the header avatars.
   const onlineOthers = onlineMembers.filter((m) => m.userId !== user?.id);
+
+  // Soft Zoom/Meet-style join/leave chime when peers enter the live session.
+  const primedPresenceRef = useRef(false);
+  const prevOnlineIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    primedPresenceRef.current = false;
+    prevOnlineIdsRef.current = new Set();
+  }, [projectId]);
+  useEffect(() => {
+    const nextIds = new Set(onlineOthers.map((m) => m.userId));
+    if (!primedPresenceRef.current) {
+      // First snapshot after open — don't chime for people already here.
+      primedPresenceRef.current = true;
+      prevOnlineIdsRef.current = nextIds;
+      return;
+    }
+    let joined = false;
+    let left = false;
+    nextIds.forEach((id) => {
+      if (!prevOnlineIdsRef.current.has(id)) joined = true;
+    });
+    prevOnlineIdsRef.current.forEach((id) => {
+      if (!nextIds.has(id)) left = true;
+    });
+    prevOnlineIdsRef.current = nextIds;
+    if (joined) playCollabJoinChime();
+    else if (left) playCollabLeaveChime();
+  }, [onlineOthers.map((m) => m.userId).join("|")]);
 
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const activeClip = clips.find((c) => c.id === selectedClipId) || clips[0];
@@ -1539,6 +1724,38 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
   const [selectedVoiceoverId, setSelectedVoiceoverId] = useState<string | null>(null);
   const [karaokeBusy, setKaraokeBusy] = useState(false);
   const [addVideosBusy, setAddVideosBusy] = useState(false);
+  /** Dismissible add-media sheet (replaces sticky nested Alerts). */
+  const [addMediaSheet, setAddMediaSheet] = useState<"root" | "video" | null>(
+    null
+  );
+  /** Where new media lands on the timeline when using gap + icons. */
+  const [timelineInsertAt, setTimelineInsertAt] = useState<{
+    where: "start" | "before" | "after" | "end";
+    relativeClipId?: string | null;
+  }>({ where: "end" });
+  /** In-flight mix uploads so AI captions can wait for the CDN URL. */
+  const pendingClipUploadsRef = useRef<Map<string, Promise<string>>>(new Map());
+
+  const handleLeaveEditor = () => {
+    const uploadsPending =
+      addVideosBusy || pendingClipUploadsRef.current.size > 0;
+    if (onlineOthers.length > 0) {
+      setLeaveReason('live_session');
+      setShowLeaveConfirm(true);
+      return;
+    }
+    if (uploadsPending) {
+      setLeaveReason('upload_busy');
+      setShowLeaveConfirm(true);
+      return;
+    }
+    if (exportState === 'exporting') {
+      setLeaveReason('export_busy');
+      setShowLeaveConfirm(true);
+      return;
+    }
+    navigation.goBack();
+  };
 
   //--------for clip transitions-------------//
   // Which clip's outgoing transition is being edited (tap the circle between clips).
@@ -1723,11 +1940,27 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
   const [musicPreviewUri, setMusicPreviewUri] = useState<string | null>(null);
   const musicPlayer = useAudioPlayer(musicPreviewUri);
 
-
+  const currentLoadedUriRef = useRef<string | null>(null);
+  const loadedClipIdRef = useRef<string | null>(null);
+  /** Keep timeline playback flowing across clip boundaries (no pause per section). */
+  const wantContinuousPlayRef = useRef(false);
+  /** Guard against repeated timeUpdate fires at a clip's trim end. */
+  const clipAdvanceLockRef = useRef(false);
+  const playRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(player.playing ?? false);
+  /** True when preview hit the end — show Replay without closing tool sheets. */
+  const [playbackEnded, setPlaybackEnded] = useState(false);
   useEventListener(player, "playingChange", (payload) => {
+    // During clip handoff, replace() briefly reports not-playing — ignore so
+    // the timeline keeps flowing instead of pausing at every section.
+    if (!payload.isPlaying && wantContinuousPlayRef.current) {
+      return;
+    }
     setIsPlaying(payload.isPlaying);
+    if (!payload.isPlaying) {
+      wantContinuousPlayRef.current = false;
+    }
   });
 
   // ── PiP video overlay playback ──
@@ -1747,38 +1980,103 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
   const [currentTime, setCurrentTime] = useState(player.currentTime ?? 0);
   const [currentLoadedUri, setCurrentLoadedUri] = useState<string | null>(null);
 
+  const clearPlayRetry = () => {
+    if (playRetryTimerRef.current) {
+      clearTimeout(playRetryTimerRef.current);
+      playRetryTimerRef.current = null;
+    }
+  };
+
+  /** After replace(), decoder needs a beat — retry play until it sticks. */
+  const ensurePlaybackRunning = () => {
+    clearPlayRetry();
+    let tries = 0;
+    const tick = () => {
+      if (!wantContinuousPlayRef.current) return;
+      tries += 1;
+      try {
+        player.play();
+        musicPlayer.play();
+        setIsPlaying(true);
+        if (player.playing || tries >= 20) return;
+      } catch {
+        /* ignore */
+      }
+      playRetryTimerRef.current = setTimeout(tick, 50);
+    };
+    tick();
+  };
+
   // Sync player source on active clip change (title/flyer have no video decoder).
   useEffect(() => {
     if (!activeClip) return;
+    clipAdvanceLockRef.current = false;
     if (activeClip.kind === 'title' || activeClip.kind === 'flyer') {
       try {
         player.pause();
       } catch {
         /* ignore */
       }
+      currentLoadedUriRef.current = null;
+      loadedClipIdRef.current = activeClip.id;
       setCurrentLoadedUri(null);
       const startMs = activeClip.trimStartMs ?? 0;
       setCurrentTime(startMs / 1000);
       return;
     }
-    if (activeClip.uri && activeClip.uri !== currentLoadedUri) {
-      player.replace(activeClip.uri);
+    if (activeClip.uri && activeClip.uri !== currentLoadedUriRef.current) {
+      const sameClip = loadedClipIdRef.current === activeClip.id;
+      const trimStartSec = (activeClip.trimStartMs ?? 0) / 1000;
+      const trimEndSec =
+        (activeClip.trimEndMs ?? activeClip.durationMs) / 1000;
+      const keepSec = player.currentTime ?? currentTime;
+      const resume = wantContinuousPlayRef.current || isPlaying;
+      try {
+        player.replace(activeClip.uri);
+      } catch {
+        /* ignore */
+      }
+      currentLoadedUriRef.current = activeClip.uri;
+      loadedClipIdRef.current = activeClip.id;
       setCurrentLoadedUri(activeClip.uri);
-      const startMs = activeClip.trimStartMs ?? 0;
-      player.currentTime = startMs / 1000;
-      setCurrentTime(startMs / 1000);
+      // Same clip URI swap (local → CDN upload): keep playhead. New clip: trim start.
+      const seekSec = sameClip
+        ? Math.min(Math.max(keepSec, trimStartSec), Math.max(trimStartSec, trimEndSec - 0.05))
+        : trimStartSec;
+      try {
+        player.currentTime = seekSec;
+      } catch {
+        /* ignore */
+      }
+      setCurrentTime(seekSec);
+      if (resume) {
+        wantContinuousPlayRef.current = true;
+        ensurePlaybackRunning();
+      }
+    } else {
+      loadedClipIdRef.current = activeClip.id;
+      if (wantContinuousPlayRef.current) {
+        ensurePlaybackRunning();
+      }
     }
-  }, [activeClip?.id, activeClip?.uri, activeClip?.kind, currentLoadedUri]);
+  }, [activeClip?.id, activeClip?.uri, activeClip?.kind]);
+
+  useEffect(() => () => clearPlayRetry(), []);
 
   /** Advance to the next timeline piece (video, title, or flyer). */
   const playClipFromStart = (clip: VideoClip, autoplay: boolean) => {
+    setPlaybackEnded(false);
+    wantContinuousPlayRef.current = !!autoplay;
     setSelectedClipId(clip.id);
     if (clip.kind === 'title' || clip.kind === 'flyer') {
+      clearPlayRetry();
       try {
         player.pause();
       } catch {
         /* ignore */
       }
+      currentLoadedUriRef.current = null;
+      loadedClipIdRef.current = clip.id;
       setCurrentLoadedUri(null);
       setCurrentTime((clip.trimStartMs ?? 0) / 1000);
       setIsPlaying(autoplay);
@@ -1791,16 +2089,29 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
       }
       return;
     }
-    setIsPlaying(false);
-    player.replace(clip.uri);
-    setCurrentLoadedUri(clip.uri);
-    const nextStart = clip.trimStartMs ?? 0;
-    player.currentTime = nextStart / 1000;
-    setCurrentTime(nextStart / 1000);
+    // Keep playing state true across handoff so music / UI don't hitch.
+    if (autoplay) setIsPlaying(true);
+    else setIsPlaying(false);
+
+    const nextStart = (clip.trimStartMs ?? 0) / 1000;
+    try {
+      if (clip.uri !== currentLoadedUriRef.current) {
+        player.replace(clip.uri);
+        currentLoadedUriRef.current = clip.uri;
+        setCurrentLoadedUri(clip.uri);
+      }
+      loadedClipIdRef.current = clip.id;
+      player.currentTime = nextStart;
+    } catch {
+      /* ignore */
+    }
+    setCurrentTime(nextStart);
     if (autoplay) {
-      player.play();
+      ensurePlaybackRunning();
+    } else {
+      clearPlayRetry();
       try {
-        musicPlayer.play();
+        player.pause();
       } catch {
         /* ignore */
       }
@@ -1852,21 +2163,27 @@ useEventListener(player, "timeUpdate", (payload) => {
   if (!activeClip || activeClip.kind === 'title' || activeClip.kind === 'flyer') return;
   const trimEndMs = activeClip.trimEndMs ?? activeClip.durationMs;
   const curTimeMs = payload.currentTime * 1000;
-  if (curTimeMs >= trimEndMs) {
+  if (curTimeMs >= trimEndMs - 40) {
+    if (clipAdvanceLockRef.current) return;
     const activeIdx = clips.findIndex((c) => c.id === activeClip.id);
     if (activeIdx !== -1 && activeIdx + 1 < clips.length) {
+      clipAdvanceLockRef.current = true;
       const outgoing = activeClip.transitionOut;
       if (outgoing && outgoing.type !== "none") {
         runTransitionEffect(outgoing.type, outgoing.durationMs || 500);
       }
       playClipFromStart(clips[activeIdx + 1], true);
     } else {
+      wantContinuousPlayRef.current = false;
+      clearPlayRetry();
       player.pause();
       player.currentTime = trimEndMs / 1000;
       setIsPlaying(false);
+      setPlaybackEnded(true);
     }
   } else {
     setCurrentTime(payload.currentTime);
+    setPlaybackEnded(false);
   }
 });
 
@@ -1893,6 +2210,7 @@ useEventListener(player, "timeUpdate", (payload) => {
         } else {
           setCurrentTime(trimEnd);
           setIsPlaying(false);
+          setPlaybackEnded(true);
           try {
             musicPlayer.pause();
           } catch {
@@ -1907,7 +2225,23 @@ useEventListener(player, "timeUpdate", (payload) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, activeClip?.id, activeClip?.kind]);
 
+const replayFromStart = () => {
+  setPlaybackEnded(false);
+  const first = clips[0];
+  if (!first) return;
+  try {
+    timelineScrollRef.current?.scrollTo({ x: 0, animated: false });
+  } catch {
+    /* ignore */
+  }
+  playClipFromStart(first, true);
+};
+
 const togglePlayback = () => {
+  if (playbackEnded) {
+    replayFromStart();
+    return;
+  }
   if (activeClip?.kind === 'title' || activeClip?.kind === 'flyer') {
     if (isPlaying) {
       setIsPlaying(false);
@@ -1924,6 +2258,7 @@ const togglePlayback = () => {
       if (posMs < trimStartMs || posMs >= trimEndMs) {
         setCurrentTime(trimStartMs / 1000);
       }
+      setPlaybackEnded(false);
       setIsPlaying(true);
       musicPlayer.play();
       if (wowActive && wowStep === 'captions') {
@@ -1948,6 +2283,7 @@ const togglePlayback = () => {
         setCurrentTime(trimStartMs / 1000);
       }
     }
+    setPlaybackEnded(false);
     player.play();
     musicPlayer.play();
     if (wowActive && wowStep === 'captions') {
@@ -2032,6 +2368,37 @@ const togglePlayback = () => {
   );
   const currentPositionMs = getTimelinePositionMs(currentTime);
 
+  /**
+   * Place BGM on the selected clip (start + length), so music added after a
+   * timeline + insert actually covers that clip instead of a wrong playhead gap.
+   */
+  const addMusicForActiveClip = (
+    uri: string,
+    durationMs: number,
+    fallbackStartMs: number,
+    title?: string
+  ): string => {
+    const seg = activeClip
+      ? clipTimelineSegments.find((s) => s.clip.id === activeClip.id)
+      : null;
+    const startMs = seg ? seg.timelineStartMs : Math.max(0, Math.round(fallbackStartMs));
+    const clipLen = seg?.trimmedDurationMs ?? durationMs;
+    const trackDur = Math.max(1000, durationMs);
+    const id = addMusicTrack(uri, trackDur, startMs, title);
+    // Fit audible window to the selected clip so it feels "for this clip".
+    if (seg) {
+      const audible = Math.min(trackDur, Math.max(800, clipLen));
+      updateMusicTrack(id, {
+        trimStartMs: 0,
+        trimEndMs: audible,
+        fadeInMs: Math.min(400, Math.round(audible / 5)),
+        fadeOutMs: Math.min(700, Math.round(audible / 4)),
+      });
+    }
+    setSelectedMusicTrackId(id);
+    return id;
+  };
+
   const projectComments = projectId ? getCommentsForProject(projectId) : [];
   const projectMembers = projectId ? getMembersForProject(projectId) : [];
   const canvasPins = useMemo(
@@ -2088,6 +2455,8 @@ const togglePlayback = () => {
           'Upload first',
           'Comments need a project clip on the server. Export once or upload so teammates can see it.'
         );
+        setCommentComposer(null);
+        setCommentPinMode(false);
         return;
       }
       await addComment(
@@ -2097,10 +2466,14 @@ const togglePlayback = () => {
         currentPositionMs / 1000,
         { x: commentComposer.x, y: commentComposer.y }
       );
+      // Leave pin mode so the avatar badge doesn’t linger on the preview.
       setCommentComposer(null);
       setCommentPinMode(false);
+      setSelectedCommentId(null);
     } catch (e: any) {
       Alert.alert('Couldn’t post', e?.message ?? 'Try again.');
+      setCommentComposer(null);
+      setCommentPinMode(false);
     } finally {
       setCommentSubmitting(false);
     }
@@ -2160,11 +2533,13 @@ const togglePlayback = () => {
       /* ignore */
     }
 
-    // Keep clip audio alive whenever music is under the playhead.
+    // Keep clip audio alive whenever music is under the playhead — duck a bit
+    // so newly added BGM is actually audible over loud phone videos.
     if (activeClip?.kind !== "title") {
       try {
         player.muted = false;
-        player.volume = liveVolume;
+        const bed = activeMusicTrack ? Math.min(liveVolume, 0.55) : liveVolume;
+        player.volume = bed;
       } catch {
         /* ignore */
       }
@@ -2181,7 +2556,16 @@ const togglePlayback = () => {
     const offsetMs = local + trimStart;
     (async () => {
       try {
-        const wantSec = Math.max(0, offsetMs) / 1000;
+        let wantSec = Math.max(0, offsetMs) / 1000;
+        // Don't seek past the loaded file (library labels can exceed real length).
+        try {
+          const fileSec = musicPlayer.duration ?? 0;
+          if (fileSec > 0.25) {
+            wantSec = Math.min(wantSec, Math.max(0, fileSec - 0.05));
+          }
+        } catch {
+          /* ignore */
+        }
         // Resync when scrubbing or drift > ~350ms so music tracks the playhead.
         let drift = 999;
         try {
@@ -2196,7 +2580,12 @@ const togglePlayback = () => {
         // Re-assert mix after music starts (OS can duck/mute video otherwise).
         if (activeClip?.kind !== "title") {
           player.muted = false;
-          player.volume = liveVolume;
+          player.volume = activeMusicTrack ? Math.min(liveVolume, 0.55) : liveVolume;
+          try {
+            (player as any).audioMixingMode = "mixWithOthers";
+          } catch {
+            /* ignore */
+          }
         }
       } catch (e) {
         console.log("music sync failed", e);
@@ -2343,42 +2732,82 @@ const togglePlayback = () => {
 
   const handleTimelineScroll = (e: any) => {
     if (!isScrubbingRef.current) return;
+    setPlaybackEnded(false);
     const x = e.nativeEvent.contentOffset.x;
-    const timelineTimeMs = (x / PX_PER_SECOND) * 1000;
+    let timelineTimeMs = (x / PX_PER_SECOND) * 1000;
+    const maxTimelineMs = Math.max(0, totalDurationMs - 1);
+    timelineTimeMs = Math.max(0, Math.min(timelineTimeMs, maxTimelineMs));
 
-    const activeSegment =
-      clipTimelineSegments.find(
-        (s) =>
-          timelineTimeMs >= s.timelineStartMs &&
-          timelineTimeMs <= s.timelineEndMs,
-      ) || clipTimelineSegments[0];
+    let activeSegment = clipTimelineSegments.find(
+      (s) =>
+        timelineTimeMs >= s.timelineStartMs &&
+        timelineTimeMs < s.timelineEndMs,
+    );
+    if (!activeSegment && clipTimelineSegments.length > 0) {
+      activeSegment = clipTimelineSegments[clipTimelineSegments.length - 1];
+      timelineTimeMs = Math.min(
+        timelineTimeMs,
+        Math.max(0, activeSegment.timelineEndMs - 1),
+      );
+    }
+    if (!activeSegment) return;
 
-    if (activeSegment) {
-      const relativeOffsetMs = timelineTimeMs - activeSegment.timelineStartMs;
-      const targetClip = activeSegment.clip;
-      const targetPlayerTimeSec =
-        ((targetClip.trimStartMs ?? 0) + relativeOffsetMs) / 1000;
+    const relativeOffsetMs = Math.max(
+      0,
+      timelineTimeMs - activeSegment.timelineStartMs,
+    );
+    const targetClip = activeSegment.clip;
+    const trimStart = targetClip.trimStartMs ?? 0;
+    const trimEnd = targetClip.trimEndMs ?? targetClip.durationMs;
+    const localMs = Math.min(
+      trimStart + relativeOffsetMs,
+      Math.max(trimStart, trimEnd - 30),
+    );
+    const targetPlayerTimeSec = localMs / 1000;
 
-      if (targetClip.id !== activeClip?.id) {
-        setSelectedClipId(targetClip.id);
+    if (targetClip.id !== activeClip?.id) {
+      setSelectedClipId(targetClip.id);
+    }
+    if (targetClip.kind === 'title' || targetClip.kind === 'flyer') {
+      try {
+        player.pause();
+      } catch {
+        /* ignore */
       }
-      if (targetClip.kind === 'title' || targetClip.kind === 'flyer') {
+      currentLoadedUriRef.current = null;
+      setCurrentLoadedUri(null);
+      setCurrentTime(targetPlayerTimeSec);
+      setIsPlaying(false);
+    } else if (targetClip.uri) {
+      if (targetClip.uri !== currentLoadedUriRef.current) {
         try {
-          player.pause();
+          player.replace(targetClip.uri);
         } catch {
           /* ignore */
         }
-        setCurrentLoadedUri(null);
-        setCurrentTime(targetPlayerTimeSec);
-        setIsPlaying(false);
-      } else {
-        if (targetClip.uri !== currentLoadedUri) {
-          player.replace(targetClip.uri);
-          setCurrentLoadedUri(targetClip.uri);
-        }
-        player.currentTime = targetPlayerTimeSec;
-        setCurrentTime(targetPlayerTimeSec);
+        currentLoadedUriRef.current = targetClip.uri;
+        loadedClipIdRef.current = targetClip.id;
+        setCurrentLoadedUri(targetClip.uri);
       }
+      try {
+        player.currentTime = targetPlayerTimeSec;
+      } catch {
+        /* ignore */
+      }
+      setCurrentTime(targetPlayerTimeSec);
+    }
+  };
+
+  const finishTimelineScrub = () => {
+    isScrubbingRef.current = false;
+    // Nudge the paused decoder so scrubbing past/back doesn't leave a black frame.
+    try {
+      if (!player.playing) {
+        const t = player.currentTime ?? currentTime;
+        player.currentTime = t;
+      }
+    } catch {
+      /* ignore */
     }
   };
 
@@ -2491,46 +2920,174 @@ const togglePlayback = () => {
       return;
     }
     if (!activeClip) return;
-    deleteClip(activeClip.id);
-    Alert.alert("Clip Deleted", "The clip has been removed.");
+    Alert.alert(
+      "Delete clip?",
+      "This permanently removes the clip from your timeline. You can’t undo this.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            const id = activeClip.id;
+            deleteClip(id);
+            setSelectedClipId(null);
+            setActiveToolLabel(null);
+            Alert.alert("Clip deleted", "The clip was permanently removed.");
+          },
+        },
+      ]
+    );
   };
 
-  /** Multi-pick gallery / files → append on the timeline (mix / join on export). */
+  /** Ensure a video project exists before adding media. */
+  const ensureVideoProject = (): boolean => {
+    if (project) return true;
+    if (!currentProject) {
+      Alert.alert("No project", "Open a project before adding media.");
+      return false;
+    }
+    const now = new Date().toISOString();
+    setCurrentVideoProject({
+      id: `vp-${Date.now()}`,
+      projectId: currentProject.id,
+      title: currentProject.name || "Edit",
+      createdAt: now,
+      updatedAt: now,
+      clips: [],
+      totalDurationMs: 0,
+    });
+    return true;
+  };
+
+  /** Fresh timeline: drop leftover music / overlays / VO from an earlier edit. */
+  const prepareFreshTimelineIfEmpty = () => {
+    if ((clips?.length ?? 0) > 0) return;
+    clearProjectTimelineExtras();
+    setSelectedMusicTrackId(null);
+    setSelectedVoiceoverId(null);
+    setSelectedMediaOverlayId(null);
+    setActiveToolLabel(null);
+    setToolOpenedFromSearch(false);
+  };
+
+  /** Multi-pick gallery / files → insert on the timeline at the chosen gap. */
   const appendPickedMixVideos = async (picked: PickedMixVideo[]) => {
     if (!picked.length) return;
+    prepareFreshTimelineIfEmpty();
     const addedIds: string[] = [];
     const pendingUpload: { id: string; item: PickedMixVideo }[] = [];
+    const { where, relativeClipId } = timelineInsertAt;
+    let anchorId = relativeClipId ?? null;
+    let insertWhere = where;
 
-    for (const item of picked) {
-      const id = appendRemoteClip({
-        uri: item.uri,
-        durationMs: item.durationMs,
-        title: item.title,
-      });
+    // Pre-grab frames for list cover + timeline chips (local = fast).
+    const thumbs = await Promise.all(
+      picked.map(async (item) => {
+        try {
+          const { uri } = await VideoThumbnails.getThumbnailAsync(item.uri, {
+            time: 400,
+            quality: 0.55,
+          });
+          return uri || undefined;
+        } catch {
+          return undefined;
+        }
+      })
+    );
+
+    for (let i = 0; i < picked.length; i++) {
+      const item = picked[i];
+      const id = appendRemoteClip(
+        {
+          uri: item.uri,
+          durationMs: item.durationMs,
+          title: item.title,
+          thumbnailUri: thumbs[i],
+        },
+        insertWhere,
+        anchorId
+      );
       if (id) {
         addedIds.push(id);
         pendingUpload.push({ id, item });
+        // Stack further picks after the one we just inserted.
+        insertWhere = "after";
+        anchorId = id;
       }
     }
 
     if (addedIds.length) {
       setSelectedClipId(addedIds[addedIds.length - 1]);
-      Alert.alert(
-        "Videos added",
-        `${addedIds.length} clip${addedIds.length === 1 ? "" : "s"} on the timeline. Trim, Split, or reorder in Assemble — export joins them into one video.`
-      );
     }
 
-    void (async () => {
-      for (const { id, item } of pendingUpload) {
+    for (const { id, item } of pendingUpload) {
+      const uploadPromise = (async () => {
         try {
           const { url, durationMs } = await uploadMixVideo(item);
           updateClipMedia(id, { uri: url, durationMs });
+          return url;
         } catch (e) {
           console.log("mix upload failed", id, e);
+          throw e;
+        } finally {
+          pendingClipUploadsRef.current.delete(id);
         }
+      })();
+      pendingClipUploadsRef.current.set(id, uploadPromise);
+    }
+  };
+
+  const appendPickedImagesAsClips = async (picked: PickedMixImage[]) => {
+    if (!picked.length) return;
+    prepareFreshTimelineIfEmpty();
+    const addedIds: string[] = [];
+    const { where, relativeClipId } = timelineInsertAt;
+    let anchorId = relativeClipId ?? null;
+    let insertWhere = where;
+    for (const item of picked) {
+      const id = addFlyer(
+        item.uri,
+        item.durationMs,
+        insertWhere,
+        anchorId,
+        undefined
+      );
+      if (id) {
+        addedIds.push(id);
+        insertWhere = "after";
+        anchorId = id;
       }
-    })();
+    }
+    if (addedIds.length) {
+      setSelectedClipId(addedIds[addedIds.length - 1]);
+    }
+  };
+
+  const handleAddBlankScreen = () => {
+    if (isViewer || !canEdit) {
+      promptViewerGate();
+      return;
+    }
+    if (!ensureVideoProject()) return;
+    prepareFreshTimelineIfEmpty();
+    const { where, relativeClipId } = timelineInsertAt;
+    const id = addTitleCard(
+      {
+        backgroundColor: "#0B0D13",
+        title: "Title",
+        subtitle: "Tap Text to edit",
+        textColor: "#FFFFFF",
+        fontSize: 42,
+        animationIn: "fade",
+      },
+      4000,
+      where,
+      relativeClipId
+    );
+    if (id) {
+      setSelectedClipId(id);
+    }
   };
 
   const handleAddVideosToTimeline = async () => {
@@ -2538,10 +3095,7 @@ const togglePlayback = () => {
       promptViewerGate();
       return;
     }
-    if (!project) {
-      Alert.alert("No project", "Open a project before adding videos.");
-      return;
-    }
+    if (!ensureVideoProject()) return;
     setAddVideosBusy(true);
     try {
       const picked = await pickVideosFromGallery(12);
@@ -2556,10 +3110,7 @@ const togglePlayback = () => {
       promptViewerGate();
       return;
     }
-    if (!project) {
-      Alert.alert("No project", "Open a project before adding videos.");
-      return;
-    }
+    if (!ensureVideoProject()) return;
     setAddVideosBusy(true);
     try {
       const picked = await pickVideosFromFiles();
@@ -2569,111 +3120,41 @@ const togglePlayback = () => {
     }
   };
 
-  const promptAddVideos = () => {
+  const handleAddPhotosToTimeline = async () => {
     if (isViewer || !canEdit) {
       promptViewerGate();
       return;
     }
-    Alert.alert("Add videos", "Mix more clips into this timeline.", [
-      {
-        text: "Camera roll",
-        onPress: () => {
-          void handleAddVideosToTimeline().catch((e: any) =>
-            Alert.alert("Add videos", e?.message ?? "Could not add videos.")
-          );
-        },
-      },
-      {
-        text: "Files",
-        onPress: () => {
-          void handleAddVideosFromFiles().catch((e: any) =>
-            Alert.alert("Add videos", e?.message ?? "Could not add videos.")
-          );
-        },
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    if (!ensureVideoProject()) return;
+    setAddVideosBusy(true);
+    try {
+      const picked = await pickImagesFromGallery(12, 5000);
+      await appendPickedImagesAsClips(picked);
+    } finally {
+      setAddVideosBusy(false);
+    }
   };
 
-  /** Starter filled recipe: look + hook + music + 9:16 + optional photo flyer. */
-  const handleApplyFilledTemplate = (tpl: EditTemplate) => {
-    if (!activeClip) {
-      Alert.alert("Select a clip", "Pick a clip first, then apply a template.");
+  const promptAddVideos = (
+    anchor?: {
+      where: "start" | "before" | "after" | "end";
+      relativeClipId?: string | null;
+    }
+  ) => {
+    if (isViewer || !canEdit) {
+      promptViewerGate();
       return;
     }
+    setTimelineInsertAt(anchor ?? { where: "end" });
+    setAddMediaSheet("root");
+  };
 
-    const applyCore = (photoUri?: string | null) => {
-      applyEditTemplate(activeClip.id, tpl);
-      if (tpl.cropRatioId) {
-        updateClipCrop(activeClip.id, { cropRatioId: tpl.cropRatioId });
-      }
+  const closeAddMediaSheet = () => setAddMediaSheet(null);
 
-      if (photoUri) {
-        const flyerId = addFlyer(
-          photoUri,
-          tpl.photoSlot?.durationMs ?? 5000,
-          tpl.photoSlot?.where === "after" ? "after" : "before",
-          activeClip.id,
-          tpl.photoSlot?.caption
-        );
-        if (flyerId) {
-          applyEditTemplate(flyerId, tpl);
-          if (tpl.cropRatioId) {
-            updateClipCrop(flyerId, { cropRatioId: tpl.cropRatioId });
-          }
-          setSelectedClipId(flyerId);
-        }
-      }
-
-      const track = getTemplateMusicTrack(tpl);
-      if (track) {
-        const id = addMusicTrack(
-          track.url,
-          libraryTrackDurationMs(track),
-          0,
-          track.title
-        );
-        const vol = tpl.music?.volume;
-        if (vol != null) updateMusicTrack(id, { volume: vol });
-      }
-    };
-
-    if (!tpl.photoSlot) {
-      applyCore(null);
-      return;
-    }
-
-    Alert.alert(
-      "Photo for template",
-      "Use your own photo in this recipe (recommended).",
-      [
-        {
-          text: "Pick my photo",
-          onPress: () => {
-            void pickTemplatePhoto()
-              .then((uri) => {
-                if (uri) applyCore(uri);
-                else
-                  applyCore(tpl.photoSlot?.placeholderUri ?? null);
-              })
-              .catch((e: any) =>
-                Alert.alert(
-                  "Photo",
-                  e?.message ?? "Could not open your photos."
-                )
-              );
-          },
-        },
-        {
-          text: "Use sample",
-          onPress: () => applyCore(tpl.photoSlot?.placeholderUri ?? null),
-        },
-        {
-          text: "Look only",
-          style: "cancel",
-          onPress: () => applyCore(null),
-        },
-      ]
+  const runFromAddSheet = (fn: () => void | Promise<void>) => {
+    closeAddMediaSheet();
+    void Promise.resolve(fn()).catch((e: any) =>
+      Alert.alert("Couldn’t add", e?.message ?? "Try again.")
     );
   };
 
@@ -2685,6 +3166,7 @@ const togglePlayback = () => {
       promptViewerGate();
       return;
     }
+    setToolOpenedFromSearch(false);
     setActiveToolLabel(toolLabel);
     if (toolLabel !== "Text") {
       setSelectedOverlayId(overlayId ?? null);
@@ -2732,15 +3214,29 @@ const togglePlayback = () => {
       return;
     }
     handleToolPress(tool.label);
+    setToolOpenedFromSearch(true);
   };
 
   const closeToolPanel = () => {
     if (wowActive && wowStep === 'captions') {
       setWowStep('export');
     }
+    setToolOpenedFromSearch(false);
     setActiveToolLabel(null);
     setSelectedOverlayId(null);
     setSelectedMediaOverlayId(null);
+  };
+
+  /** Leave the current tool sheet and return to the More tools modal. */
+  const goBackToToolSearch = () => {
+    if (wowActive && wowStep === 'captions') {
+      setWowStep('export');
+    }
+    setToolOpenedFromSearch(false);
+    setActiveToolLabel(null);
+    setSelectedOverlayId(null);
+    setSelectedMediaOverlayId(null);
+    setToolSearchOpen(true);
   };
 
   // ── Media overlay handlers ──
@@ -2926,12 +3422,57 @@ const handleGenerateCaptions = async (
   styleId: CaptionStyleId = "podcast"
 ): Promise<{ added: number; srt?: string }> => {
   if (!activeClip) throw new Error("Select a clip first.");
-  const uri = activeClip.uri || "";
+  if (activeClip.kind === "title" || activeClip.kind === "flyer") {
+    throw new Error(
+      "AI captions need a video with speech — not a photo or blank screen."
+    );
+  }
+
+  let uri = activeClip.uri || "";
+
+  // Wait for an in-flight CDN upload, or upload the local file now.
+  if (!/^https?:\/\//i.test(uri)) {
+    const pending = pendingClipUploadsRef.current.get(activeClip.id);
+    if (pending) {
+      try {
+        uri = await pending;
+      } catch {
+        throw new Error(
+          "Upload failed. Check your connection, then try Generate again."
+        );
+      }
+    } else if (uri) {
+      try {
+        const uploaded = await uploadService.uploadVideo(
+          uri,
+          `caption_${activeClip.id}.mp4`,
+          "video/mp4"
+        );
+        uri = uploaded.url;
+        updateClipMedia(activeClip.id, {
+          uri,
+          durationMs:
+            uploaded.durationSeconds && uploaded.durationSeconds > 0
+              ? Math.round(uploaded.durationSeconds * 1000)
+              : activeClip.durationMs,
+        });
+      } catch (e: any) {
+        throw new Error(
+          e?.message ??
+            "Could not upload this clip for captions. Try again in a moment."
+        );
+      }
+    } else {
+      throw new Error("This clip has no video file to caption.");
+    }
+  }
+
   if (!/^https?:\/\//i.test(uri)) {
     throw new Error(
       "Captions need the uploaded clip. Wait for the upload to finish, then try again."
     );
   }
+
   const { items, words, srt } = await captionService.generateCaptions(uri);
   if (!items.length && !words.length) {
     throw new Error("No speech detected in this clip.");
@@ -3263,8 +3804,99 @@ const handleAutoBeatCut = (): number => {
   return locals.length;
 };
 
+  const renderAddMediaSheet = () => (
+    <Modal
+      visible={addMediaSheet != null}
+      transparent
+      animationType="fade"
+      onRequestClose={closeAddMediaSheet}
+    >
+      <View style={styles.addMediaScrim}>
+        <Pressable
+          style={StyleSheet.absoluteFillObject}
+          onPress={closeAddMediaSheet}
+          accessibilityLabel="Dismiss add media"
+        />
+        <View style={styles.addMediaSheet}>
+          <View style={styles.addMediaHandle} />
+          <Text style={styles.addMediaTitle}>
+            {addMediaSheet === "video" ? "Add video" : "Add to timeline"}
+          </Text>
+          <Text style={styles.addMediaSub}>
+            {addMediaSheet === "video"
+              ? "Pick a source"
+              : timelineInsertAt.where === "end"
+                ? "Inserts at the end of the timeline"
+                : timelineInsertAt.where === "start"
+                  ? "Inserts at the start of the timeline"
+                  : timelineInsertAt.where === "before"
+                    ? "Inserts before the selected clip"
+                    : "Inserts after this clip on the timeline"}
+          </Text>
 
+          {addMediaSheet === "root" ? (
+            <>
+              <TouchableOpacity
+                style={styles.addMediaRow}
+                onPress={() => setAddMediaSheet("video")}
+              >
+                <Ionicons name="videocam-outline" size={scale(20)} color={COLORS.yellow} />
+                <Text style={styles.addMediaRowText}>Video</Text>
+                <Ionicons name="chevron-forward" size={scale(16)} color={COLORS.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addMediaRow}
+                onPress={() => runFromAddSheet(handleAddPhotosToTimeline)}
+              >
+                <Ionicons name="image-outline" size={scale(20)} color={COLORS.yellow} />
+                <Text style={styles.addMediaRowText}>Photo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addMediaRow}
+                onPress={() => runFromAddSheet(handleAddBlankScreen)}
+              >
+                <Ionicons name="square-outline" size={scale(20)} color={COLORS.yellow} />
+                <Text style={styles.addMediaRowText}>Blank screen</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.addMediaRow}
+                onPress={() => runFromAddSheet(handleAddVideosToTimeline)}
+              >
+                <Ionicons name="images-outline" size={scale(20)} color={COLORS.yellow} />
+                <Text style={styles.addMediaRowText}>Camera roll</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addMediaRow}
+                onPress={() => runFromAddSheet(handleAddVideosFromFiles)}
+              >
+                <Ionicons name="folder-outline" size={scale(20)} color={COLORS.yellow} />
+                <Text style={styles.addMediaRowText}>Files</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addMediaRow}
+                onPress={() => setAddMediaSheet("root")}
+              >
+                <Ionicons name="arrow-back" size={scale(20)} color={COLORS.textSecondary} />
+                <Text style={[styles.addMediaRowText, { color: COLORS.textSecondary }]}>
+                  Back
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
 
+          <TouchableOpacity
+            style={styles.addMediaCancel}
+            onPress={closeAddMediaSheet}
+          >
+            <Text style={styles.addMediaCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (!project || clips.length === 0) {
     return (
@@ -3275,16 +3907,23 @@ const handleAutoBeatCut = (): number => {
             size={scale(40)}
             color={COLORS.textMuted}
           />
-          <Text style={styles.emptyStateText}>No clips yet</Text>
+          <Text style={styles.emptyStateText}>No media yet</Text>
+          <Text style={styles.emptyStateHint}>
+            Add a video, photo, or blank screen to start editing.
+          </Text>
           <TouchableOpacity
-            onPress={promptAddVideos}
+            style={[styles.emptyAddBtn, addVideosBusy && { opacity: 0.6 }]}
+            onPress={() => promptAddVideos({ where: "end" })}
             disabled={addVideosBusy}
+            accessibilityLabel="Add media"
           >
-            <Text style={{ color: COLORS.yellow, marginTop: verticalScale(8) }}>
-              {addVideosBusy ? 'Adding…' : 'Add videos to mix'}
-            </Text>
+            <Ionicons name="add" size={scale(36)} color="#0B0D13" />
           </TouchableOpacity>
+          <Text style={{ color: COLORS.yellow, marginTop: verticalScale(12), fontWeight: '700' }}>
+            {addVideosBusy ? 'Adding…' : 'Add media'}
+          </Text>
         </View>
+        {renderAddMediaSheet()}
       </SafeAreaView>
     );
   }
@@ -3293,29 +3932,30 @@ const handleAutoBeatCut = (): number => {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={COLORS.background} />
 
-      {/* Header — CapCut-style: back · Edit · collab */}
+      {/* Header — CapCut: close · search · collab · quality · Export */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.headerBtn}
-          hitSlop={8}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={scale(24)}
-            color={COLORS.textPrimary}
-          />
-        </TouchableOpacity>
-        <Text style={styles.videoTitle}>Edit</Text>
-        <View
-          style={{ flexDirection: "row", alignItems: "center", gap: scale(10) }}
-        >
-          {/* When teammates are online, show their avatars; otherwise a
-              hamburger. Both open the real-time collaboration/message panel. */}
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            onPress={handleLeaveEditor}
+            style={styles.headerIconBtn}
+            hitSlop={8}
+            accessibilityLabel="Close editor"
+          >
+            <Ionicons name="close" size={scale(26)} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setToolSearchOpen(true)}
+            style={styles.headerIconBtn}
+            hitSlop={8}
+            accessibilityLabel="Search tools"
+          >
+            <Ionicons name="search" size={scale(22)} color={COLORS.textPrimary} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.collabTrigger}
             onPress={openCollabPanel}
             hitSlop={8}
+            accessibilityLabel="Collaboration"
           >
             {onlineOthers.length > 0 ? (
               <View style={styles.avatarStack}>
@@ -3341,14 +3981,14 @@ const handleAutoBeatCut = (): number => {
                     )}
                   </View>
                 ))}
-                {/* Green presence pulse on the last avatar */}
                 <View style={styles.onlinePulse} />
               </View>
             ) : (
-              <Ionicons name="menu" size={scale(24)} color={COLORS.textPrimary} />
+              <View>
+                <Ionicons name="menu" size={scale(24)} color={COLORS.textPrimary} />
+                {collabConnected ? <View style={styles.liveDot} /> : null}
+              </View>
             )}
-
-            {/* Unread message badge */}
             {unreadCount > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadBadgeText}>
@@ -3358,12 +3998,72 @@ const handleAutoBeatCut = (): number => {
             )}
           </TouchableOpacity>
         </View>
+
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.qualityPill}
+            onPress={() => setQualityMenuOpen((v) => !v)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.qualityPillText}>{exportQuality}</Text>
+            <Ionicons
+              name={qualityMenuOpen ? "chevron-up" : "chevron-down"}
+              size={scale(12)}
+              color={COLORS.textSecondary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.exportBtn,
+              wowActive && wowStep === "export" && styles.exportBtnWow,
+            ]}
+            onPress={goToReviewExport}
+            activeOpacity={0.9}
+            accessibilityLabel="Export"
+          >
+            <View style={styles.exportBtnIcon}>
+              <Ionicons name="play" size={scale(9)} color="#0B0D13" />
+            </View>
+            <Text style={styles.exportBtnText}>Export</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {qualityMenuOpen ? (
+        <View style={styles.qualityMenu}>
+          {(["AI UHD", "1080p", "720p"] as const).map((q) => (
+            <TouchableOpacity
+              key={q}
+              style={styles.qualityMenuItem}
+              onPress={() => {
+                setExportQuality(q);
+                setQualityMenuOpen(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.qualityMenuItemText,
+                  q === exportQuality && styles.qualityMenuItemActive,
+                ]}
+              >
+                {q}
+              </Text>
+              {q === exportQuality ? (
+                <Ionicons name="checkmark" size={scale(14)} color={COLORS.yellow} />
+              ) : null}
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
       <CollaborationSidebar
         visible={sidebarVisible}
         onClose={() => setSidebarVisible(false)}
         projectId={projectId ?? ""}
         clipId={activeClip?.id}
+        onLeaveEditor={() => {
+          setSidebarVisible(false);
+          handleLeaveEditor();
+        }}
       />
 
       {isViewer ? (
@@ -3395,7 +4095,7 @@ const handleAutoBeatCut = (): number => {
         </View>
       ) : null}
 
-      {/* Video Preview — Canva blank canvas + free layout */}
+      {/* Video Preview — CapCut 16:9 stage (controls sit below, not on top) */}
       <View style={styles.previewWrapper}>
         <View 
           onLayout={(e) => {
@@ -3406,7 +4106,7 @@ const handleAutoBeatCut = (): number => {
           styles.previewContainer,
           {
             backgroundColor:
-              currentVideoProject?.canvasColor ?? COLORS.background,
+              currentVideoProject?.canvasColor ?? "#000000",
           },
         ]}
         >
@@ -3510,7 +4210,7 @@ const handleAutoBeatCut = (): number => {
                       },
                     ]}
                     player={player}
-                    contentFit="cover"
+                    contentFit="contain"
                     nativeControls={false}
                   />
                   {dragOn && (
@@ -3815,7 +4515,8 @@ const handleAutoBeatCut = (): number => {
 
    
       
-      {activeVisibleOverlays.map((o) => (
+      {layersOn
+        ? activeVisibleOverlays.map((o) => (
       <DraggableOverlay
         key={o.id}
         overlay={o}
@@ -3823,6 +4524,32 @@ const handleAutoBeatCut = (): number => {
         localTimeMs={currentTime * 1000}
         isEditing={activeToolLabel === "Text" && selectedOverlayId === o.id}
         onTap={() => handleToolPress("Text", o.id)}
+        onLongPress={() => {
+          if (isViewer || !canEdit) {
+            promptViewerGate();
+            return;
+          }
+          Alert.alert(
+            o.text?.trim() ? o.text.slice(0, 40) : "Text",
+            "What do you want to do?",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Edit",
+                onPress: () => handleToolPress("Text", o.id),
+              },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: () => {
+                  if (!activeClip) return;
+                  removeTextOverlay(activeClip.id, o.id);
+                  if (selectedOverlayId === o.id) setSelectedOverlayId(null);
+                },
+              },
+            ]
+          );
+        }}
         onDragEnd={(x, y) => {
           if (activeClip) updateTextOverlay(activeClip.id, o.id, { x, y });
         }}
@@ -3830,10 +4557,12 @@ const handleAutoBeatCut = (): number => {
           if (activeClip) updateTextOverlay(activeClip.id, o.id, { text });
         }}
       />
-      ))}
+      ))
+        : null}
 
       {/* Media overlays — PiP video, images/GIFs, emoji stickers (multi-track) */}
-      {activeMediaOverlays.map((o) => (
+      {layersOn
+        ? activeMediaOverlays.map((o) => (
         <DraggableMediaOverlay
           key={o.id}
           overlay={o}
@@ -3847,10 +4576,12 @@ const handleAutoBeatCut = (): number => {
           }}
           onDragEnd={(x, y) => updateMediaOverlay(o.id, { x, y })}
         />
-      ))}
+      ))
+        : null}
 
-      {/* Canva-style comment pins */}
-      {canvasPins.map((c) => (
+      {/* Comment pins — only while pin mode is on (don’t leave badges stuck after posting). */}
+      {layersOn && commentPinMode
+        ? canvasPins.map((c) => (
         <TouchableOpacity
           key={c.id}
           style={{
@@ -3878,15 +4609,67 @@ const handleAutoBeatCut = (): number => {
                   text: 'Open desk',
                   onPress: () => setSidebarVisible(true),
                 },
+                ...(projectId
+                  ? [
+                      {
+                        text: 'Hide pin',
+                        onPress: () => {
+                          void resolveComment(projectId, c.id, true).catch(
+                            (e: any) =>
+                              Alert.alert(
+                                'Couldn’t hide',
+                                e?.message ?? 'Try again.'
+                              )
+                          );
+                          setSelectedCommentId(null);
+                        },
+                      },
+                      {
+                        text: 'Delete',
+                        style: 'destructive' as const,
+                        onPress: () => {
+                          void deleteComment(projectId, c.id).catch((e: any) =>
+                            Alert.alert(
+                              'Couldn’t delete',
+                              e?.message ?? 'Try again.'
+                            )
+                          );
+                          setSelectedCommentId(null);
+                        },
+                      },
+                    ]
+                  : []),
               ]
             );
+          }}
+          onLongPress={() => {
+            if (!projectId) return;
+            Alert.alert('Comment pin', 'Remove this mark from the preview?', [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Hide',
+                onPress: () => {
+                  void resolveComment(projectId, c.id, true);
+                  setSelectedCommentId(null);
+                },
+              },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => {
+                  void deleteComment(projectId, c.id);
+                  setSelectedCommentId(null);
+                },
+              },
+            ]);
           }}
         >
           <Text style={{ fontSize: moderateScale(9), fontWeight: '800', color: '#0B0D13' }}>
             {c.initials.slice(0, 1)}
           </Text>
         </TouchableOpacity>
-      ))}
+      ))
+        : null}
 
       {commentPinMode && !commentComposer && (
         <TouchableOpacity
@@ -3952,127 +4735,198 @@ const handleAutoBeatCut = (): number => {
       />
 
           <View style={styles.videoTopBar}>
-            <TouchableOpacity
-              style={[
-                styles.previewChromeBtn,
-                commentPinMode && styles.previewChromeBtnAccent,
-              ]}
-              onPress={() => {
-                setCommentPinMode((v) => {
-                  const next = !v;
-                  if (!next) setCommentComposer(null);
-                  return next;
-                });
-              }}
-              hitSlop={8}
-            >
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={scale(18)}
-                color={commentPinMode ? COLORS.yellow : COLORS.textPrimary}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.previewChromeBtn}
-              onPress={goToReviewExport}
-              hitSlop={8}
-            >
-              <Ionicons name="share-outline" size={scale(18)} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.previewChromeBtn,
-                styles.previewChromeBtnAccent,
-                wowActive &&
-                  wowStep === 'export' &&
-                  styles.previewExportWow,
-              ]}
-              onPress={goToReviewExport}
-              hitSlop={8}
-            >
-              {wowActive && wowStep === 'export' ? (
-                <Text style={styles.previewExportWowText}>Export</Text>
-              ) : (
-                <Ionicons
-                  name="checkmark"
-                  size={scale(20)}
-                  color={COLORS.yellow}
-                />
-              )}
-            </TouchableOpacity>
+            {/* chrome removed — CapCut keeps controls under the preview */}
           </View>
-          <View style={styles.timestampOverlay}>
-            <Text style={styles.timestampText}>
-              {formatTime(currentPositionMs)}{" "}
-              <Text style={styles.timestampMuted}>
-                {formatTime(totalDurationMs)}
-              </Text>
-            </Text>
-          </View>
-          <View style={styles.videoControlRow}>
-            <TouchableOpacity
-              style={styles.videoControlIcon}
-              hitSlop={8}
-              disabled={!canUndo}
-              onPress={undo}
-            >
-              <Ionicons
-                name="arrow-undo"
-                size={scale(20)}
-                color={canUndo ? COLORS.textPrimary : COLORS.textSecondary}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.playButton}
-              onPress={togglePlayback}
-              hitSlop={8}
-            >
-              <Ionicons
-                name={isPlaying ? "pause" : "play"}
-                size={scale(20)}
-                color={COLORS.textPrimary}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.videoControlIcon}
-              hitSlop={8}
-              disabled={!canRedo}
-              onPress={redo}
-            >
-              <Ionicons
-                name="arrow-redo"
-                size={scale(20)}
-                color={canRedo ? COLORS.textPrimary : COLORS.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
-          {/* Expand → immersive fullscreen preview */}
+        </View>
+      </View>
+
+      {/* CapCut-style deck under preview — floating white card in light mode */}
+      <View style={styles.editorDeck}>
+      {/* CapCut transport bar under preview */}
+      <View style={styles.transportBar}>
+        <TouchableOpacity
+          style={styles.transportBtn}
+          hitSlop={8}
+          onPress={() => {
+            try {
+              player.pause();
+              musicPlayer.pause();
+            } catch {
+              /* ignore */
+            }
+            navigation.navigate("editorpreview", {
+              positionMs: Math.round(currentPositionMs),
+            });
+          }}
+          accessibilityLabel="Full screen"
+        >
+          <Ionicons name="scan-outline" size={scale(22)} color={COLORS.textPrimary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.transportPlay}
+          onPress={togglePlayback}
+          hitSlop={10}
+          accessibilityLabel={
+            isPlaying ? "Pause" : playbackEnded ? "Replay" : "Play"
+          }
+        >
+          <Ionicons
+            name={isPlaying ? "pause" : playbackEnded ? "refresh" : "play"}
+            size={scale(26)}
+            color={COLORS.textPrimary}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.transportRight}>
           <TouchableOpacity
-            style={[styles.videoControlIcon, { position: "absolute", right: scale(12), bottom: verticalScale(12) }]}
-            hitSlop={8}
-            onPress={() => {
-              try {
-                player.pause();
-                musicPlayer.pause();
-              } catch {
-                /* ignore */
-              }
-              navigation.navigate("editorpreview", {
-                positionMs: Math.round(currentPositionMs),
-              });
-            }}
+            style={styles.layersToggle}
+            onPress={() => setLayersOn((v) => !v)}
+            hitSlop={6}
+            accessibilityLabel="Toggle layers"
           >
             <Ionicons
-              name="scan-outline"
+              name="copy-outline"
+              size={scale(18)}
+              color={layersOn ? COLORS.textPrimary : COLORS.textSecondary}
+            />
+            <Text
+              style={[
+                styles.layersToggleLabel,
+                !layersOn && { color: COLORS.textSecondary },
+              ]}
+            >
+              {layersOn ? "ON" : "OFF"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.transportBtn}
+            hitSlop={8}
+            disabled={!canUndo}
+            onPress={undo}
+          >
+            <Ionicons
+              name="arrow-undo"
               size={scale(20)}
-              color={COLORS.textPrimary}
+              color={canUndo ? COLORS.textPrimary : COLORS.textMuted}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.transportBtn}
+            hitSlop={8}
+            disabled={!canRedo}
+            onPress={redo}
+          >
+            <Ionicons
+              name="arrow-redo"
+              size={scale(20)}
+              color={canRedo ? COLORS.textPrimary : COLORS.textMuted}
             />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Multi-track Timeline — vertical scroll so VO/music aren't crushed */}
-      <View style={styles.timelineContainer}>
+      {/* Timeline clock */}
+      <View style={styles.timelineClockRow}>
+        <Text style={styles.timelineClockText}>
+          {formatTime(currentPositionMs)}
+          <Text style={styles.timelineClockMuted}>
+            {" / "}
+            {formatTime(totalDurationMs)}
+          </Text>
+        </Text>
+        <TouchableOpacity
+          style={[
+            styles.commentPinChip,
+            commentPinMode && styles.commentPinChipOn,
+          ]}
+          onPress={() => {
+            setCommentPinMode((v) => {
+              const next = !v;
+              if (!next) setCommentComposer(null);
+              return next;
+            });
+          }}
+          hitSlop={8}
+        >
+          <Ionicons
+            name="chatbubble-ellipses-outline"
+            size={scale(14)}
+            color={commentPinMode ? COLORS.yellow : COLORS.textSecondary}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Multi-track Timeline — CapCut left rail + scroll tracks */}
+      <View style={styles.timelineOuter}>
+        <View style={styles.timelineLeftRail}>
+          {/* Spacers match timeline track stack so icons line up with bars. */}
+          <View style={styles.railRulerSpacer} />
+          <TouchableOpacity
+            style={styles.railTextSlot}
+            onPress={() => handleToolPress("Text")}
+            disabled={isViewer || !canEdit}
+            accessibilityLabel="Add text"
+          >
+            <Text style={styles.railShortcutT}>T</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.railAudioSlot}
+            onPress={() => {
+              if (!activeClip || isViewer || !canEdit) return;
+              const muted = (activeClip.volume ?? 1) <= 0.001;
+              updateClipVolume(activeClip.id, muted ? 1 : 0);
+              try {
+                player.muted = !muted;
+              } catch {
+                /* ignore */
+              }
+            }}
+            disabled={!activeClip || isViewer || !canEdit}
+            accessibilityLabel="Mute clip audio"
+          >
+            <Ionicons
+              name={
+                (activeClip?.volume ?? 1) <= 0.001
+                  ? "volume-mute"
+                  : "volume-medium"
+              }
+              size={scale(15)}
+              color={COLORS.textSecondary}
+            />
+          </TouchableOpacity>
+          {mediaOverlays.length > 0 ? (
+            <View style={styles.railOptionalTrackSpacer} />
+          ) : null}
+          {voiceovers.length > 0 ? (
+            <View style={styles.railOptionalTrackSpacer} />
+          ) : null}
+          <TouchableOpacity
+            style={styles.railMusicSlot}
+            onPress={() => handleToolPress("Music")}
+            disabled={isViewer || !canEdit}
+            accessibilityLabel="Background music"
+          >
+            <Ionicons
+              name="musical-notes"
+              size={scale(15)}
+              color={COLORS.textPrimary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.timelineContainer}>
+        {activeClip && !isViewer && canEdit ? (
+          <TouchableOpacity
+            style={styles.deleteClipFab}
+            onPress={handleDelete}
+            accessibilityLabel="Delete selected clip"
+            hitSlop={10}
+          >
+            <Ionicons name="trash-outline" size={scale(16)} color="#FFF" />
+          </TouchableOpacity>
+        ) : null}
+
         {/* Playhead Vertical Line */}
         <View style={styles.playheadLine} pointerEvents="none" />
 
@@ -4080,31 +4934,26 @@ const handleAutoBeatCut = (): number => {
           ref={timelineScrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
-          nestedScrollEnabled
+          bounces={false}
+          decelerationRate="fast"
           onScrollBeginDrag={() => {
             isScrubbingRef.current = true;
           }}
           onScrollEndDrag={() => {
-            isScrubbingRef.current = false;
+            finishTimelineScrub();
           }}
           onMomentumScrollEnd={() => {
-            isScrubbingRef.current = false;
+            finishTimelineScrub();
           }}
           onScroll={handleTimelineScroll}
           scrollEventThrottle={16}
           contentContainerStyle={{
-            paddingHorizontal: SCREEN_WIDTH * 0.35,
-            paddingBottom: verticalScale(8),
+            paddingHorizontal: Math.max(scale(48), (SCREEN_WIDTH - scale(44)) / 2),
+            paddingTop: verticalScale(4),
+            paddingBottom: verticalScale(12),
           }}
         >
-          <ScrollView
-            nestedScrollEnabled
-            showsVerticalScrollIndicator
-            style={styles.timelineTracksScroll}
-            contentContainerStyle={styles.timelineTracksContent}
-            bounces={false}
-          >
-          <View>
+          <View style={styles.timelineTracksContent}>
             {/* 1. Ruler Track */}
             <View
               style={[
@@ -4168,25 +5017,17 @@ const handleAutoBeatCut = (): number => {
               
             </View>
 
-            {/* 3. Video Clips Track */}
-            <View style={[styles.trackRow, { position: "relative" }]}>
-              {/* Add videos to mix — multi-pick appends on this timeline */}
+            {/* 3. Video Clips Track — + icons insert at that point */}
+            <View style={[styles.trackRow, { position: "relative", alignItems: "center" }]}>
               <TouchableOpacity
-                style={[
-                  styles.addClipTrackBtn,
-                  {
-                    position: "absolute",
-                    left: -scale(34),
-                    top: verticalScale(10),
-                    opacity: addVideosBusy ? 0.5 : 1,
-                  },
-                ]}
-                disabled={addVideosBusy}
-                onPress={promptAddVideos}
+                style={[styles.addClipGapBtn, addVideosBusy && { opacity: 0.5 }]}
+                disabled={addVideosBusy || isViewer || !canEdit}
+                onPress={() => promptAddVideos({ where: "start" })}
+                accessibilityLabel="Insert media at start"
+                hitSlop={6}
               >
-                <Ionicons name="add" size={scale(16)} color="#FFFFFF" />
+                <Ionicons name="add" size={scale(16)} color="#0B0D13" />
               </TouchableOpacity>
-
               {clips.map((clip, index) => {
                 const isClipActive = activeClip && clip.id === activeClip.id;
                 const frames = clipThumbnails[clip.id] ?? [];
@@ -4200,69 +5041,53 @@ const handleAutoBeatCut = (): number => {
                       onTrimEnd={handleTrimEnd}
                     />
                     {index < clips.length - 1 && (
-                      <TouchableOpacity
-                        style={[
-                          styles.transitionBtn,
-                          clip.transitionOut &&
-                            clip.transitionOut.type !== "none" &&
-                            styles.transitionBtnActive,
-                        ]}
-                        onPress={() => setTransitionClipId(clip.id)}
-                        hitSlop={6}
-                      >
-                        <View style={styles.transitionInnerIcon} />
-                      </TouchableOpacity>
+                      <View style={styles.clipGapCol}>
+                        <TouchableOpacity
+                          style={[
+                            styles.transitionBtn,
+                            clip.transitionOut &&
+                              clip.transitionOut.type !== "none" &&
+                              styles.transitionBtnActive,
+                          ]}
+                          onPress={() => setTransitionClipId(clip.id)}
+                          hitSlop={4}
+                          accessibilityLabel="Edit transition"
+                        >
+                          <View style={styles.transitionInnerIcon} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.addClipGapBtn,
+                            addVideosBusy && { opacity: 0.5 },
+                          ]}
+                          disabled={addVideosBusy || isViewer || !canEdit}
+                          onPress={() =>
+                            promptAddVideos({
+                              where: "after",
+                              relativeClipId: clip.id,
+                            })
+                          }
+                          accessibilityLabel="Insert media here"
+                          hitSlop={4}
+                        >
+                          <Ionicons name="add" size={scale(14)} color="#0B0D13" />
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </React.Fragment>
                 );
               })}
-            </View>
-
-            {/* 4. Audio Waveform Track */}
-            <View
-              style={[
-                styles.waveformContainer,
-                {
-                  marginTop: verticalScale(8),
-                  backgroundColor: isDark
-                    ? "rgba(255,255,255,0.04)"
-                    : "rgba(0,0,0,0.04)",
-                  borderColor: isDark
-                    ? "rgba(255,255,255,0.08)"
-                    : "rgba(0,0,0,0.08)",
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.waveformTrack,
-                  { width: totalSeconds * PX_PER_SECOND },
-                ]}
+              <TouchableOpacity
+                style={[styles.addClipEndBtn, addVideosBusy && { opacity: 0.5 }]}
+                disabled={addVideosBusy || isViewer || !canEdit}
+                onPress={() => promptAddVideos({ where: "end" })}
+                accessibilityLabel="Add media at end"
               >
-                {Array.from({ length: totalSeconds * 4 }).map((_, i) => {
-                  const heightFactor =
-                    Math.abs(Math.sin(i * 0.15)) * 0.7 +
-                    Math.abs(Math.cos(i * 0.4)) * 0.3;
-                  const height = 4 + heightFactor * verticalScale(24);
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.waveformBar,
-                        {
-                          height,
-                          backgroundColor: isDark
-                            ? "rgba(255,255,255,0.45)"
-                            : "rgba(15,23,42,0.45)",
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
+                <Ionicons name="add" size={scale(22)} color="#0B0D13" />
+              </TouchableOpacity>
             </View>
 
-            {/* 5. Media Overlay Track — PiP video, stickers, GIFs */}
+            {/* Media Overlay Track — PiP video, stickers, GIFs */}
             {mediaOverlays.length > 0 && (
               <View
                 style={{
@@ -4360,17 +5185,32 @@ const handleAutoBeatCut = (): number => {
               </View>
             )}
 
-            {/* 7. Music tracks */}
-            {musicTracks.length > 0 && (
-              <View
-                style={{
-                  height: verticalScale(22),
-                  position: "relative",
-                  width: totalSeconds * PX_PER_SECOND,
-                  marginTop: verticalScale(6),
-                }}
-              >
-                {musicTracks.map((t, i) => {
+            {/* 7. Music track — always reserved so left-rail icon stays aligned */}
+            <View
+              style={{
+                height: verticalScale(22),
+                position: "relative",
+                width: totalSeconds * PX_PER_SECOND,
+                marginTop: verticalScale(6),
+              }}
+            >
+              {musicTracks.length === 0 ? (
+                <TouchableOpacity
+                  style={[styles.musicTrackEmptyChip, { position: "absolute", left: 0 }]}
+                  onPress={() => {
+                    if (isViewer || !canEdit) {
+                      promptViewerGate();
+                      return;
+                    }
+                    handleToolPress("Music");
+                  }}
+                  disabled={isViewer || !canEdit}
+                >
+                  <Ionicons name="musical-notes" size={scale(10)} color="#34D399" />
+                  <Text style={styles.musicTrackLabel}>Add music</Text>
+                </TouchableOpacity>
+              ) : (
+                musicTracks.map((t, i) => {
                   const id = t.id ?? `legacy-${i}`;
                   const left = ((t.startMs ?? 0) / 1000) * PX_PER_SECOND;
                   const width = Math.max(
@@ -4401,9 +5241,9 @@ const handleAutoBeatCut = (): number => {
                       </Text>
                     </TouchableOpacity>
                   );
-                })}
-              </View>
-            )}
+                })
+              )}
+            </View>
 
             {/* Teammates' live cursors — colored playheads with name tags */}
             {remoteCursors.map((c) => (
@@ -4425,8 +5265,9 @@ const handleAutoBeatCut = (): number => {
               </View>
             ))}
           </View>
-          </ScrollView>
         </ScrollView>
+        </View>
+      </View>
       </View>
 
       {/* Bottom Toolbar — stays visible; tool sheets overlay above it */}
@@ -4467,6 +5308,21 @@ const handleAutoBeatCut = (): number => {
  {/* Tool sheets overlay the bottom of the editor so they don't stack under the toolbar */}
  {activeToolLabel != null ? (
  <View style={styles.toolSheetHost} pointerEvents="box-none">
+    {toolOpenedFromSearch &&
+    activeToolLabel !== "Audio" &&
+    activeToolLabel !== "Speed" &&
+    activeToolLabel !== "Text" ? (
+      <TouchableOpacity
+        style={styles.toolSheetBackRow}
+        onPress={goBackToToolSearch}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Back to more tools"
+      >
+        <Ionicons name="chevron-back" size={scale(18)} color="#F5C518" />
+        <Text style={styles.toolSheetBackText}>More tools</Text>
+      </TouchableOpacity>
+    ) : null}
     {activeToolLabel === 'Filter' ? (
   <FilterToolPanel
           visible={true}
@@ -4494,8 +5350,7 @@ const handleAutoBeatCut = (): number => {
     playheadMs={currentPositionMs}
     onSelectTrack={setSelectedMusicTrackId}
     onAddTrack={(uri, durationMs, startMs, title) => {
-      const id = addMusicTrack(uri, durationMs, startMs, title);
-      setSelectedMusicTrackId(id);
+      addMusicForActiveClip(uri, durationMs, startMs, title);
     }}
     onUpdateTrack={(trackId, changes) => updateMusicTrack(trackId, changes)}
     onRemoveTrack={(trackId) => {
@@ -4513,8 +5368,7 @@ const handleAutoBeatCut = (): number => {
     visible={true}
     playheadMs={currentPositionMs}
     onAddAudio={(uri, durationMs, startMs, title) => {
-      const id = addMusicTrack(uri, durationMs, startMs, title);
-      setSelectedMusicTrackId(id);
+      addMusicForActiveClip(uri, durationMs, startMs, title);
     }}
     onAddFootage={(track) => {
       const id = appendRemoteClip({
@@ -4573,17 +5427,6 @@ const handleAutoBeatCut = (): number => {
     visible={true}
     selectedId={activeClip?.movieEffectId ?? 'none'}
     onApply={(id) => activeClip && applyMovieEffect(activeClip.id, id)}
-    onClose={closeToolPanel}
-  />
-) : activeToolLabel === 'Templates' ? (
-  <TemplatesPanel
-    visible={true}
-    canSave={!!activeClip}
-    onSave={async (name) => {
-      if (!activeClip) throw new Error('Select a clip first.');
-      await editTemplateService.saveFromClip(activeClip, name);
-    }}
-    onApply={handleApplyFilledTemplate}
     onClose={closeToolPanel}
   />
 ) : activeToolLabel === 'Color' ? (
@@ -4769,7 +5612,7 @@ const handleAutoBeatCut = (): number => {
     }
     onMusicVolume={(v) => {
       const t = musicTracks[0];
-      if (t) updateMusicTrack(t.id, { volume: v });
+      if (t?.id) updateMusicTrack(t.id, { volume: v });
     }}
     onVoiceoverVolume={(v) => {
       const id =
@@ -4779,11 +5622,11 @@ const handleAutoBeatCut = (): number => {
     }}
     onDuckEnabled={(v) => {
       const t = musicTracks[0];
-      if (t) updateMusicTrack(t.id, { duckUnderVoiceover: v });
+      if (t?.id) updateMusicTrack(t.id, { duckUnderVoiceover: v });
     }}
     onDuckLevel={(v) => {
       const t = musicTracks[0];
-      if (t) updateMusicTrack(t.id, { duckLevel: v });
+      if (t?.id) updateMusicTrack(t.id, { duckLevel: v });
     }}
     onAudioFxChange={(fx) =>
       activeClip && updateClipAudioFx(activeClip.id, fx)
@@ -4799,7 +5642,7 @@ const handleAutoBeatCut = (): number => {
 ) : activeToolLabel === 'Publish' ? (
   <PublishPanel
     visible={true}
-    projectName={currentVideoProject?.title ?? currentVideoProject?.name ?? 'Vydora edit'}
+    projectName={currentVideoProject?.title ?? 'Vydora edit'}
     onApplyPreset={(cropRatioId) => {
       clips.forEach((c) => updateClipCrop(c.id, { cropRatioId }));
     }}
@@ -4821,6 +5664,19 @@ const handleAutoBeatCut = (): number => {
     onSyncWithClip={handleMulticamSyncWithClip}
     onSyncWithPickedVideo={handleMulticamSyncPicked}
     onCutToAngle={handleDirectorCut}
+    onClose={closeToolPanel}
+  />
+) : activeToolLabel === 'Episode factory' ? (
+  <EpisodeFactoryPanel
+    visible={true}
+    seriesTitle={
+      currentVideoProject?.title ??
+      currentProject?.name ??
+      'Cocoa Stories'
+    }
+    onBuildPlan={handleBuildEpisodePlan}
+    onApplyPack={handleApplyEpisodePack}
+    onExportReel={handleExportPodcastReel}
     onClose={closeToolPanel}
   />
 ) : activeToolLabel === 'Stabilize' ? (
@@ -5145,7 +6001,7 @@ const handleAutoBeatCut = (): number => {
     }}
     onApplyMusicFades={(fadeInMs, fadeOutMs) => {
       const t = musicTracks[0];
-      if (!t) return;
+      if (!t?.id) return;
       updateMusicTrack(t.id, { fadeInMs, fadeOutMs });
     }}
     onSelectClip={setSelectedClipId}
@@ -5196,7 +6052,7 @@ const handleAutoBeatCut = (): number => {
         `${ids.length} beats with ${plan.transitionType} transitions. Scrub the timeline or export.`
       );
     }}
-    onAddVideos={promptAddVideos}
+    onAddVideos={() => promptAddVideos({ where: "end" })}
     addVideosBusy={addVideosBusy}
     onClose={closeToolPanel}
   />
@@ -5239,6 +6095,7 @@ const handleAutoBeatCut = (): number => {
           visible={activeToolLabel !== null}
           toolLabel={activeToolLabel}
           onClose={closeToolPanel}
+          onBack={toolOpenedFromSearch ? goBackToToolSearch : undefined}
           volume={liveVolume}
           onVolumeChange={(v) =>
             activeClip && updateClipVolume(activeClip.id, v)
@@ -5395,6 +6252,16 @@ const handleAutoBeatCut = (): number => {
   onCancel={() => setShowExportConfirm(false)}
   onConfirm={handleExportConfirm}
 />
+<LeaveEditorSheet
+  visible={showLeaveConfirm}
+  reason={leaveReason}
+  teammateCount={onlineOthers.length}
+  onStay={() => setShowLeaveConfirm(false)}
+  onLeave={() => {
+    setShowLeaveConfirm(false);
+    navigation.goBack();
+  }}
+/>
 {/* <ExportProgressSheet
   visible={exportState !== 'idle'}
   progress={progress}
@@ -5406,13 +6273,33 @@ const handleAutoBeatCut = (): number => {
   }}
 /> */}
 
+
+    {playbackEnded && !isPlaying ? (
+      <View pointerEvents="box-none" style={styles.replayHost}>
+        <TouchableOpacity
+          style={styles.replayFab}
+          activeOpacity={0.9}
+          onPress={replayFromStart}
+          accessibilityLabel="Replay from start"
+        >
+          <Ionicons name="refresh" size={scale(22)} color="#0B0D13" />
+        </TouchableOpacity>
+      </View>
+    ) : null}
     </SafeAreaView>
   );
 }
 
 // ─── Perfect Styles Replicating the Design ──────────────────────────────
 
-function __makeStyles() {
+function __makeStyles(isDark = true) {
+  const deckSurface = isDark ? COLORS.background : COLORS.surface;
+  const chipBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)";
+  const menuBg = isDark ? "#1C1C1F" : COLORS.surface;
+  const menuBorder = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)";
+  const playhead = isDark ? "#FFFFFF" : "#1A1A1A";
+  const ruler = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.08)";
+
   return StyleSheet.create({
   container: {
     flex: 1,
@@ -5423,21 +6310,133 @@ function __makeStyles() {
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.background,
+    paddingHorizontal: scale(24),
   },
   emptyStateText: {
     color: COLORS.textSecondary,
     fontSize: moderateScale(14),
+    marginTop: verticalScale(10),
+  },
+  emptyStateHint: {
+    color: COLORS.textMuted,
+    fontSize: moderateScale(13),
+    textAlign: "center",
+    marginTop: verticalScale(8),
+    marginBottom: verticalScale(16),
+    maxWidth: scale(260),
+    lineHeight: moderateScale(18),
+  },
+  emptyAddBtn: {
+    width: scale(64),
+    height: scale(64),
+    borderRadius: scale(32),
+    backgroundColor: COLORS.yellow,
+    alignItems: "center",
+    justifyContent: "center",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: scale(14),
-    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(isDark ? 14 : 16),
+    paddingTop: verticalScale(isDark ? 4 : 10),
+    paddingBottom: verticalScale(isDark ? 10 : 12),
+    zIndex: 20,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(isDark ? 10 : 12),
+    flexShrink: 1,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(isDark ? 10 : 12),
+  },
+  headerIconBtn: {
+    width: scale(34),
+    height: scale(34),
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerBtn: {
     padding: scale(4),
     minWidth: scale(36),
+  },
+  qualityPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(4),
+    backgroundColor: chipBg,
+    paddingHorizontal: scale(isDark ? 10 : 12),
+    paddingVertical: verticalScale(isDark ? 7 : 8),
+    borderRadius: scale(isDark ? 8 : 12),
+    borderWidth: isDark ? 0 : StyleSheet.hairlineWidth,
+    borderColor: menuBorder,
+  },
+  qualityPillText: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(12),
+    fontWeight: "600",
+  },
+  qualityMenu: {
+    position: "absolute",
+    top: verticalScale(48),
+    right: scale(88),
+    zIndex: 50,
+    backgroundColor: menuBg,
+    borderRadius: scale(10),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: menuBorder,
+    paddingVertical: verticalScale(4),
+    minWidth: scale(120),
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: isDark ? 0.4 : 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  qualityMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(10),
+  },
+  qualityMenuItemText: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(13),
+    fontWeight: "600",
+  },
+  qualityMenuItemActive: {
+    color: COLORS.textPrimary,
+  },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(6),
+    backgroundColor: COLORS.yellow,
+    paddingLeft: scale(8),
+    paddingRight: scale(isDark ? 14 : 16),
+    paddingVertical: verticalScale(isDark ? 7 : 8),
+    borderRadius: scale(isDark ? 8 : 12),
+  },
+  exportBtnWow: {
+    backgroundColor: COLORS.yellow,
+  },
+  exportBtnIcon: {
+    width: scale(20),
+    height: scale(20),
+    borderRadius: scale(4),
+    backgroundColor: "rgba(0,0,0,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exportBtnText: {
+    color: "#0B0D13",
+    fontSize: moderateScale(13),
+    fontWeight: "800",
   },
   editToast: {
     position: 'absolute',
@@ -5447,7 +6446,7 @@ function __makeStyles() {
     flexDirection: 'row',
     alignItems: 'center',
     gap: scale(8),
-    backgroundColor: 'rgba(21,24,33,0.94)',
+    backgroundColor: isDark ? 'rgba(21,24,33,0.94)' : 'rgba(255,255,255,0.96)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.yellow,
     borderRadius: scale(20),
@@ -5489,22 +6488,281 @@ function __makeStyles() {
     fontWeight: '800',
   },
   previewWrapper: {
-    flex: 1,
-    minHeight: verticalScale(180),
-    paddingHorizontal: scale(14),
-    marginVertical: verticalScale(4),
+    width: "100%",
+    paddingHorizontal: 0,
+    paddingTop: verticalScale(isDark ? 8 : 6),
+    paddingBottom: verticalScale(isDark ? 36 : 14),
+    backgroundColor: "#000000",
+    alignItems: "center",
+    justifyContent: "center",
   },
   previewContainer: {
-    flex: 1,
-    borderRadius: scale(24),
+    width: "100%",
+    aspectRatio: 16 / 9,
+    maxHeight: verticalScale(220),
     overflow: "hidden",
-    backgroundColor: COLORS.background,
+    backgroundColor: "#000000",
     position: "relative",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
   },
   videoView: {
+    width: "100%",
+    height: "100%",
+  },
+  replayHost: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 70,
+    alignItems: "center",
+    paddingTop: "22%",
+  },
+  replayFab: {
+    width: scale(48),
+    height: scale(48),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.yellow,
+    borderRadius: scale(24),
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  editorDeck: {
     flex: 1,
+    backgroundColor: deckSurface,
+    ...(isDark
+      ? {}
+      : {
+          marginHorizontal: scale(12),
+          marginTop: verticalScale(-8),
+          borderTopLeftRadius: scale(28),
+          borderTopRightRadius: scale(28),
+          paddingTop: verticalScale(4),
+          overflow: "hidden" as const,
+          shadowColor: "#000",
+          shadowOpacity: 0.08,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: -4 },
+          elevation: 6,
+        }),
+  },
+  transportBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: scale(isDark ? 20 : 18),
+    paddingTop: verticalScale(isDark ? 16 : 18),
+    paddingBottom: verticalScale(isDark ? 10 : 12),
+    backgroundColor: deckSurface,
+  },
+  transportBtn: {
+    padding: scale(isDark ? 8 : 10),
+  },
+  transportPlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  transportRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(isDark ? 14 : 16),
+    marginLeft: "auto",
+  },
+  layersToggle: {
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: scale(32),
+    paddingHorizontal: scale(4),
+  },
+  layersToggleLabel: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(9),
+    fontWeight: "700",
+    marginTop: 2,
+    letterSpacing: 0.3,
+  },
+  timelineClockRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: scale(isDark ? 16 : 18),
+    paddingTop: verticalScale(isDark ? 6 : 8),
+    paddingBottom: verticalScale(isDark ? 14 : 16),
+    backgroundColor: deckSurface,
+  },
+  timelineClockText: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(12),
+    fontWeight: "500",
+    fontVariant: ["tabular-nums"],
+  },
+  timelineClockMuted: {
+    color: COLORS.textMuted,
+    fontWeight: "400",
+  },
+  commentPinChip: {
+    width: scale(28),
+    height: scale(28),
+    borderRadius: scale(14),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: chipBg,
+  },
+  commentPinChipOn: {
+    backgroundColor: "rgba(245,197,24,0.18)",
+    borderWidth: 1,
+    borderColor: COLORS.yellow,
+  },
+  timelineOuter: {
+    flex: 1,
+    flexDirection: "row",
+    minHeight: verticalScale(180),
+    backgroundColor: deckSurface,
+  },
+  timelineLeftRail: {
+    width: scale(44),
+    paddingTop: verticalScale(4),
+    paddingBottom: verticalScale(8),
+    paddingHorizontal: scale(4),
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  /** Matches rulerContainer height + marginBottom. */
+  railRulerSpacer: {
+    height: verticalScale(24) + verticalScale(10),
+    width: "100%",
+  },
+  /** Aligns with text overlays track (height 34 + marginBottom 6). */
+  railTextSlot: {
+    height: verticalScale(34),
+    marginBottom: verticalScale(6),
+    width: scale(32),
+    borderRadius: scale(8),
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  /** Aligns with video clip trackRow (marginTop 6 + height 52). */
+  railAudioSlot: {
+    marginTop: verticalScale(6),
+    height: verticalScale(52),
+    width: scale(32),
+    borderRadius: scale(8),
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  /** Aligns with music track bar (marginTop 6 + height 22). */
+  railMusicSlot: {
+    marginTop: verticalScale(6),
+    height: verticalScale(22),
+    width: scale(32),
+    borderRadius: scale(6),
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  /** Matches optional overlay / VO track height + marginTop. */
+  railOptionalTrackSpacer: {
+    marginTop: verticalScale(6),
+    height: verticalScale(22),
+    width: "100%",
+  },
+  railShortcutT: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(15),
+    fontWeight: "700",
+  },
+  addClipEndBtn: {
+    width: scale(48),
+    height: verticalScale(48),
+    borderRadius: scale(6),
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: scale(8),
+  },
+  /** Small + between / before clips — opens add sheet at that insert point. */
+  addClipGapBtn: {
+    width: scale(22),
+    height: scale(22),
+    borderRadius: scale(11),
+    backgroundColor: "#F5C518",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 21,
+  },
+  clipGapCol: {
+    flexDirection: "row",
+    width: scale(44),
+    marginHorizontal: -scale(4),
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(4),
+    zIndex: 20,
+  },
+  addMediaScrim: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  addMediaSheet: {
+    backgroundColor: "#141821",
+    borderTopLeftRadius: scale(18),
+    borderTopRightRadius: scale(18),
+    paddingHorizontal: scale(18),
+    paddingTop: verticalScale(10),
+    paddingBottom: verticalScale(28),
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  addMediaHandle: {
+    alignSelf: "center",
+    width: scale(40),
+    height: verticalScale(4),
+    borderRadius: scale(2),
+    backgroundColor: "rgba(255,255,255,0.25)",
+    marginBottom: verticalScale(12),
+  },
+  addMediaTitle: {
+    color: "#FFFFFF",
+    fontSize: moderateScale(17),
+    fontWeight: "800",
+  },
+  addMediaSub: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: moderateScale(12),
+    marginTop: verticalScale(4),
+    marginBottom: verticalScale(14),
+  },
+  addMediaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(12),
+    paddingVertical: verticalScale(14),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  addMediaRowText: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: moderateScale(15),
+    fontWeight: "600",
+  },
+  addMediaCancel: {
+    marginTop: verticalScale(14),
+    alignItems: "center",
+    paddingVertical: verticalScale(12),
+    borderRadius: scale(12),
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  addMediaCancelText: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: moderateScale(14),
+    fontWeight: "700",
   },
   videoPlaceholder: {
     flex: 1,
@@ -5609,18 +6867,50 @@ function __makeStyles() {
     justifyContent: "center",
   },
   timelineContainer: {
-    height: verticalScale(168),
+    flex: 1,
     position: "relative",
-    marginTop: verticalScale(4),
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255,255,255,0.06)",
     backgroundColor: COLORS.background,
   },
+  addClipFab: {
+    position: "absolute",
+    left: scale(10),
+    top: verticalScale(10),
+    zIndex: 40,
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    backgroundColor: COLORS.yellow,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  deleteClipFab: {
+    position: "absolute",
+    right: scale(8),
+    top: verticalScale(6),
+    zIndex: 40,
+    width: scale(28),
+    height: scale(28),
+    borderRadius: scale(14),
+    backgroundColor: "#E5484D",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
   timelineTracksScroll: {
-    maxHeight: verticalScale(160),
+    flexGrow: 0,
   },
   timelineTracksContent: {
-    paddingBottom: verticalScale(10),
+    paddingBottom: verticalScale(4),
+    gap: 0,
   },
   toolSheetHost: {
     position: "absolute",
@@ -5630,19 +6920,39 @@ function __makeStyles() {
     zIndex: 60,
     elevation: 60,
   },
+  toolSheetBackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: scale(4),
+    marginLeft: scale(12),
+    marginBottom: verticalScale(6),
+    paddingVertical: verticalScale(6),
+    paddingHorizontal: scale(10),
+    borderRadius: scale(8),
+    backgroundColor: "rgba(18, 20, 28, 0.96)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(245, 197, 24, 0.35)",
+  },
+  toolSheetBackText: {
+    color: "#F5C518",
+    fontSize: moderateScale(13),
+    fontWeight: "600",
+  },
   playheadLine: {
     position: "absolute",
-    left: "35%",
+    left: "50%",
+    marginLeft: -1,
     top: 0,
     bottom: 0,
     width: 2,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: playhead,
     zIndex: 100,
   },
   rulerContainer: {
-    height: verticalScale(28),
+    height: verticalScale(24),
     position: "relative",
-    marginBottom: verticalScale(6),
+    marginBottom: verticalScale(10),
   },
   rulerLine: {
     position: "absolute",
@@ -5650,7 +6960,7 @@ function __makeStyles() {
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: ruler,
   },
   rulerMarkContainer: {
     position: "absolute",
@@ -5680,7 +6990,8 @@ function __makeStyles() {
   trackRow: {
     flexDirection: "row",
     alignItems: "center",
-    height: verticalScale(46),
+    height: verticalScale(52),
+    marginTop: verticalScale(6),
   },
   activeTextChipContainer: {
     flexDirection: "row",
@@ -5756,13 +7067,12 @@ function __makeStyles() {
     opacity: 0.6,
   },
   transitionBtn: {
-    width: scale(20),
-    height: scale(20),
-    borderRadius: scale(10),
+    width: scale(18),
+    height: scale(18),
+    borderRadius: scale(9),
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: -scale(10),
     zIndex: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -5778,23 +7088,6 @@ function __makeStyles() {
     height: scale(4),
     backgroundColor: COLORS.surface,
     borderRadius: scale(2),
-  },
-  waveformContainer: {
-    height: verticalScale(36),
-    borderRadius: scale(12),
-    borderWidth: 1,
-    paddingHorizontal: scale(10),
-    justifyContent: "center",
-    marginTop: scale(20),
-  },
-  waveformTrack: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scale(2),
-  },
-  waveformBar: {
-    width: 2.5,
-    borderRadius: 1.5,
   },
   trimHandle: {
     position: "absolute",
@@ -5840,7 +7133,7 @@ function __makeStyles() {
     width: scale(26),
     height: scale(26),
     borderRadius: scale(13),
-    backgroundColor: " #F5C518",
+    backgroundColor: "#F5C518",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 30,
@@ -5866,6 +7159,17 @@ function __makeStyles() {
     borderColor: COLORS.background,
     marginLeft: -scale(6),
     alignSelf: "flex-end",
+  },
+  liveDot: {
+    position: "absolute",
+    right: -scale(2),
+    bottom: -scale(1),
+    width: scale(8),
+    height: scale(8),
+    borderRadius: scale(4),
+    backgroundColor: "#22C55E",
+    borderWidth: 1.5,
+    borderColor: COLORS.background,
   },
   unreadBadge: {
     position: "absolute",
@@ -5980,6 +7284,17 @@ function __makeStyles() {
     backgroundColor: "#34D399",
     borderColor: "#6EE7B7",
   },
+  musicTrackEmptyChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(4),
+    height: verticalScale(22),
+    paddingHorizontal: scale(8),
+    borderRadius: scale(6),
+    backgroundColor: "rgba(52,211,153,0.12)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(52,211,153,0.35)",
+  },
   musicTrackLabel: {
     color: COLORS.textPrimary,
     fontSize: moderateScale(8),
@@ -6014,5 +7329,5 @@ function __makeStyles() {
   },
 });
 }
-let styles = __makeStyles();
+let styles = __makeStyles(true);
 

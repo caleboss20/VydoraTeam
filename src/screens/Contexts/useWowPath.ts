@@ -15,6 +15,7 @@ import {
   isWowPathDone,
   setWowPathActive,
 } from '../services/wowPathService';
+import { syncProjectCoverFromFirstClip } from '../services/projectCoverSync';
 
 export function useWowPath() {
   const navigation = useNavigation<any>();
@@ -48,6 +49,14 @@ export function useWowPath() {
 
         const vp = buildWowVideoProject(project.id);
         setCurrentVideoProject(vp);
+        if (footage.thumbnailUrl) {
+          void syncProjectCoverFromFirstClip({
+            projectId: project.id,
+            thumbnailUri: footage.thumbnailUrl,
+            mediaUri: footage.url,
+            kind: 'video',
+          });
+        }
         await setWowPathActive(true);
 
         navigation.reset({

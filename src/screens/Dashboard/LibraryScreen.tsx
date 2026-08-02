@@ -42,7 +42,7 @@ export default function LibraryScreen() {
     timelineClips.length > 0
       ? timelineClips.map((c) => ({
           id: c.id,
-          title: c.name || 'Clip',
+          title: (c as { name?: string }).name || `Clip ${c.order + 1}`,
           uri: c.uri,
           thumbnailUri: c.thumbnailUri,
           durationMs: c.durationMs,

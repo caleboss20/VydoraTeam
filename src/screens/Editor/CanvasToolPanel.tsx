@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import type { BgRemoveSettings, ClipLookOverlay, VideoClip } from '../types';
 import { DEFAULT_LOOK_OVERLAY } from '../types';
@@ -460,7 +461,7 @@ function __makeStyles() {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
-    maxHeight: verticalScale(440),
+    maxHeight: TOOL_SHEET_MAX,
   },
   header: {
     flexDirection: 'row',
@@ -476,7 +477,7 @@ function __makeStyles() {
     fontSize: moderateScale(16),
     fontWeight: '700',
   },
-  body: { maxHeight: verticalScale(380) },
+  body: { maxHeight: TOOL_SHEET_BODY },
   bodyContent: { paddingBottom: verticalScale(24) },
   hint: {
     color: COLORS.textSecondary,

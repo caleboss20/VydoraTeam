@@ -24,6 +24,8 @@ import { useClip } from '../Contexts/clipContext';
 import { uploadService } from '../services/uploadService';
 import { VideoClip } from '../types';
 import { useProject } from '../Contexts/projectContext';
+import * as VideoThumbnails from 'expo-video-thumbnails';
+import { syncProjectCoverFromFirstClip } from '../services/projectCoverSync';
 // ---------------------------------------------------------------------------
 // Vydora — Upload Video screen
 // Pick → POST /uploads/video → POST /projects/{id}/clips → show on Project Detail.
@@ -110,24 +112,47 @@ export default function UploadVideoScreen({ navigation }: any) {
   }, []);
 
   const persistClipToVideoProject = useCallback(
-    (file: UploadFile, playUri?: string) => {
+    async (file: UploadFile, playUri?: string) => {
+      let thumbnailUri: string | undefined;
+      try {
+        const { uri } = await VideoThumbnails.getThumbnailAsync(file.uri, {
+          time: 400,
+          quality: 0.55,
+        });
+        thumbnailUri = uri || undefined;
+      } catch {
+        thumbnailUri = undefined;
+      }
+
       const newClip: VideoClip = {
         id: file.id,
         uri: playUri || file.uri,
         durationMs: file.durationMs,
         order: 0,
         textOverlays: [],
+        thumbnailUri,
       };
       const now = new Date().toISOString();
+      const projectId = currentProject?.id ?? '';
       setCurrentVideoProject({
         id: `vp-${Date.now()}`,
-        projectId: currentProject?.id ?? '',
+        projectId,
         title: file.name,
         createdAt: now,
         updatedAt: now,
         clips: [newClip],
         totalDurationMs: file.durationMs,
+        coverThumbnailUri: thumbnailUri,
       });
+
+      if (projectId) {
+        void syncProjectCoverFromFirstClip({
+          projectId,
+          thumbnailUri,
+          mediaUri: file.uri,
+          kind: 'video',
+        });
+      }
     },
     [setCurrentVideoProject, currentProject]
   );
@@ -170,7 +195,7 @@ export default function UploadVideoScreen({ navigation }: any) {
 
       startProgressPulse(file.id);
       // Local preview for the editor while Cloudinary upload runs.
-      persistClipToVideoProject(file);
+      void persistClipToVideoProject(file);
 
       try {
         let videoUrl = file.uri;
@@ -223,7 +248,7 @@ export default function UploadVideoScreen({ navigation }: any) {
           durationLabel: formatDuration(durationMs),
         });
         // Prefer CDN URL in the editor so the clip survives after local cache clears.
-        persistClipToVideoProject({ ...file, durationMs }, videoUrl);
+        void persistClipToVideoProject({ ...file, durationMs }, videoUrl);
         await fetchClips(currentProject.id);
       } catch (e: any) {
         stopProgressPulse(file.id);

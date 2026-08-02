@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,10 +9,13 @@ import {
   StatusBar,
   ActivityIndicator,
   Image,
+  ImageBackground,
   Pressable,
   Modal,
   Alert,
   Dimensions,
+  Animated,
+  Easing,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,11 +27,16 @@ import { useAuth } from "../Contexts/Authcontext";
 import { useProject } from "../Contexts/projectContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNotification } from "../Contexts/notificatinContext";
-import { Project } from "../types";
+import { Project, ProjectStatus } from "../types";
 import { useExport } from "../Contexts/exportContext";
-import UpgradeToProBanner from "../components/upgradeToProBanner";
+import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "../Contexts/ThemeContext";
 import { useWowPath } from "../Contexts/useWowPath";
+import { resolveProjectCovers, subscribeProjectCovers } from "../services/projectCoverService";
+
+const IMG_NEW_VIDEO = require("./media/dash-new-video.jpg");
+const IMG_IMPORT_VIDEO = require("./media/dash-make-reel.jpg");
+const IMG_MAKE_REEL = require("./media/dash-make-reel.jpg");
 // ─── Palette ─────────────────────────────────────────────────────────────────
 type DashPalette = {
   bg: string;
@@ -54,40 +62,40 @@ type DashPalette = {
 };
 
 const DARK_C: DashPalette = {
-  bg: "#141414",
-  surface: "#1C1C1C",
-  card: "#212121",
-  border: "rgba(255,255,255,0.06)",
+  bg: "#0B0B0D",
+  surface: "#161618",
+  card: "#252528",
+  border: "rgba(255,255,255,0.08)",
   accent: "#F5C518",
   textPrimary: "#FFFFFF",
-  textSecondary: "#8A8A8A",
-  heroBg: "#D9E9E8",
-  heroText: "#0F1F1E",
-  heroSubtext: "#3F5654",
-  versionBadgeBg: "#F5934F",
-  versionBadgeText: "#1A0E00",
+  textSecondary: "#9A9AA0",
+  heroBg: "#252528",
+  heroText: "#FFFFFF",
+  heroSubtext: "#9A9AA0",
+  versionBadgeBg: "#F5C518",
+  versionBadgeText: "#0B0B0D",
   activeGreen: "#1A3A2A",
   activeGreenText: "#2ECC71",
-  draftText: "#8A8A8A",
-  draftBg: "#2A2A2A",
+  draftText: "#9A9AA0",
+  draftBg: "#2A2A2E",
   archivedBg: "#2A2520",
-  archivedText: "#8A8A8A",
-  searchBg: "#1C1C1C",
+  archivedText: "#9A9AA0",
+  searchBg: "#1C1C1F",
   danger: "#E05C5C",
 };
 
 const LIGHT_C: DashPalette = {
-  bg: "#F4F4F5",
+  bg: "#F2F3F5",
   surface: "#FFFFFF",
   card: "#FFFFFF",
   border: "rgba(0,0,0,0.08)",
   accent: "#E5B800",
   textPrimary: "#111111",
   textSecondary: "#6B6B6B",
-  heroBg: "#D9E9E8",
-  heroText: "#0F1F1E",
-  heroSubtext: "#3F5654",
-  versionBadgeBg: "#F5934F",
+  heroBg: "#FFFFFF",
+  heroText: "#111111",
+  heroSubtext: "#6B6B6B",
+  versionBadgeBg: "#E5B800",
   versionBadgeText: "#1A0E00",
   activeGreen: "#E8F8EF",
   activeGreenText: "#15803D",
@@ -95,7 +103,7 @@ const LIGHT_C: DashPalette = {
   draftBg: "#EEEEF0",
   archivedBg: "#F5F0EB",
   archivedText: "#6B6B6B",
-  searchBg: "#EEEEF0",
+  searchBg: "#FFFFFF",
   danger: "#DC2626",
 };
 
@@ -118,9 +126,9 @@ type ProjectMenuState = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const getGreeting = (): string => {
   const hour = new Date().getHours();
-  if (hour < 12) return "Good morning,";
-  if (hour < 17) return "Good afternoon,";
-  return "Good evening,";
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 };
 const timeAgo = (dateStr: string): string => {
   const hasZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(dateStr || "");
@@ -147,6 +155,23 @@ const formatDate = (dateStr: string): string => {
   });
 };
 // ─── Quick Actions (static, flat icon style) ─────────────────────────────────
+/** CapCut-style tool grid entries on the home dashboard. */
+type ToolTile = {
+  id: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  action: "wow" | "newproject" | "export" | "library" | "settings" | "upload" | "captions";
+};
+
+const TOOL_TILES: ToolTile[] = [
+  { id: "autocut", label: "Make a reel", icon: "flash-outline", action: "wow" },
+  { id: "captions", label: "Auto captions", icon: "text-outline", action: "captions" },
+  { id: "beats", label: "Beat sync", icon: "musical-notes-outline", action: "wow" },
+  { id: "clips", label: "My clips", icon: "film-outline", action: "library" },
+  { id: "upload", label: "Upload", icon: "cloud-upload-outline", action: "upload" },
+  { id: "export", label: "Export", icon: "share-outline", action: "export" },
+];
+
 /** Empty / first-run: only the three paths that finish a reel. */
 const QUICK_ACTIONS_BEGINNER: QuickAction[] = [
   {
@@ -156,10 +181,10 @@ const QUICK_ACTIONS_BEGINNER: QuickAction[] = [
     navigate: "__wow__",
   },
   {
-    id: "templates",
-    label: "Templates",
-    icon: "layers-outline",
-    navigate: "__templates__",
+    id: "captions",
+    label: "Auto captions",
+    icon: "text-outline",
+    navigate: "__captions__",
   },
   { id: "export", label: "Export", icon: "share-outline", navigate: "export" },
 ];
@@ -202,45 +227,79 @@ const AvatarStack: React.FC<AvatarStackProps> = ({ avatars, size }) => (
     ))}
   </>
 );
-type StatusBadgeProps = { status: "Active" | "Draft" | "Archived" };
+type StatusBadgeProps = { status: ProjectStatus };
 const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
   const config = {
     Active: { bg: C.activeGreen, text: C.activeGreenText },
     Draft: { bg: C.draftBg, text: C.draftText },
     Archived: { bg: C.archivedBg, text: C.archivedText },
+    FinalLocked: { bg: C.versionBadgeBg, text: C.versionBadgeText },
   }[status];
+  const label = status === "FinalLocked" ? "Final" : status;
   return (
     <View style={[styles.badge, { backgroundColor: config.bg }]}>
-      <Text style={[styles.badgeText, { color: config.text }]}>{status}</Text>
+      <Text style={[styles.badgeText, { color: config.text }]}>{label}</Text>
     </View>
   );
 };
 
-
-// In your Home/Dashboard screen file:
-
-
-
-
-
-
+/** Soft first-load slide for project rows (CapCut-quiet, not scroll-linked). */
+const ProjectRowEntrance: React.FC<{ index: number; children: React.ReactNode }> = ({
+  index,
+  children,
+}) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const y = useRef(new Animated.Value(14)).current;
+  useEffect(() => {
+    const delay = Math.min(index, 8) * 48;
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 340,
+        delay,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(y, {
+        toValue: 0,
+        duration: 380,
+        delay,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+  return (
+    <Animated.View style={{ opacity, transform: [{ translateY: y }] }}>
+      {children}
+    </Animated.View>
+  );
+};
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 function DashboardScreen() {
-  const { isDark } = useTheme();
+  const { isDark, toggleTheme } = useTheme();
   C = isDark ? DARK_C : LIGHT_C;
   styles = createDashboardStyles(C);
 
   const navigation = useNavigation<any>();
-  const { user } = useAuth();
-  const { projects, isLoading, setCurrentProject,renameProject,deleteProject } = useProject();
+  const { user, token } = useAuth();
+  const {
+    projects,
+    isLoading,
+    setCurrentProject,
+    renameProject,
+    deleteProject,
+    updateThumbnail,
+  } = useProject();
  const {exports:exportsList}=useExport();
   const { notifications } = useNotification();
   const { startWowPath, starting: wowStarting } = useWowPath();
   const [search, setSearch] = useState<string>("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [projectCovers, setProjectCovers] = useState<Record<string, string>>({});
 
   const isEmpty = projects.length === 0;
-  const quickActions = isEmpty ? QUICK_ACTIONS_BEGINNER : QUICK_ACTIONS_FULL;
 
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
@@ -265,10 +324,125 @@ const handleConfirmRename = async () => {
   setRenameTarget(null);
 };
 
+  // ── Entrance + micro-interactions ──
+  const greetOpacity = useRef(new Animated.Value(0)).current;
+  const nameOpacity = useRef(new Animated.Value(0)).current;
+  const nameY = useRef(new Animated.Value(10)).current;
+  const cardA = useRef(new Animated.Value(0)).current;
+  const cardB = useRef(new Animated.Value(0)).current;
+  const playPulse = useRef(new Animated.Value(1)).current;
+  const reelZoom = useRef(new Animated.Value(1)).current;
+  const reelPlayPulse = useRef(new Animated.Value(1)).current;
+  const toolAnims = useRef(TOOL_TILES.map(() => new Animated.Value(0))).current;
+  const pressNew = useRef(new Animated.Value(1)).current;
+  const pressImport = useRef(new Animated.Value(1)).current;
 
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(greetOpacity, {
+        toValue: 1,
+        duration: 320,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.parallel([
+        Animated.timing(nameOpacity, {
+          toValue: 1,
+          duration: 380,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(nameY, {
+          toValue: 0,
+          duration: 380,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+      ]),
+    ]).start();
 
+    Animated.stagger(70, [
+      Animated.spring(cardA, {
+        toValue: 1,
+        friction: 8,
+        tension: 60,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardB, {
+        toValue: 1,
+        friction: 8,
+        tension: 60,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
+    Animated.stagger(
+      45,
+      toolAnims.map((v) =>
+        Animated.spring(v, {
+          toValue: 1,
+          friction: 7,
+          tension: 70,
+          useNativeDriver: true,
+        })
+      )
+    ).start();
 
+    const pulse = Animated.sequence([
+      Animated.timing(playPulse, {
+        toValue: 1.08,
+        duration: 700,
+        easing: Easing.inOut(Easing.sin),
+        useNativeDriver: true,
+      }),
+      Animated.timing(playPulse, {
+        toValue: 1,
+        duration: 700,
+        easing: Easing.inOut(Easing.sin),
+        useNativeDriver: true,
+      }),
+    ]);
+    Animated.loop(pulse, { iterations: 3 }).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(reelZoom, {
+          toValue: 1.06,
+          duration: 9000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(reelZoom, {
+          toValue: 1,
+          duration: 9000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(reelPlayPulse, {
+          toValue: 1.1,
+          duration: 900,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(reelPlayPulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const pressIn = (v: Animated.Value) =>
+    Animated.spring(v, { toValue: 0.97, useNativeDriver: true, friction: 6 }).start();
+  const pressOut = (v: Animated.Value) =>
+    Animated.spring(v, { toValue: 1, useNativeDriver: true, friction: 6 }).start();
 
   const unreadCount = notifications.filter((n) => !n.read).length;
   const filteredProjects = useMemo(() => {
@@ -278,6 +452,44 @@ const handleConfirmRename = async () => {
     );
   }, [projects, search]);
 
+  const coverFor = useCallback(
+    (project: Project) =>
+      projectCovers[project.id] || project.thumbnailUrl || undefined,
+    [projectCovers]
+  );
+
+  useEffect(() => {
+    if (!token || !projects.length) return;
+    let cancelled = false;
+    const persisted = new Set<string>();
+    (async () => {
+      await resolveProjectCovers(projects, token, (id, url) => {
+        if (cancelled) return;
+        setProjectCovers((prev) =>
+          prev[id] === url ? prev : { ...prev, [id]: url }
+        );
+        // Persist http covers onto the project so next list load is instant.
+        if (!persisted.has(id) && url.startsWith("http")) {
+          const p = projects.find((x) => x.id === id);
+          if (p && !p.thumbnailUrl) {
+            persisted.add(id);
+            void updateThumbnail(id, url).catch(() => undefined);
+          }
+        }
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projects, token, updateThumbnail]);
+
+  useEffect(() => {
+    return subscribeProjectCovers((id, url) => {
+      setProjectCovers((prev) =>
+        prev[id] === url ? prev : { ...prev, [id]: url }
+      );
+    });
+  }, []);
 
   const handleProjectPress = (project: Project) => {
     setCurrentProject(project);
@@ -296,12 +508,12 @@ const handleConfirmRename = async () => {
 
 
   const handleEditProject = () => {
-    if (projectMenu.project) {
-      setCurrentProject(projectMenu.project);
-      // TODO: navigate to actual edit/project-settings screen once it exists
-      navigation.navigate("projectdetail");
-    }
+    const project = projectMenu.project;
     closeProjectMenu();
+    if (!project) return;
+    setRenameTarget(project);
+    setRenameInput(project.name);
+    setRenameVisible(true);
   };
 
   const handleShareProject = async () => {
@@ -343,11 +555,6 @@ localUri = downloaded.uri;
   }
 };
 
-
- 
-
-
-
   const handleDeleteProject = () => {
   const project = projectMenu.project;
   closeProjectMenu();
@@ -375,305 +582,411 @@ localUri = downloaded.uri;
     );
   }
   const isNewUser = projects.length === 0;
-  const projectsLeftLabel = isNewUser
-    ? "Create your first project"
-    : `${projects.length} project${projects.length === 1 ? "" : "s"}`;
+  const recentProjects = filteredProjects.slice(0, 6);
+
+  const runTool = (action: ToolTile["action"]) => {
+    switch (action) {
+      case "wow":
+        void startWowPath();
+        break;
+      case "captions":
+        void startWowPath("Captions");
+        break;
+      case "newproject":
+        navigation.navigate("newproject");
+        break;
+      case "export":
+        navigation.navigate("export");
+        break;
+      case "library":
+        navigation.navigate("MediaLibrary");
+        break;
+      case "upload":
+        navigation.navigate("uploadvideo");
+        break;
+      case "settings":
+        navigation.navigate("settings");
+        break;
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View>
-        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={C.bg} />
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={C.bg} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+      >
+        {/* Soft top wash — CapCut hero feel, Vydora black */}
+        <LinearGradient
+          colors={
+            isDark
+              ? ["#1A1520", "#0B0B0D", "#0B0B0D"]
+              : ["#E8ECF4", "#F2F3F5", "#F2F3F5"]
+          }
+          locations={[0, 0.45, 1]}
+          style={styles.heroWash}
         >
-          {/* ── Header ── */}
           <View style={styles.headerRow}>
             <Pressable
               onPress={() => navigation.navigate("Profile")}
-              style={styles.profileBox}
+              style={styles.headerProfileRow}
+              hitSlop={6}
             >
-             <Image
-  style={styles.profileimage}
-  source={
-    user?.avatarUrl
-      ? { uri: user.avatarUrl }
-      : require("../../../assets/app.png")
-  }
-/>
-              <View style={styles.topgreetingbox}>
-                <Text style={styles.headerGreeting}>{getGreeting()}</Text>
-                <View style={styles.headerNameRow}>
-                  <Text style={styles.headerName}>
-                    {user?.name?.split(" ")[0] ?? "there"}{" "}
+              {user?.avatarUrl ? (
+                <Image
+                  style={styles.profileAvatar}
+                  source={{ uri: user.avatarUrl }}
+                />
+              ) : (
+                <View style={[styles.profileAvatar, styles.profileAvatarFallback]}>
+                  <Text style={styles.profileAvatarInitial}>
+                    {(user?.name?.trim()?.[0] || "V").toUpperCase()}
                   </Text>
-                  <Text style={styles.waveEmoji}>👋</Text>
                 </View>
+              )}
+              <View style={styles.headerGreetingCol}>
+                <Animated.Text
+                  style={[styles.headerGreetingLine, { opacity: greetOpacity }]}
+                  numberOfLines={1}
+                >
+                  {getGreeting()}
+                </Animated.Text>
+                <Animated.Text
+                  style={[
+                    styles.headerNameLine,
+                    {
+                      opacity: nameOpacity,
+                      transform: [{ translateY: nameY }],
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {user?.name?.split(" ")[0] ?? "there"}
+                  <Text style={styles.waveEmoji}> 👋</Text>
+                </Animated.Text>
               </View>
             </Pressable>
-            <TouchableOpacity
-              style={styles.bellWrapper}
-              onPress={() => navigation.navigate("activities")}
-            >
-              <Ionicons
-                name="notifications-outline"
-                size={ms(22)}
-                color={C.textPrimary}
-              />
-              {unreadCount > 0 && (
-                <View style={styles.bellBadge}>
-                  <Text style={styles.bellBadgeText}>
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-          {/* ── Flat icon action row (EDIT+ style, no boxes) ── */}
-          <View style={styles.quickActionsRow}>
-            {quickActions.map((action) => (
+            
+            <View style={styles.headerActions}>
               <TouchableOpacity
-                key={action.id}
-                onPress={() => {
-                  if (action.navigate === "__wow__") {
-                    void startWowPath();
-                    return;
-                  }
-                  if (action.navigate === "__templates__") {
-                    void startWowPath("Templates");
-                    return;
-                  }
-                  navigation.navigate(action.navigate);
-                }}
-                style={styles.quickActionBtn}
-                activeOpacity={0.7}
-                disabled={action.navigate === "__wow__" && wowStarting}
+                style={styles.headerIconBtn}
+                onPress={() => setSearchOpen((v) => !v)}
+                hitSlop={8}
               >
-                <View style={styles.quickActionIconWrap}>
-                  <Ionicons
-                    name={action.icon}
-                    size={ms(27)}
-                    color={C.textPrimary}
-                  />
-                </View>
-                <Text style={styles.quickActionLabel}>{action.label}</Text>
+                < Ionicons name="search-outline" size={ms(20)} color={C.textPrimary} />
               </TouchableOpacity>
-            ))}
-          </View>
-          {/* ── Search ── */}
-          <View style={styles.searchBar}>
-            <Ionicons
-              name="search-outline"
-              size={ms(16)}
-              color={C.textSecondary}
-            />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search projects, media, people..."
-              placeholderTextColor={C.textSecondary}
-              value={search}
-              onChangeText={setSearch}
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch("")}>
-                <Ionicons
-                  name="close-circle"
-                  size={ms(16)}
-                  color={C.textSecondary}
-                />
-              </TouchableOpacity>
-            )}
-          </View>
-
-             {/**upgrade to pro banner */}
-         {/* <UpgradeToProBanner onPress={() => navigation.navigate('proscreen')} /> */}
-
-
-
-          {/* ── Create-first hero: Make a reel (primary) + New project ── */}
-          <TouchableOpacity
-            style={styles.makeReelCard}
-            activeOpacity={0.9}
-            disabled={wowStarting}
-            onPress={() => void startWowPath()}
-          >
-            <View style={styles.heroTextBox}>
-              <Text style={styles.makeReelTitle}>MAKE A REEL</Text>
-              <Text style={styles.makeReelSubtitle}>
-                {wowStarting
-                  ? "Opening…"
-                  : "Finished Looks · captions · export"}
-              </Text>
-            </View>
-            <View style={styles.makeReelIcon}>
-              {wowStarting ? (
-                <ActivityIndicator color="#0B0D13" />
-              ) : (
-                <Ionicons name="flash" size={ms(22)} color="#0B0D13" />
-              )}
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.heroCard}
-            activeOpacity={0.9}
-            onPress={() => navigation.navigate("newproject")}
-          >
-            <View style={styles.heroTextBox}>
-              <Text style={styles.heroTitle}>NEW PROJECT</Text>
-              <Text style={styles.heroSubtitle}>{projectsLeftLabel}</Text>
-              <View style={styles.versionBadge}>
-                <Text style={styles.versionBadgeText}>Vydora</Text>
-              </View>
-            </View>
-            <View style={styles.heroCtaOuter}>
-              <View style={styles.heroCtaDashed}>
-                <Ionicons name="add" size={ms(22)} color={C.heroText} />
-              </View>
-            </View>
-          </TouchableOpacity>
-          {/* ── PROJECTS header with Settings pill ── */}
-          <View style={[styles.sectionHeader, { marginTop: vs(22) }]}>
-            <Text style={styles.sectionLabel}>PROJECTS</Text>
-            <TouchableOpacity
-              style={styles.settingsPill}
-              onPress={() => navigation.navigate("settings")}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.settingsPillText}>Settings</Text>
-            </TouchableOpacity>
-          </View>
-          {isNewUser || filteredProjects.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons
-                name="film-outline"
-                size={ms(36)}
-                color={C.textSecondary}
-              />
-              <Text style={styles.emptyTitle}>No projects yet</Text>
-              <Text style={styles.emptySubtitle}>
-                {search.trim()
-                  ? "No projects match your search"
-                  : "Your projects will appear here"}
-              </Text>
-              {!search.trim() ? (
-                <TouchableOpacity
-                  style={styles.wowCta}
-                  activeOpacity={0.85}
-                  disabled={wowStarting}
-                  onPress={() => void startWowPath()}
-                >
-                  {wowStarting ? (
-                    <ActivityIndicator color={C.heroText} />
-                  ) : (
-                    <Text style={styles.wowCtaText}>
-                      {isEmpty
-                        ? "Try a 60-second edit"
-                        : "Make another auto edit"}
+              <TouchableOpacity
+                style={styles.headerIconBtn}
+                onPress={() => navigation.navigate("activities")}
+                hitSlop={8}
+              >
+                <Ionicons name="notifications-outline" size={ms(20)} color={C.textPrimary} />
+                {unreadCount > 0 && (
+                  <View style={styles.bellBadge}>
+                    <Text style={styles.bellBadgeText}>
+                      {unreadCount > 9 ? "9+" : unreadCount}
                     </Text>
-                  )}
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {searchOpen ? (
+            <View style={styles.searchBar}>
+              <Ionicons name="search-outline" size={ms(16)} color={C.textSecondary} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search projects…"
+                placeholderTextColor={C.textSecondary}
+                value={search}
+                onChangeText={setSearch}
+                autoFocus
+              />
+              {search.length > 0 && (
+                <TouchableOpacity onPress={() => setSearch("")}>
+                  <Ionicons name="close-circle" size={ms(16)} color={C.textSecondary} />
                 </TouchableOpacity>
-              ) : null}
+              )}
             </View>
-          ) : (
-            filteredProjects.map((project) => (
-              <TouchableOpacity
-                key={project.id}
-                style={styles.projectRow}
-                activeOpacity={0.85}
-                onPress={() => handleProjectPress(project)}
+          ) : null}
+
+          <View style={styles.getStartedRow}>
+            <Text style={styles.getStartedTitle}>Get started</Text>
+            <View style={styles.getStartedChevron}>
+              <Ionicons name="chevron-forward" size={ms(14)} color={C.textSecondary} />
+            </View>
+          </View>
+
+          <View style={styles.startCardsRow}>
+            <Animated.View
+              style={{
+                flex: 1.35,
+                opacity: cardA,
+                transform: [
+                  {
+                    translateY: cardA.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                  { scale: pressNew },
+                ],
+              }}
+            >
+              <Pressable
+                style={[styles.startCard, styles.startCardPrimary, { flex: 1 }]}
+                onPress={() => navigation.navigate("newproject")}
+                onPressIn={() => pressIn(pressNew)}
+                onPressOut={() => pressOut(pressNew)}
               >
-                <View style={styles.projectThumb}>
-                  {project.thumbnailUrl ? (
-                    <Image
-                      source={{ uri: project.thumbnailUrl }}
-                      style={styles.thumbnailImage}
-                    />
-                  ) : (
-                    <Ionicons
-                      name="film-outline"
-                      size={ms(20)}
-                      color={C.textSecondary}
-                    />
-                  )}
+                <ImageBackground
+                  source={IMG_NEW_VIDEO}
+                  style={styles.startCardImage}
+                  imageStyle={styles.startCardImageInner}
+                  resizeMode="cover"
+                >
+                  <LinearGradient
+                    colors={[
+                      "rgba(0,0,0,0)",
+                      "rgba(11,11,13,0.35)",
+                      isDark ? "#0B0B0D" : "#F2F3F5",
+                    ]}
+                    locations={[0.2, 0.55, 1]}
+                    style={styles.startCardFade}
+                  />
+                  <Animated.View
+                    style={[
+                      styles.startCardPlayBtn,
+                      { transform: [{ scale: playPulse }] },
+                    ]}
+                    pointerEvents="none"
+                  >
+                    <Ionicons name="play" size={ms(22)} color="#0B0B0D" />
+                  </Animated.View>
+                  <Text style={styles.startCardLabel}>New video</Text>
+                </ImageBackground>
+              </Pressable>
+            </Animated.View>
+            <Animated.View
+              style={{
+                flex: 1,
+                opacity: cardB,
+                transform: [
+                  {
+                    translateY: cardB.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                  { scale: pressImport },
+                ],
+              }}
+            >
+              <Pressable
+                style={[styles.startCard, { flex: 1 }]}
+                onPress={() => navigation.navigate("uploadvideo")}
+                onPressIn={() => pressIn(pressImport)}
+                onPressOut={() => pressOut(pressImport)}
+              >
+                <ImageBackground
+                  source={IMG_IMPORT_VIDEO}
+                  style={styles.startCardImage}
+                  imageStyle={styles.startCardImageInner}
+                  resizeMode="cover"
+                >
+                  <LinearGradient
+                    colors={[
+                      "rgba(0,0,0,0)",
+                      "rgba(11,11,13,0.35)",
+                      isDark ? "#0B0B0D" : "#F2F3F5",
+                    ]}
+                    locations={[0.2, 0.55, 1]}
+                    style={styles.startCardFade}
+                  />
+                  <Text style={styles.startCardLabel}>Import video</Text>
+                </ImageBackground>
+              </Pressable>
+            </Animated.View>
+          </View>
+
+        </LinearGradient>
+
+        <Text style={styles.exploreTitle}>Explore features</Text>
+        <View style={styles.toolGrid}>
+          {TOOL_TILES.map((tile, index) => (
+            <Animated.View
+              key={tile.id}
+              style={{
+                width: "33.33%",
+                opacity: toolAnims[index],
+                transform: [
+                  {
+                    translateY: toolAnims[index].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [12, 0],
+                    }),
+                  },
+                  {
+                    scale: toolAnims[index].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.92, 1],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <TouchableOpacity
+                style={[styles.toolTile, { width: "100%" }]}
+                activeOpacity={0.7}
+                disabled={
+                  (tile.action === "wow" || tile.action === "captions") &&
+                  wowStarting
+                }
+                onPress={() => runTool(tile.action)}
+              >
+                <View style={styles.toolIconWrap}>
+                  <Ionicons name={tile.icon} size={ms(24)} color={C.textPrimary} />
                 </View>
-                <View style={styles.projectInfo}>
-                  <Text style={styles.projectTitle} numberOfLines={1}>
-                    {project.name}
-                  </Text>
-                  <View style={styles.accessBadgeRow}>
-                    {(() => {
-                      const owned = user?.id && project.ownerId === user.id;
-                      const role = project.myRole;
-                      const label = owned
-                        ? "Owned by you"
-                        : role === "Viewer"
-                          ? "Shared · Viewer"
-                          : role === "Editor"
-                            ? "Shared · Editor"
-                            : role === "Owner"
-                              ? "Shared · Owner"
-                              : "Shared";
-                      const shared = !owned;
-                      return (
-                        <View
-                          style={[
-                            styles.accessBadge,
-                            shared && styles.accessBadgeShared,
-                          ]}
-                        >
-                          <Ionicons
-                            name={owned ? "person" : "people"}
-                            size={ms(10)}
-                            color={shared ? C.accent : C.textSecondary}
-                          />
-                          <Text
-                            style={[
-                              styles.accessBadgeText,
-                              shared && styles.accessBadgeTextShared,
-                            ]}
-                          >
-                            {label}
-                          </Text>
-                        </View>
-                      );
-                    })()}
-                  </View>
-                  <View style={styles.projectMetaRow}>
-                    <StatusBadge status={project.status} />
-                    <Text style={styles.projectMeta}>
-                      {formatDate(project.updatedAt)} ·{" "}
-                      {timeAgo(project.updatedAt)}
-                    </Text>
-                  </View>
-                  <View style={styles.avatarRow}>
-                    <AvatarStack avatars={project.members} size={ms(18)} />
-                    {project.members.length > 0 && (
-                      <Text style={styles.memberCountText}>
-                        {project.members.length}{" "}
-                        {project.members.length === 1 ? "member" : "members"}
-                      </Text>
+                <Text style={styles.toolTileLabel} numberOfLines={2}>
+                  {tile.label}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          ))}
+        </View>
+
+        {/* Make a reel — Ken Burns + soft play pulse */}
+        <TouchableOpacity
+          style={styles.makeReelCard}
+          activeOpacity={0.92}
+          disabled={wowStarting}
+          onPress={() => void startWowPath()}
+        >
+          <View style={styles.makeReelClip}>
+            <Animated.Image
+              source={IMG_MAKE_REEL}
+              style={[
+                styles.makeReelKenBurns,
+                { transform: [{ scale: reelZoom }] },
+              ]}
+              resizeMode="cover"
+            />
+            <LinearGradient
+              colors={[
+                "rgba(0,0,0,0)",
+                "rgba(245,197,24,0.45)",
+                "#F5C518",
+              ]}
+              locations={[0.1, 0.55, 1]}
+              style={styles.makeReelFade}
+            />
+            <View style={styles.makeReelLabelRow}>
+              <Text style={styles.makeReelTitle}>
+                {wowStarting ? "Opening…" : "Make a reel"}
+              </Text>
+              <Animated.View
+                style={[
+                  styles.makeReelIcon,
+                  { transform: [{ scale: reelPlayPulse }] },
+                ]}
+              >
+                {wowStarting ? (
+                  <ActivityIndicator color="#0B0D13" />
+                ) : (
+                  <Ionicons name="play" size={ms(18)} color="white" />
+                )}
+              </Animated.View>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Projects list — skip empty block when new (CTA above covers it) */}
+        {!isNewUser ? (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>Projects</Text>
+              <TouchableOpacity
+                style={styles.settingsPill}
+                onPress={() => navigation.navigate("settings")}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.settingsPillText}>Settings</Text>
+              </TouchableOpacity>
+            </View>
+            {filteredProjects.length === 0 ? (
+              <Text style={styles.emptySubtitleCentered}>No projects match your search</Text>
+            ) : (
+              filteredProjects.map((project, index) => {
+                const cover = coverFor(project);
+                return (
+                <ProjectRowEntrance key={project.id} index={index}>
+                <TouchableOpacity
+                  style={styles.projectRow}
+                  activeOpacity={0.85}
+                  onPress={() => handleProjectPress(project)}
+                >
+                  <View style={styles.projectThumb}>
+                    {cover ? (
+                      <Image
+                        source={{ uri: cover }}
+                        style={styles.thumbnailImage}
+                      />
+                    ) : (
+                      <View style={styles.thumbnailFallback}>
+                        <Ionicons
+                          name="videocam-outline"
+                          size={ms(18)}
+                          color={C.textSecondary}
+                        />
+                      </View>
                     )}
                   </View>
-                </View>
-                <TouchableOpacity
-                  style={styles.overflowBtn}
-                  onPress={(event) => {
-                    const { pageY } = event.nativeEvent;
-                    openProjectMenu(project, pageY);
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={ms(18)}
-                    color={C.textSecondary}
-                  />
+                  <View style={styles.projectInfo}>
+                    <Text style={styles.projectTitle} numberOfLines={1}>
+                      {project.name}
+                    </Text>
+                    <View style={styles.projectMetaRow}>
+                      <StatusBadge status={project.status} />
+                      <Text style={styles.projectMeta}>
+                        {formatDate(project.updatedAt)} · {timeAgo(project.updatedAt)}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.overflowBtn}
+                    onPress={(event) => {
+                      const { pageY } = event.nativeEvent;
+                      openProjectMenu(project, pageY);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={ms(18)}
+                      color={C.textSecondary}
+                    />
+                  </TouchableOpacity>
                 </TouchableOpacity>
-              </TouchableOpacity>
-            ))
-          )}
-          <View style={{ height: vs(24) }} />
-        </ScrollView>
-      </View>
+                </ProjectRowEntrance>
+                );
+              })
+            )}
+          </>
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="videocam-outline" size={ms(36)} color={C.textSecondary} />
+            <Text style={styles.emptyTitle}>No projects yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Tap New video or Import video above to start editing.
+            </Text>
+          </View>
+        )}
+
+        <View style={{ height: vs(28) }} />
+      </ScrollView>
 
       {/* ── Project overflow menu (Edit / Share / Delete) ── */}
       <Modal
@@ -777,17 +1090,148 @@ function createDashboardStyles(C: DashPalette) {
   container: { flex: 1, backgroundColor: C.bg },
   centered: { flex: 1, backgroundColor: C.bg, justifyContent: "center" },
   scrollContent: {
-    paddingHorizontal: s(12),
-    paddingTop: vs(14),
-    paddingBottom: vs(36),
+    paddingBottom: vs(28),
+  },
+  heroWash: {
+    paddingHorizontal: s(16),
+    paddingTop: vs(6),
+    paddingBottom: vs(4),
   },
   // Header
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: vs(40),
-    paddingRight: s(4),
+    marginBottom: vs(16),
+    gap: s(8),
+  },
+  headerProfileRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(10),
+    minWidth: 0,
+  },
+  headerGreetingCol: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  headerGreetingLine: {
+    color: C.textSecondary,
+    fontSize: ms(13),
+    fontWeight: "600",
+    lineHeight: ms(18),
+  },
+  headerNameLine: {
+    color: C.textPrimary,
+    fontSize: ms(20),
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    lineHeight: ms(26),
+    marginTop: vs(2),
+  },
+  waveEmoji: { fontSize: ms(16) },
+  brandPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(8),
+    backgroundColor: C.card,
+    borderRadius: ms(22),
+    paddingVertical: vs(8),
+    paddingHorizontal: s(14),
+  },
+  brandDot: {
+    width: ms(10),
+    height: ms(10),
+    borderRadius: ms(5),
+    backgroundColor: C.accent,
+  },
+  brandText: {
+    color: C.textPrimary,
+    fontSize: ms(14),
+    fontWeight: "700",
+  },
+  profileAvatarBtn: {
+    width: ms(40),
+    height: ms(40),
+    borderRadius: ms(20),
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: C.accent,
+  },
+  profileAvatar: {
+    width: ms(40),
+    height: ms(40),
+    borderRadius: ms(20),
+    borderWidth: 1.5,
+    borderColor: C.accent,
+  },
+  profileAvatarFallback: {
+    backgroundColor: C.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileAvatarInitial: {
+    color: C.accent,
+    fontSize: ms(16),
+    fontWeight: "800",
+  },
+  exploreTitle: {
+    color: C.textPrimary,
+    fontSize: ms(18),
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    paddingHorizontal: s(16),
+    marginTop: vs(6),
+    marginBottom: vs(4),
+  },
+  greetingText: {
+    color: C.textPrimary,
+    fontSize: ms(18),
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    marginBottom: vs(2),
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(8),
+  },
+  themeToggle: {
+    width: ms(48),
+    height: ms(28),
+    borderRadius: ms(14),
+    backgroundColor: "#FFFFFF",
+    padding: ms(3),
+    justifyContent: "center",
+  },
+  themeToggleLight: {
+    backgroundColor: "#E8E8EC",
+  },
+  themeThumb: {
+    width: ms(22),
+    height: ms(22),
+    borderRadius: ms(11),
+    backgroundColor: "#0B0B0D",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  themeThumbOn: {
+    alignSelf: "flex-end",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+  },
+  headerIconBtn: {
+    width: ms(36),
+    height: ms(36),
+    borderRadius: ms(18),
+    alignItems: "center",
+    justifyContent: "center",
   },
   profileBox: {
     flexDirection: "row",
@@ -805,12 +1249,10 @@ function createDashboardStyles(C: DashPalette) {
   headerGreeting: { color: C.textSecondary, fontSize: ms(13) },
   headerNameRow: { flexDirection: "row" },
   headerName: { color: C.textPrimary, fontSize: ms(20), fontWeight: "700" },
-  waveEmoji: { fontSize: ms(18) },
   bellWrapper: {
     width: ms(40),
     height: ms(40),
     borderRadius: ms(20),
-    // borderWidth: 1,
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
@@ -819,7 +1261,7 @@ function createDashboardStyles(C: DashPalette) {
   bellBadge: {
     position: "absolute",
     top: -ms(2),
-    right: ms(5),
+    right: ms(2),
     backgroundColor: C.accent,
     borderRadius: ms(8),
     minWidth: ms(15),
@@ -830,9 +1272,156 @@ function createDashboardStyles(C: DashPalette) {
     borderColor: C.bg,
   },
   bellBadgeText: { 
-    color: C.bg, 
+    color: "#0B0B0D", 
     fontSize: ms(8),
      fontWeight: "700" },
+  getStartedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(8),
+    marginBottom: vs(14),
+    marginTop: vs(2),
+  },
+  getStartedTitle: {
+    color: C.textPrimary,
+    fontSize: ms(26),
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  getStartedChevron: {
+    width: ms(22),
+    height: ms(22),
+    borderRadius: ms(11),
+    backgroundColor: "rgba(128,128,128,0.22)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  startCardsRow: {
+    flexDirection: "row",
+    gap: s(10),
+    marginBottom: vs(12),
+  },
+  startCard: {
+    flex: 1,
+    borderRadius: ms(20),
+    overflow: "hidden",
+    height: vs(180),
+    backgroundColor: C.card,
+  },
+  startCardPrimary: {
+    flex: 1.35,
+  },
+  startCardImage: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    justifyContent: "flex-end",
+  },
+  startCardImageInner: {
+    borderRadius: ms(20),
+  },
+  startCardFade: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  startCardPlayBtn: {
+    position: "absolute",
+    top: "36%",
+    left: "50%",
+    marginLeft: -ms(24),
+    width: ms(48),
+    height: ms(48),
+    borderRadius: ms(24),
+    backgroundColor: "rgba(255,255,255,0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingLeft: ms(3),
+    zIndex: 3,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  startCardLabel: {
+    color: "#FFFFFF",
+    fontSize: ms(15),
+    fontWeight: "700",
+    paddingHorizontal: s(14),
+    paddingBottom: vs(14),
+    zIndex: 2,
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  startCardIcon: {
+    width: ms(44),
+    height: ms(44),
+    borderRadius: ms(14),
+    backgroundColor: C.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recentRow: {
+    gap: s(8),
+    paddingBottom: vs(6),
+  },
+  recentThumb: {
+    width: s(78),
+    height: s(78),
+    borderRadius: ms(16),
+    overflow: "hidden",
+    backgroundColor: C.card,
+  },
+  recentThumbImg: { width: "100%", height: "100%" },
+  recentThumbEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.card,
+  },
+  recentThumbInitial: {
+    color: C.textPrimary,
+    fontSize: ms(22),
+    fontWeight: "700",
+  },
+  recentThumbPlaceholder: {
+    backgroundColor: C.surface,
+  },
+  toolGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: s(2),
+    paddingTop: vs(10),
+    marginBottom: vs(20),
+  },
+  toolTile: {
+    width: "33.33%",
+    alignItems: "center",
+    paddingVertical: vs(14),
+    gap: vs(8),
+  },
+  toolIconWrap: {
+    width: ms(48),
+    height: ms(48),
+    borderRadius: ms(16),
+    backgroundColor: C.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toolTileLabel: {
+    color: C.textPrimary,
+    fontSize: ms(11.5),
+    fontWeight: "500",
+    textAlign: "center",
+    paddingHorizontal: s(2),
+  },
+  emptySubtitleCentered: {
+    color: C.textSecondary,
+    fontSize: ms(12),
+    textAlign: "center",
+    paddingVertical: vs(16),
+    paddingHorizontal: s(16),
+  },
   // Flat icon action row — no card backgrounds, icon + label stacked
   quickActionsRow: {
     flexDirection: "row",
@@ -868,32 +1457,66 @@ function createDashboardStyles(C: DashPalette) {
   searchInput: { flex: 1, color: C.textPrimary, fontSize: ms(13) },
   // Create-first yellow hero
   makeReelCard: {
+    marginHorizontal: s(16),
+    marginBottom: vs(18),
+    marginTop: vs(6),
+    borderRadius: ms(22),
+    overflow: "hidden",
+    height: vs(180),
+    backgroundColor: C.accent,
+  },
+  makeReelClip: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    overflow: "hidden",
+    justifyContent: "flex-end",
+  },
+  makeReelKenBurns: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  makeReelImage: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    justifyContent: "flex-end",
+  },
+  makeReelImageInner: {
+    borderRadius: ms(22),
+  },
+  makeReelFade: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  makeReelLabelRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: C.accent,
-    borderRadius: ms(18),
-    padding: s(18),
-    marginBottom: vs(10),
+    justifyContent: "space-between",
+    paddingHorizontal: s(16),
+    paddingBottom: vs(16),
+    zIndex: 2,
   },
   makeReelTitle: {
     color: "#0B0D13",
-    fontSize: ms(16),
+    fontSize: ms(20),
     fontWeight: "800",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   makeReelSubtitle: {
-    color: "rgba(11,13,19,0.72)",
+    color: "rgba(11,13,19,0.7)",
     fontSize: ms(12),
-    marginBottom: vs(2),
+    marginTop: vs(2),
   },
   makeReelIcon: {
-    width: ms(44),
-    height: ms(44),
-    borderRadius: ms(22),
-    backgroundColor: "rgba(11,13,19,0.12)",
+    width: ms(36),
+    height: ms(36),
+    borderRadius: ms(18),
+    backgroundColor: "rgba(11,13,19,0.14)",
     alignItems: "center",
     justifyContent: "center",
   },
+  heroTextBox: { flex: 1, gap: vs(2) },
   // Hero "NEW PROJECT" card — light teal like reference
   heroCard: {
     flexDirection: "row",
@@ -902,7 +1525,6 @@ function createDashboardStyles(C: DashPalette) {
     borderRadius: ms(18),
     padding: s(18),
   },
-  heroTextBox: { flex: 1, gap: vs(4) },
   heroTitle: {
     color: C.heroText,
     fontSize: ms(16),
@@ -939,20 +1561,19 @@ function createDashboardStyles(C: DashPalette) {
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: vs(10),
+    paddingHorizontal: s(16),
+    marginTop:s(10),
   },
   sectionLabel: {
-    color: C.textSecondary,
-    fontSize: ms(11),
-    fontWeight: "600",
-    letterSpacing: 1.1,
+    color: C.textPrimary,
+    fontSize: ms(15),
+    fontWeight: "700",
   },
   settingsPill: {
     backgroundColor: C.card,
     borderRadius: ms(20),
     paddingHorizontal: s(12),
     paddingVertical: vs(5),
-    borderWidth: 1,
-    borderColor: C.border,
   },
   settingsPillText: {
     color: C.textPrimary,
@@ -984,24 +1605,32 @@ function createDashboardStyles(C: DashPalette) {
   },
   // Project row — thumbnail-led, matches reference list style
   projectRow: {
-    backgroundColor: C.surface,
+    backgroundColor: C.card,
     borderRadius: ms(14),
     flexDirection: "row",
     alignItems: "center",
     padding: s(10),
     gap: s(12),
     marginBottom: vs(10),
+    marginHorizontal: s(16),
   },
   projectThumb: {
     width: s(56),
     height: s(56),
-    backgroundColor: C.card,
+    backgroundColor: C.surface,
     borderRadius: ms(10),
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
   thumbnailImage: { width: "100%", height: "100%" },
+  thumbnailFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.surface,
+  },
   projectInfo: { flex: 1, gap: vs(3) },
   projectTitle: { color: C.textPrimary, fontSize: ms(14), fontWeight: "700" },
   accessBadgeRow: {

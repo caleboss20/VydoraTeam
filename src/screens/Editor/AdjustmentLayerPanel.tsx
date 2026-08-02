@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import { useAppPalette } from '../Contexts/ThemeContext';
 import { AdjustmentLayer, DEFAULT_COLOR_GRADE } from '../types';
@@ -107,7 +108,7 @@ export default function AdjustmentLayerPanel({
       >
         <Text style={styles.primaryText}>Add at playhead</Text>
       </TouchableOpacity>
-      <ScrollView style={{ maxHeight: verticalScale(120) }}>
+      <ScrollView style={{ maxHeight: TOOL_SHEET_LIST_SM }}>
         {layers.length === 0 ? (
           <Text style={styles.empty}>No adjustment layers.</Text>
         ) : (

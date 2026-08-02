@@ -11,7 +11,7 @@ import type { TextOverlay, VideoClip, VideoProject } from '../types';
 export const WOW_PROJECT_NAME = 'First edit';
 export const WOW_PROJECT_DESC = 'Your 5-minute demo — captions, export, invite.';
 
-/** Short Mixkit B-roll — HTTPS so AI tools & export work without device upload. */
+/** Short public HTTPS sample so first-run users see a real clip without uploading. */
 export function getWowDemoFootage() {
   return (
     FOOTAGE_LIBRARY.find((f) => f.id === 'stock-ocean-waves') ??
@@ -98,6 +98,7 @@ export function buildWowVideoProject(projectId: string): VideoProject {
     durationMs,
     order: 0,
     kind: 'video',
+    thumbnailUri: footage.thumbnailUrl,
     filterId: 'cinematic',
     effectId: 'zoomPunch',
     effectIntensity: 0.55,
@@ -117,6 +118,7 @@ export function buildWowVideoProject(projectId: string): VideoProject {
     createdAt: now,
     updatedAt: now,
     clips: [clip],
+    coverThumbnailUri: footage.thumbnailUrl,
     totalDurationMs: durationMs,
   };
 }

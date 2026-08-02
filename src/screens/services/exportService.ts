@@ -60,6 +60,64 @@ function isRemoteUrl(uri: string): boolean {
   return /^https?:\/\//i.test(uri.trim());
 }
 
+/** Cap concurrency for uploads so we don't slam the network / Cloudinary. */
+async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const runners = Array.from(
+    { length: Math.min(Math.max(1, limit), Math.max(1, items.length)) },
+    async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await worker(items[i], i);
+      }
+    }
+  );
+  await Promise.all(runners);
+  return results;
+}
+
+function friendlyExportError(err: unknown, fallback: string): Error {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : fallback;
+  const msg = (raw || fallback).trim();
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes('network') ||
+    lower.includes('failed to fetch') ||
+    lower.includes('timeout') ||
+    lower.includes('econnrefused') ||
+    lower.includes('network request failed')
+  ) {
+    return new Error(
+      'Couldn’t reach the export server. Check Wi‑Fi / that the backend is running, then try again.'
+    );
+  }
+  if (lower.includes('unauthorized') || lower.includes('401')) {
+    return new Error('Session expired. Sign in again, then export.');
+  }
+  if (lower.includes('ffmpeg')) {
+    return new Error(
+      'Render failed on the server (FFmpeg). Try 720p / MP4, or re-upload the clip and retry.'
+    );
+  }
+  if (lower.includes('no clips') || lower.includes('empty')) {
+    return new Error(
+      'This project has no exportable clips. Add a video, then try again.'
+    );
+  }
+  if (msg.length > 220) return new Error(`${msg.slice(0, 220)}…`);
+  return new Error(msg || fallback);
+}
+
 /**
  * Upload every local clip URI (and register clips in the backend `files`
  * table when it's empty, since export refuses empty projects). Returns a
@@ -94,12 +152,12 @@ async function resolveClipUrls(
     return resolved;
   }
 
-  for (let i = 0; i < timeline.length; i++) {
-    const clip = timeline[i];
-    if (clip.kind === 'title') {
-      onProgress(2 + Math.round(((i + 1) / timeline.length) * 6));
-      continue;
-    }
+  let finished = 0;
+  const work = timeline
+    .map((clip, i) => ({ clip, i }))
+    .filter(({ clip }) => clip.kind !== 'title');
+
+  await mapPool(work, 3, async ({ clip, i }) => {
     if (isRemoteUrl(clip.uri)) {
       resolved[clip.id] = clip.uri.trim();
     } else if (clip.kind === 'flyer') {
@@ -121,7 +179,14 @@ async function resolveClipUrls(
         durations[clip.id] = Math.round(uploaded.durationSeconds);
       }
     }
-    onProgress(2 + Math.round(((i + 1) / timeline.length) * 6));
+    finished += 1;
+    onProgress(2 + Math.round((finished / Math.max(1, work.length)) * 6));
+  });
+
+  // Titles contribute to progress even though they need no upload.
+  const titleCount = timeline.filter((c) => c.kind === 'title').length;
+  if (titleCount > 0 && work.length === 0) {
+    onProgress(8);
   }
 
   // Register clips in the collab `files` table if it's empty (backend
@@ -719,71 +784,121 @@ async function createExport(
     throw new Error('No project selected for export.');
   }
 
+  const clips = project.clips ?? [];
+  if (clips.length === 0) {
+    throw new Error(
+      'This project has no clips to export. Add a video first, then try again.'
+    );
+  }
+
   projectNameCache[projectId] = project.title;
 
-  onProgress(2);
-  // 1. Make sure every source the server must download is a remote URL.
-  const clipUrls = await resolveClipUrls(projectId, project, token, onProgress);
-  const overlayUrls = await resolveOverlayUrls(project);
-  const voiceoverUrls = await resolveVoiceoverUrls(project);
-  const musicUrls = await resolveMusicUrls(project);
-  onProgress(9);
-
-  // 2. Kick off the baked render with the full edit timeline.
-  const created = await apiRequest<ApiExport>(
-    `/projects/${projectId}/exports`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        format: settings.format,
-        resolution: settings.resolution,
-        timeline: buildRenderTimeline(
-          project,
-          clipUrls,
-          overlayUrls,
-          musicUrls,
-          voiceoverUrls,
-          settings
-        ),
-      }),
+  /** Keep the bar moving during silent network work (uploads / DB register). */
+  let floor = 0;
+  const report = (n: number) => {
+    floor = Math.max(floor, Math.min(99, Math.round(n)));
+    onProgress(floor);
+  };
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const startHeartbeat = (cap: number, step = 1, everyMs = 450) => {
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = setInterval(() => {
+      if (floor >= cap) return;
+      report(floor + step);
+    }, everyMs);
+  };
+  const stopHeartbeat = () => {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
     }
-  );
+  };
 
-  onProgress(Math.max(10, created.progress || 10));
+  try {
+    report(2);
+    startHeartbeat(12, 1, 400);
 
-  // 3. Poll until terminal status — real renders can take minutes.
-  let latest = created;
-  let timedOut = true;
-  for (let i = 0; i < 900; i++) {
-    await sleep(1000);
-    latest = await apiRequest<ApiExport>(`/exports/${created.id}`);
-    onProgress(Math.min(99, Math.max(10, latest.progress || 0)));
-    const status = (latest.status || '').toUpperCase();
-    // Backend enum is Ready | Processing | Failed (not COMPLETED).
-    if (status === 'READY' || status === 'COMPLETED' || status === 'FAILED') {
-      timedOut = false;
-      break;
+    // 1. Make sure every source the server must download is a remote URL.
+    const [clipUrls, overlayUrls, voiceoverUrls, musicUrls] = await Promise.all([
+      resolveClipUrls(projectId, project, token, report),
+      resolveOverlayUrls(project),
+      resolveVoiceoverUrls(project),
+      resolveMusicUrls(project),
+    ]);
+    stopHeartbeat();
+    report(16);
+
+    // 2. Kick off the baked render with the full edit timeline.
+    startHeartbeat(22, 1, 500);
+    const created = await apiRequest<ApiExport>(
+      `/projects/${projectId}/exports`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          format: settings.format,
+          resolution: settings.resolution,
+          timeline: buildRenderTimeline(
+            project,
+            clipUrls,
+            overlayUrls,
+            musicUrls,
+            voiceoverUrls,
+            settings
+          ),
+        }),
+      }
+    );
+    stopHeartbeat();
+    report(Math.max(24, created.progress || 24));
+
+    // 3. Poll until terminal status — real renders can take minutes.
+    // Map server progress into a smoother UI range so it doesn't sit on 2%.
+    let latest = created;
+    let timedOut = true;
+    for (let i = 0; i < 900; i++) {
+      const serverPct = latest.progress || 0;
+      const uiPct =
+        serverPct <= 3
+          ? 24 + Math.min(8, i) // downloading / queueing
+          : serverPct < 35
+            ? 28 + (serverPct / 35) * 12 // ~28–40
+            : serverPct < 92
+              ? 40 + ((serverPct - 35) / 57) * 50 // ~40–90
+              : 90 + ((serverPct - 92) / 8) * 9; // ~90–99
+      report(uiPct);
+
+      await sleep(serverPct < 35 ? 350 : serverPct < 85 ? 500 : 700);
+      latest = await apiRequest<ApiExport>(`/exports/${created.id}`);
+      const status = (latest.status || '').toUpperCase();
+      if (status === 'READY' || status === 'COMPLETED' || status === 'FAILED') {
+        timedOut = false;
+        break;
+      }
     }
-  }
 
-  const mapped = mapExportFromApi(latest, project.title);
-  if (timedOut && mapped.status === 'Processing') {
-    throw new Error(
-      'Export is still processing on the server. Check the Exports tab in a minute — it will update when ready.'
-    );
+    const mapped = mapExportFromApi(latest, project.title);
+    if (timedOut && mapped.status === 'Processing') {
+      throw new Error(
+        'Export is still processing on the server. Check the Exports tab in a minute — it will update when ready.'
+      );
+    }
+    if (mapped.status === 'Failed') {
+      throw new Error(
+        mapped.errorMessage ||
+          latest.errorMessage ||
+          'Export failed on the server. Please try again.'
+      );
+    }
+    if (!mapped.fileUrl) {
+      throw new Error('Export finished but no download URL was returned.');
+    }
+    stopHeartbeat();
+    onProgress(100);
+    return mapped;
+  } catch (e) {
+    stopHeartbeat();
+    throw friendlyExportError(e, 'Export failed. Please try again.');
   }
-  if (mapped.status === 'Failed') {
-    throw new Error(
-      mapped.errorMessage ||
-        latest.errorMessage ||
-        'Export failed on the server. Please try again.'
-    );
-  }
-  if (!mapped.fileUrl) {
-    throw new Error('Export finished but no download URL was returned.');
-  }
-  onProgress(100);
-  return mapped;
 }
 
 export const exportService = {

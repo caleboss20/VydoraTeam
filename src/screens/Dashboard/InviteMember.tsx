@@ -215,8 +215,23 @@ export default function InviteMemberScreen({ navigation }: any) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Share link first — works even if teammate uses a different account */}
+        <Text style={[styles.sectionLabel, { marginTop: 8 }]}>SHARE INVITE LINK</Text>
+        <Text style={styles.linkHint}>
+          Best for demos & teammates. Anyone with the link can Accept or request to join — Owner admits.
+        </Text>
+        <View style={styles.linkRow}>
+          <Ionicons name="link-outline" size={16} color={COLORS.textMuted} />
+          <Text style={styles.linkText} numberOfLines={1}>
+            {inviteLink}
+          </Text>
+          <Pressable onPress={handleCopyLink} hitSlop={8}>
+            <Text style={styles.copyText}>{copied ? 'Copied!' : 'Copy'}</Text>
+          </Pressable>
+        </View>
+
         {/* Email addresses */}
-        <Text style={styles.sectionLabel}>EMAIL ADDRESSES</Text>
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>OR INVITE BY EMAIL</Text>
         <Animated.View
           style={[
             styles.emailBox,
@@ -308,17 +323,6 @@ export default function InviteMemberScreen({ navigation }: any) {
           maxLength={200}
         />
         <Text style={styles.charCount}>{message.length}/200</Text>
-        {/* Invite link — TWEAK: static mocked link, not generated per-project yet */}
-        <Text style={[styles.sectionLabel, { marginTop: 24 }]}>OR SHARE INVITE LINK</Text>
-        <View style={styles.linkRow}>
-          <Ionicons name="link-outline" size={16} color={COLORS.textMuted} />
-          <Text style={styles.linkText} numberOfLines={1}>
-            {inviteLink}
-          </Text>
-          <Pressable onPress={handleCopyLink} hitSlop={8}>
-            <Text style={styles.copyText}>{copied ? 'Copied!' : 'Copy'}</Text>
-          </Pressable>
-        </View>
         {/* Send button */}
         <Animated.View style={{ transform: [{ scale: sendScale }], marginTop: 28 }}>
           <Pressable
@@ -437,6 +441,13 @@ function makeInviteStyles(COLORS: {
     fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 10,
+  },
+  linkHint: {
+    color: COLORS.textFaint,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 10,
+    marginTop: -4,
   },
   emailBox: {
     backgroundColor: COLORS.surface,

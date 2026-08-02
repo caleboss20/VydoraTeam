@@ -44,6 +44,7 @@ import {
 import { CONFIG } from '../config';
 import { buildVersionSnapshot, versionService } from '../services/VersionHistory';
 import { publishState as publishEditorState } from '../socket/editorSync';
+import { syncProjectCoverFromFirstClip } from '../services/projectCoverSync';
 
 import {
   createTextOverlay,
@@ -66,8 +67,6 @@ import {
   upsertTextPositionKeyframe,
 } from '../services/clipKeyframes';
 import { buildMovieEffectPatch } from '../services/movieEffectsService';
-import type { EditTemplate } from '../services/editTemplateService';
-import { editTemplateService } from '../services/editTemplateService';
 import type { AutoMoviePlan } from '../services/autoMovieService';
 
 
@@ -156,6 +155,22 @@ interface VideoProjectContextType {
     angleId: string,
     splitTimeMs: number
   ) => boolean;
+  /**
+   * Episode Factory — atomic timeline pack:
+   * cold open → intro → existing → Shorts hooks → outro (9:16 on new media).
+   */
+  applyEpisodeFactoryPack: (
+    sourceClipId: string,
+    pack: {
+      introTitle: string;
+      introSubtitle: string;
+      outroTitle: string;
+      outroSubtitle: string;
+      coldOpen: { startMs: number; endMs: number } | null;
+      hooks: { startMs: number; endMs: number }[];
+      cropRatioId?: string;
+    }
+  ) => number;
   updateClipVolume: (clipId: string, volume: number) => void;
   updateClipOpacity: (clipId: string, opacity: number) => void;
   /** CapCut-style property diamonds (clip-local ms). */
@@ -193,18 +208,27 @@ interface VideoProjectContextType {
     kf: TextPositionKeyframe
   ) => void;
   clearTextPositionKeyframes: (clipId: string, overlayId: string) => void;
-  /** Append a stock / remote clip after the selected (or last) clip. */
-  appendRemoteClip: (clip: {
-    uri: string;
-    durationMs: number;
-    title?: string;
-    thumbnailUri?: string;
-  }) => string | null;
+  /** Insert a stock / remote clip at start | before/after a clip | end. */
+  appendRemoteClip: (
+    clip: {
+      uri: string;
+      durationMs: number;
+      title?: string;
+      thumbnailUri?: string;
+    },
+    where?: "start" | "before" | "after" | "end",
+    relativeClipId?: string | null
+  ) => string | null;
   /** Patch media URI / duration after a background upload (mix import). */
   updateClipMedia: (
     clipId: string,
     patch: { uri?: string; durationMs?: number; thumbnailUri?: string; title?: string }
   ) => void;
+  /**
+   * Clear project-level music / overlays / VO / beats / compounds so a fresh
+   * upload does not inherit effects from a previous edit session.
+   */
+  clearProjectTimelineExtras: () => void;
   updateClipSpeed: (clipId: string, speed: number) => void;
   updateClipSpeedCurve: (clipId: string, speedCurve: SpeedCurveId) => void;
   updateClipReversed: (clipId: string, reversed: boolean) => void;
@@ -212,8 +236,6 @@ interface VideoProjectContextType {
   updateClipEffect: (clipId: string, effectId: ClipEffectId, intensity?: number) => void;
   /** Apply a cinematic bundle (flashback / dream / rewind…). */
   applyMovieEffect: (clipId: string, effectId: MovieEffectId) => void;
-  /** Apply a saved edit template look onto a clip. */
-  applyEditTemplate: (clipId: string, template: EditTemplate) => void;
   updateClipColorGrade: (clipId: string, grade: Partial<ColorGrade>) => void;
   updateClipStabilize: (clipId: string, stabilize: StabilizeSettings) => void;
   updateClipAutoReframe: (clipId: string, autoReframe: AutoReframeSettings | undefined) => void;
@@ -320,17 +342,21 @@ export function VideoProjectProvider({ children }: { children: ReactNode }) {
   const canRedo = historyVersion >= 0 && futureRef.current.length > 0;
 
   // ── Rehydrate on launch so the last-edited video survives an app restart ──
+  // Never clobber a project already set in-session (e.g. wow-path seed).
   useEffect(() => {
     const rehydrate = async () => {
       try {
         const cached = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT);
-        if (cached) {
-          const parsed = JSON.parse(cached) as VideoProject;
-          skipHistoryRef.current = true;
-          setCurrentVideoProjectState(parsed);
+        if (!cached) return;
+        const parsed = JSON.parse(cached) as VideoProject;
+        if (projectRef.current) return;
+        skipHistoryRef.current = true;
+        setCurrentVideoProjectState((prev) => {
+          if (prev) return prev;
           projectRef.current = parsed;
           prevForHistoryRef.current = cloneProject(parsed);
-        }
+          return parsed;
+        });
       } catch (e) {
         console.log('Video project rehydration failed', e);
       }
@@ -959,16 +985,50 @@ const persistClips = (prev: VideoProject, clips: VideoClip[], logLabel: string):
     const end = c.trimEndMs ?? c.durationMs;
     return acc + (end - start);
   }, 0);
-  const updated = {
+
+  // Prefer an explicit cover; otherwise derive from the first timeline piece.
+  const first = finalClips[0];
+  const derivedCover =
+    prev.coverThumbnailUri ||
+    first?.thumbnailUri ||
+    (first?.kind === 'flyer' || first?.kind === 'title' ? first?.uri : undefined);
+
+  const updated: VideoProject = {
     ...prev,
     clips: finalClips,
     totalDurationMs,
+    ...(derivedCover ? { coverThumbnailUri: derivedCover } : null),
     updatedAt: new Date().toISOString(),
   };
   AsyncStorage.setItem(
     CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
     JSON.stringify(updated)
   ).catch((e) => console.log(`Failed to persist ${logLabel}`, e));
+
+  // First media while cover is empty → grab/upload list thumbnail in background.
+  if (updated.projectId && first && !prev.coverThumbnailUri) {
+    void syncProjectCoverFromFirstClip({
+      projectId: updated.projectId,
+      thumbnailUri:
+        first.thumbnailUri ??
+        (first.kind === 'flyer' || first.kind === 'title' ? first.uri : undefined),
+      mediaUri: first.uri,
+      kind: first.kind,
+    }).then((durable) => {
+      if (!durable) return;
+      setCurrentVideoProjectState((curr) => {
+        if (!curr || curr.projectId !== updated.projectId) return curr;
+        if (curr.coverThumbnailUri === durable) return curr;
+        const next = { ...curr, coverThumbnailUri: durable };
+        AsyncStorage.setItem(
+          CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+          JSON.stringify(next)
+        ).catch(() => undefined);
+        return next;
+      });
+    });
+  }
+
   return updated;
 };
 
@@ -1026,6 +1086,158 @@ const cutToMultiCamAngle = (
     return persistClips(prev, clips, 'multi-cam director cut');
   });
   return ok;
+};
+
+/** Episode Factory — one atomic rewrite for cold open + hooks + cards. */
+const applyEpisodeFactoryPack = (
+  sourceClipId: string,
+  pack: {
+    introTitle: string;
+    introSubtitle: string;
+    outroTitle: string;
+    outroSubtitle: string;
+    coldOpen: { startMs: number; endMs: number } | null;
+    hooks: { startMs: number; endMs: number }[];
+    cropRatioId?: string;
+  }
+): number => {
+  let added = 0;
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const source = prev.clips.find((c) => c.id === sourceClipId);
+    if (!source) return prev;
+    const cropRatioId = pack.cropRatioId ?? 'tiktok';
+    const stamp = Date.now();
+
+    const sliceOf = (
+      startMs: number,
+      endMs: number,
+      tag: string
+    ): VideoClip | null => {
+      const s = Math.max(0, Math.round(startMs));
+      const e = Math.min(source.durationMs, Math.round(endMs));
+      if (e - s < 800) return null;
+      added += 1;
+      return {
+        ...source,
+        id: `${tag}-${stamp}-${Math.random().toString(36).slice(2, 6)}`,
+        trimStartMs: s,
+        trimEndMs: e,
+        textOverlays: (source.textOverlays ?? [])
+          .filter(
+            (o) => o.startMs + (o.durationMs ?? 0) > s && o.startMs < e
+          )
+          .map((o) => ({
+            ...o,
+            id: `ov-${stamp}-${Math.random().toString(36).slice(2, 6)}`,
+            startMs: Math.max(0, o.startMs - s),
+            durationMs: Math.max(
+              200,
+              Math.min(e - s, o.startMs + (o.durationMs ?? 0) - s)
+            ),
+          })),
+        transitionOut: undefined,
+        cropRatioId,
+        order: 0,
+      };
+    };
+
+    const makeTitle = (
+      card: TitleCardSettings,
+      durationMs: number,
+      tag: string
+    ): VideoClip => {
+      const dur = Math.max(500, durationMs);
+      const id = `${tag}-${stamp}-${Math.random().toString(36).slice(2, 5)}`;
+      added += 1;
+      const titleOverlay = {
+        ...createTextOverlay(id, card.title, 0, dur),
+        color: card.textColor ?? '#FFFFFF',
+        fontSize: card.fontSize ?? 42,
+        fontWeight: 'bold' as const,
+        animationIn: card.animationIn ?? 'fade',
+        animationDurationMs: 700,
+        y: 0.42,
+      };
+      const subtitleOverlay = card.subtitle?.trim()
+        ? {
+            ...createTextOverlay(id, card.subtitle.trim(), 0, dur),
+            color: card.textColor ?? '#FFFFFF',
+            fontSize: Math.max(16, Math.round((card.fontSize ?? 42) * 0.45)),
+            animationIn: 'fade' as const,
+            animationDurationMs: 500,
+            y: 0.55,
+            textOpacity: 0.85,
+          }
+        : null;
+      return {
+        id,
+        uri: '',
+        durationMs: dur,
+        trimStartMs: 0,
+        trimEndMs: dur,
+        order: 0,
+        kind: 'title',
+        titleCard: { ...card },
+        textOverlays: subtitleOverlay
+          ? [titleOverlay, subtitleOverlay]
+          : [titleOverlay],
+        volume: 0,
+        cropRatioId,
+      };
+    };
+
+    const head: VideoClip[] = [];
+    if (pack.coldOpen) {
+      const cold = sliceOf(
+        pack.coldOpen.startMs,
+        pack.coldOpen.endMs,
+        'cold'
+      );
+      if (cold) head.push(cold);
+    }
+    head.push(
+      makeTitle(
+        {
+          backgroundColor: '#0B0D13',
+          title: pack.introTitle,
+          subtitle: pack.introSubtitle,
+          textColor: '#F5C518',
+          fontSize: 42,
+          animationIn: 'fade',
+        },
+        2800,
+        'intro'
+      )
+    );
+
+    const existing = [...prev.clips].sort((a, b) => a.order - b.order);
+    const hooks: VideoClip[] = [];
+    for (const h of pack.hooks) {
+      const piece = sliceOf(h.startMs, h.endMs, 'hook');
+      if (piece) hooks.push(piece);
+    }
+
+    const outro = makeTitle(
+      {
+        backgroundColor: '#0B0D13',
+        title: pack.outroTitle,
+        subtitle: pack.outroSubtitle,
+        textColor: '#2EE6D6',
+        fontSize: 36,
+        animationIn: 'fade',
+      },
+      2500,
+      'outro'
+    );
+
+    const merged = [...head, ...existing, ...hooks, outro].map((c, i) => ({
+      ...c,
+      order: i,
+    }));
+    return persistClips(prev, merged, 'episode factory pack');
+  });
+  return added;
 };
 
 /** Silence removal: one clip → N keep-windows sharing the same media URI. */
@@ -1334,15 +1546,20 @@ const clearTextPositionKeyframes = (clipId: string, overlayId: string) => {
   });
 };
 
-const appendRemoteClip = (clip: {
-  uri: string;
-  durationMs: number;
-  title?: string;
-  thumbnailUri?: string;
-}): string | null => {
+const appendRemoteClip = (
+  clip: {
+    uri: string;
+    durationMs: number;
+    title?: string;
+    thumbnailUri?: string;
+  },
+  where: "start" | "before" | "after" | "end" = "end",
+  relativeClipId?: string | null
+): string | null => {
   let newId: string | null = null;
   setCurrentVideoProjectState((prev) => {
-    if (!prev) return prev;
+    const base = prev ?? projectRef.current;
+    if (!base) return prev;
     newId = `clip-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const dur = Math.max(500, clip.durationMs);
     const piece: VideoClip = {
@@ -1352,11 +1569,22 @@ const appendRemoteClip = (clip: {
       trimStartMs: 0,
       trimEndMs: dur,
       thumbnailUri: clip.thumbnailUri,
-      order: prev.clips.length,
+      order: 0,
       volume: 1,
       speed: 1,
     };
-    return persistClips(prev, [...prev.clips, piece], 'footage append');
+    const sorted = [...base.clips].sort((a, b) => a.order - b.order);
+    let insertAt = sorted.length;
+    if (where === "start") insertAt = 0;
+    else if (where === "end") insertAt = sorted.length;
+    else {
+      const relId = relativeClipId ?? sorted[sorted.length - 1]?.id;
+      const relIdx = sorted.findIndex((c) => c.id === relId);
+      if (relIdx === -1) insertAt = sorted.length;
+      else insertAt = where === "before" ? relIdx : relIdx + 1;
+    }
+    sorted.splice(insertAt, 0, piece);
+    return persistClips(base, sorted, "footage insert");
   });
   return newId;
 };
@@ -1387,6 +1615,28 @@ const updateClipMedia = (
     },
     'clip media update'
   );
+};
+
+const clearProjectTimelineExtras = () => {
+  setCurrentVideoProjectState((prev) => {
+    if (!prev) return prev;
+    const updated: VideoProject = {
+      ...prev,
+      musicTracks: [],
+      backgroundMusic: undefined,
+      overlays: [],
+      voiceovers: [],
+      beatMarkersMs: [],
+      compounds: [],
+      adjustmentLayers: [],
+      updatedAt: new Date().toISOString(),
+    };
+    AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
+      JSON.stringify(updated)
+    ).catch((e) => console.log('Failed to clear timeline extras', e));
+    return updated;
+  });
 };
 
 //to update the speed of video//
@@ -1509,14 +1759,6 @@ const applyMovieEffect = (clipId: string, effectId: MovieEffectId) => {
       };
     },
     'movie effect'
-  );
-};
-
-const applyEditTemplate = (clipId: string, template: EditTemplate) => {
-  patchClip(
-    clipId,
-    (c) => editTemplateService.applyLook(c, template),
-    'edit template'
   );
 };
 
@@ -1908,8 +2150,9 @@ const addMusicTrack = (
 ): string => {
   const music = createBackgroundMusic(uri, durationMs, startMs, title);
   setCurrentVideoProjectState((prev) => {
-    if (!prev) return prev;
-    return persistMusicTracks(prev, [...getMusicTracks(prev), music], 'add music track');
+    const base = prev ?? projectRef.current;
+    if (!base) return prev;
+    return persistMusicTracks(base, [...getMusicTracks(base), music], 'add music track');
   });
   return music.id!;
 };
@@ -2189,6 +2432,7 @@ const removeVoiceover = (voiceoverId: string) => {
         resetClipEdits,
         attachMultiCam,
         cutToMultiCamAngle,
+        applyEpisodeFactoryPack,
         updateClipVolume, // ADDED
         updateClipOpacity,
         addClipVolumeKeyframe,
@@ -2209,6 +2453,7 @@ const removeVoiceover = (voiceoverId: string) => {
         clearTextPositionKeyframes,
         appendRemoteClip,
         updateClipMedia,
+        clearProjectTimelineExtras,
         updateClipSpeed, // ADDED
         updateClipSpeedCurve,
         updateClipReversed,
@@ -2218,7 +2463,6 @@ const removeVoiceover = (voiceoverId: string) => {
          updateClipFilter,
         updateClipEffect,
         applyMovieEffect,
-        applyEditTemplate,
         updateClipColorGrade,
         updateClipStabilize,
         updateClipAutoReframe,

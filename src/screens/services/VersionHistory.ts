@@ -20,6 +20,7 @@ type ApiAuthor = {
   name: string;
   initials: string;
   color: string;
+  avatarUrl?: string | null;
 };
 
 type ApiVersion = {
@@ -74,6 +75,7 @@ function mapVersion(v: ApiVersion): ProjectVersion {
       name: v.author?.name || 'Unknown',
       initials: v.author?.initials || '?',
       color: v.author?.color || '#555555',
+      avatarUrl: v.author?.avatarUrl || undefined,
     },
     createdAt: created,
     isCurrent: !!v.isCurrent,

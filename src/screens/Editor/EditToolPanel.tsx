@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_BODY } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import {
   SpeedCurveId,
@@ -82,6 +83,8 @@ interface EditToolPanelProps {
   visible: boolean;
   toolLabel: string | null;
   onClose: () => void;
+  /** When set (e.g. opened from More tools), shows a back chevron. */
+  onBack?: () => void;
   volume: number;
   onVolumeChange: (v: number) => void;
   opacity?: number;
@@ -131,6 +134,7 @@ export default function EditToolPanel({
   visible,
   toolLabel,
   onClose,
+  onBack,
   volume,
   onVolumeChange,
   opacity = 1,
@@ -197,14 +201,21 @@ export default function EditToolPanel({
   >
       <View style={styles.wrapper}>
       <View style={styles.header}>
-        <Text style={styles.title}>{toolLabel}</Text>
-        <TouchableOpacity onPress={handleDone} hitSlop={8}>
+        <View style={styles.headerLeft}>
+          {onBack ? (
+            <TouchableOpacity onPress={onBack} hitSlop={8} accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={scale(22)} color={COLORS.yellow} />
+            </TouchableOpacity>
+          ) : null}
+          <Text style={styles.title}>{toolLabel}</Text>
+        </View>
+        <TouchableOpacity onPress={handleDone} hitSlop={8} accessibilityLabel="Done">
           <Ionicons name="checkmark" size={scale(22)} color={COLORS.yellow} />
         </TouchableOpacity>
       </View>
       <View style={styles.body}>
         {toolLabel === 'Audio' && (
-          <ScrollView style={{ maxHeight: verticalScale(320) }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: TOOL_SHEET_BODY }} showsVerticalScrollIndicator={false}>
             <View style={styles.sliderRow}>
               <Ionicons name="volume-medium-outline" size={scale(18)} color={COLORS.textSecondary} />
               <Slider
@@ -498,7 +509,7 @@ export default function EditToolPanel({
         )}
         {toolLabel === 'Text' && (
           <ScrollView
-            style={{ maxHeight: verticalScale(340) }}
+            style={{ maxHeight: TOOL_SHEET_BODY }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
@@ -710,7 +721,9 @@ export default function EditToolPanel({
           </ScrollView>
         )}
         {toolLabel !== 'Audio' && toolLabel !== 'Speed' && toolLabel !== 'Text' && (
-          <Text style={styles.comingSoon}>{toolLabel} panel coming soon</Text>
+          <Text style={styles.comingSoon}>
+            {toolLabel} isn’t wired in this build yet — pick another tool from More.
+          </Text>
         )}
       </View>
     </View>
@@ -732,6 +745,12 @@ function __makeStyles() {
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: verticalScale(14),
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(4),
+    flexShrink: 1,
   },
   title: { color: COLORS.textPrimary, fontSize: moderateScale(15), fontWeight: '700' },
   body: { minHeight: verticalScale(50) },

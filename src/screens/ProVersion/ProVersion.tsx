@@ -16,6 +16,7 @@ import { s, ms, vs } from 'react-native-size-matters';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { setDevUnlockPro } from '../Contexts/subscription';
 
 // ⬇️ Drop in as many hero images as you want — they'll rotate automatically.
 // Local:  require('../../assets/images/pro-bg-1.jpg')
@@ -51,34 +52,21 @@ function formatTime(totalSeconds: number) {
 const IMAGE_ROTATE_MS = 5000; // change image every 5s
 const FADE_MS = 500;
 
-// TODO: point this at your real backend
-const API_BASE_URL = 'https://api.vydora.app';
-
-// TODO: replace amounts with your actual plan pricing in kobo/pesewas (Paystack expects the smallest currency unit)
-const PLAN_DETAILS: Record<
-  PlanId,
-  { label: string; amountMinorUnits: number; paystackPlanCode?: string }
-> = {
+// Plans are UI-only until Paystack keys + backend /payments routes exist.
+const PLAN_DETAILS: Record<PlanId, { label: string; amountMinorUnits: number }> = {
   yearlyTrial: {
     label: 'Yearly (Free Trial)',
-    amountMinorUnits: 3898_00, // charged only after trial ends
-    paystackPlanCode: 'PLN_yearly_trial', // TODO: real Paystack plan code
+    amountMinorUnits: 3898_00,
   },
   yearlyDiscount: {
     label: 'Yearly (50% off)',
     amountMinorUnits: 3898_00,
-    paystackPlanCode: 'PLN_yearly_discount', // TODO: real Paystack plan code
   },
   monthly: {
     label: 'Monthly',
     amountMinorUnits: 849_00,
-    paystackPlanCode: 'PLN_monthly', // TODO: real Paystack plan code
   },
 };
-
-// TODO: your backend should redirect Paystack back to a URL containing this path
-// once payment completes, so the WebView knows to stop and verify.
-const PAYMENT_CALLBACK_MATCH = '/payment/callback';
 
 export default function ProScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
@@ -144,116 +132,31 @@ export default function ProScreen({ navigation }: any) {
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // ── STUBBED FOR NOW ──────────────────────────────────────────────
-  // No backend yet, so this just simulates a purchase: spinner → short
-  // delay → success alert → navigate to Dashboard. Nothing is charged,
-  // nothing hits the network. Swap this out for the real version below
-  // once /payments/paystack/initialize and /verify exist on your backend.
-  const handleContinue = () => {
-    if (isProcessing) return;
-    setIsProcessing(true);
-
-    setTimeout(() => {
-      setIsProcessing(false);
-      Alert.alert(
-        'Welcome to Vydora Pro 🎉',
-        `You're subscribed to: ${PLAN_DETAILS[selectedPlan].label}`,
-        [
-          {
-            text: 'Continue',
-            onPress: () =>
-              navigation?.replace
-                ? navigation.replace('projects')
-                : navigation?.navigate('projects'),
-          },
-        ]
-      );
-    }, 1200);
-  };
-
-  /* ── REAL PAYSTACK VERSION — swap in once your backend is ready ──────
-
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [showCheckout, setShowCheckout] = useState(false);
-
+  // No Paystack keys yet — Continue only unlocks Pro locally for demos.
+  // Wire real checkout later once keys + backend /payments routes exist.
   const handleContinue = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-      // TODO: swap in the real signed-in user's email — Paystack requires one
-      // to initialize a transaction, and your backend should already know it.
-      const userEmail = 'user@example.com';
-
-      const response = await fetch(
-        `${API_BASE_URL}/payments/paystack/initialize`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            // TODO: attach your auth token, e.g. Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            plan: selectedPlan,
-            planCode: PLAN_DETAILS[selectedPlan].paystackPlanCode,
-            email: userEmail,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to start checkout (${response.status})`);
-      }
-
-      // Expected backend shape: { authorizationUrl: string, reference: string }
-      const data = await response.json();
-      if (!data?.authorizationUrl) {
-        throw new Error('No checkout URL returned from backend');
-      }
-
-      setCheckoutUrl(data.authorizationUrl);
-      setShowCheckout(true);
-    } catch (err) {
-      console.error('Checkout init failed:', err);
-      Alert.alert(
-        "Couldn't start checkout",
-        'Please check your connection and try again.'
-      );
-    } finally {
-      setIsProcessing(false);
+      await setDevUnlockPro(true);
+    } catch {
+      /* ignore */
     }
-  };
-
-  // Fires as the WebView navigates. Once Paystack redirects back to our
-  // callback URL, we close the sheet and verify the transaction server-side.
-  const handleWebViewNavigation = async (navState: { url: string }) => {
-    if (!navState.url.includes(PAYMENT_CALLBACK_MATCH)) return;
-
-    setShowCheckout(false);
-
-    try {
-      const reference = new URL(navState.url).searchParams.get('reference');
-      const verifyResponse = await fetch(
-        `${API_BASE_URL}/payments/paystack/verify/${reference}`,
+    setIsProcessing(false);
+    Alert.alert(
+      'Welcome to Vydora Pro',
+      `${PLAN_DETAILS[selectedPlan].label} unlocked for demo. No payment — Paystack comes later when you have keys.`,
+      [
         {
-          headers: {
-            // TODO: attach your auth token here too
-          },
-        }
-      );
-      const verifyData = await verifyResponse.json();
-
-      if (verifyResponse.ok && verifyData?.status === 'success') {
-        navigation?.replace ? navigation.replace('Dashboard') : navigation?.navigate('Dashboard');
-      } else {
-        Alert.alert('Payment not confirmed', 'If you were charged, contact support and we\u2019ll sort it out.');
-      }
-    } catch (err) {
-      console.error('Verification failed:', err);
-      Alert.alert('Payment verification failed', 'Please contact support if you were charged.');
-    }
+          text: 'Continue',
+          onPress: () =>
+            navigation?.replace
+              ? navigation.replace('projects')
+              : navigation?.navigate('projects'),
+        },
+      ]
+    );
   };
-
-  ────────────────────────────────────────────────────────────────── */
 
   return (
     <View style={styles.container}>

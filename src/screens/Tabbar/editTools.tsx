@@ -8,13 +8,14 @@ import {
   Modal,
   TextInput,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { s } from "react-native-size-matters";
-import { useAppPalette } from "../Contexts/ThemeContext";
+import { useAppPalette, useTheme } from "../Contexts/ThemeContext";
+
+const SHEET_HEIGHT = Math.round(Dimensions.get("window").height * 0.92);
 
 export type EditorToolKind = "panel" | "action";
 export type EditorToolCategory = "Edit" | "Look" | "Audio" | "Share" | "Action";
@@ -33,6 +34,7 @@ export type EditorTool = {
 
 /** Beginner pin order — everything else lives in Search / More. */
 export const BEGINNER_TOOLBAR_LABELS = [
+  "Episode factory",
   "Captions",
   "Assemble",
   "Filter",
@@ -42,6 +44,22 @@ export const BEGINNER_TOOLBAR_LABELS = [
 
 /** Shared catalog — toolbar + ToolSearchModal. */
 export const EDITOR_TOOLS: EditorTool[] = [
+  {
+    icon: "rocket-outline",
+    label: "Episode factory",
+    kind: "panel",
+    category: "Share",
+    aliases: [
+      "episode",
+      "factory",
+      "pack",
+      "hooks",
+      "shorts pack",
+      "cold open",
+      "publish pack",
+    ],
+    badge: "New",
+  },
   {
     icon: "cut-outline",
     label: "Split",
@@ -77,13 +95,6 @@ export const EDITOR_TOOLS: EditorTool[] = [
     kind: "panel",
     category: "Look",
     aliases: ["cinematic", "flashback"],
-  },
-  {
-    icon: "layers-outline",
-    label: "Templates",
-    kind: "panel",
-    category: "Look",
-    aliases: ["starter", "recipe"],
   },
   {
     icon: "color-palette-outline",
@@ -371,141 +382,141 @@ export function ToolSearchModal({
       visible={visible}
       animationType="slide"
       transparent
+      statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Pressable style={modalStyles.backdrop} onPress={onClose}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={modalStyles.sheetWrap}
+      <View style={modalStyles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View
+          style={[
+            modalStyles.sheet,
+            {
+              backgroundColor: p.surface,
+              height: SHEET_HEIGHT,
+              paddingBottom: Math.max(insets.bottom, s(16)),
+            },
+          ]}
         >
-          <Pressable
+          <View style={modalStyles.handle} />
+          <Text style={[modalStyles.title, { color: p.textPrimary }]}>
+            More tools
+          </Text>
+          <View
             style={[
-              modalStyles.sheet,
-              {
-                backgroundColor: p.surface,
-                paddingBottom: Math.max(insets.bottom, 12),
-              },
+              modalStyles.searchRow,
+              { backgroundColor: p.background, borderColor: p.border },
             ]}
-            onPress={() => {}}
           >
-            <View style={modalStyles.handle} />
-            <Text style={[modalStyles.title, { color: p.textPrimary }]}>
-              More tools
-            </Text>
-            <View
-              style={[
-                modalStyles.searchRow,
-                { backgroundColor: p.background, borderColor: p.border },
-              ]}
-            >
-              <Ionicons name="search" size={s(18)} color={p.textSecondary} />
-              <TextInput
-                style={[modalStyles.input, { color: p.textPrimary }]}
-                placeholder="Filter, flyer, captions, beats…"
-                placeholderTextColor={p.textSecondary}
-                value={query}
-                onChangeText={setQuery}
-                autoFocus
-                autoCorrect={false}
-                returnKeyType="search"
-              />
-              {query.length > 0 && (
-                <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
+            <Ionicons name="search" size={s(18)} color={p.textSecondary} />
+            <TextInput
+              style={[modalStyles.input, { color: p.textPrimary }]}
+              placeholder="Filter, flyer, captions, beats…"
+              placeholderTextColor={p.textSecondary}
+              value={query}
+              onChangeText={setQuery}
+              autoFocus
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {query.length > 0 && (
+              <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
+                <Ionicons
+                  name="close-circle"
+                  size={s(18)}
+                  color={p.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={modalStyles.chipsScroll}
+            contentContainerStyle={modalStyles.chips}
+          >
+            {CATEGORIES.map((c) => {
+              const on = category === c;
+              return (
+                <TouchableOpacity
+                  key={c}
+                  style={[
+                    modalStyles.chip,
+                    {
+                      borderColor: on ? p.yellow : p.border,
+                      backgroundColor: on
+                        ? "rgba(245,197,24,0.15)"
+                        : "transparent",
+                    },
+                  ]}
+                  onPress={() => setCategory(c)}
+                >
+                  <Text
+                    style={[
+                      modalStyles.chipText,
+                      { color: on ? p.yellow : p.textSecondary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {c}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <ScrollView
+            style={modalStyles.list}
+            contentContainerStyle={modalStyles.listContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {results.length === 0 ? (
+              <Text style={[modalStyles.empty, { color: p.textSecondary }]}>
+                No tools match “{query}”.
+              </Text>
+            ) : (
+              results.map((t) => (
+                <TouchableOpacity
+                  key={t.label}
+                  style={[modalStyles.row, { borderBottomColor: p.border }]}
+                  onPress={() => {
+                    onPick(t);
+                    setQuery("");
+                    onClose();
+                  }}
+                >
+                  <View
+                    style={[modalStyles.iconWrap, { backgroundColor: p.iconBg }]}
+                  >
+                    <Ionicons
+                      name={t.icon}
+                      size={s(18)}
+                      color={p.textPrimary}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[modalStyles.rowLabel, { color: p.textPrimary }]}
+                    >
+                      {t.label}
+                    </Text>
+                    <Text
+                      style={{ color: p.textSecondary, fontSize: s(10) }}
+                    >
+                      {t.category}
+                      {t.aliases?.[0] ? ` · ${t.aliases[0]}` : ""}
+                    </Text>
+                  </View>
                   <Ionicons
-                    name="close-circle"
-                    size={s(18)}
+                    name="chevron-forward"
+                    size={s(16)}
                     color={p.textSecondary}
                   />
                 </TouchableOpacity>
-              )}
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={modalStyles.chips}
-            >
-              {CATEGORIES.map((c) => {
-                const on = category === c;
-                return (
-                  <TouchableOpacity
-                    key={c}
-                    style={[
-                      modalStyles.chip,
-                      {
-                        borderColor: on ? p.yellow : p.border,
-                        backgroundColor: on
-                          ? "rgba(245,197,24,0.15)"
-                          : "transparent",
-                      },
-                    ]}
-                    onPress={() => setCategory(c)}
-                  >
-                    <Text
-                      style={{
-                        color: on ? p.yellow : p.textSecondary,
-                        fontWeight: "700",
-                        fontSize: s(11),
-                      }}
-                    >
-                      {c}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-            <ScrollView
-              style={{ maxHeight: s(340) }}
-              keyboardShouldPersistTaps="handled"
-            >
-              {results.length === 0 ? (
-                <Text style={[modalStyles.empty, { color: p.textSecondary }]}>
-                  No tools match “{query}”.
-                </Text>
-              ) : (
-                results.map((t) => (
-                  <TouchableOpacity
-                    key={t.label}
-                    style={[modalStyles.row, { borderBottomColor: p.border }]}
-                    onPress={() => {
-                      onPick(t);
-                      setQuery("");
-                      onClose();
-                    }}
-                  >
-                    <View
-                      style={[modalStyles.iconWrap, { backgroundColor: p.iconBg }]}
-                    >
-                      <Ionicons
-                        name={t.icon}
-                        size={s(18)}
-                        color={p.textPrimary}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[modalStyles.rowLabel, { color: p.textPrimary }]}
-                      >
-                        {t.label}
-                      </Text>
-                      <Text
-                        style={{ color: p.textSecondary, fontSize: s(10) }}
-                      >
-                        {t.category}
-                        {t.aliases?.[0] ? ` · ${t.aliases[0]}` : ""}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={s(16)}
-                      color={p.textSecondary}
-                    />
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Pressable>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -532,7 +543,10 @@ export default function BottomToolbar({
 }: BottomToolbarProps) {
   const insets = useSafeAreaInsets();
   const p = useAppPalette();
-  const bottomPad = Math.max(4, Math.min(insets.bottom, 10));
+  const { isDark } = useTheme();
+  const bottomPad = isDark
+    ? Math.max(4, Math.min(insets.bottom, 10))
+    : Math.max(10, Math.min(insets.bottom || 12, 18));
 
   const pinnedTools = useMemo(() => {
     return BEGINNER_TOOLBAR_LABELS.map((label) =>
@@ -560,14 +574,18 @@ export default function BottomToolbar({
     onToolPress?.(tool.label);
   };
 
+  const iconColor = isDark ? "#FFFFFF" : p.textPrimary;
+  const labelColor = isDark ? "rgba(255,255,255,0.72)" : p.textSecondary;
+
   return (
     <View
       style={[
         styles.container,
         {
+          paddingTop: isDark ? s(6) : s(10),
           paddingBottom: bottomPad,
-          backgroundColor: p.background,
-          borderTopColor: p.border,
+          backgroundColor: isDark ? "#0B0D13" : p.surface,
+          borderTopColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
           opacity: readOnly ? 0.45 : 1,
         },
       ]}
@@ -578,80 +596,58 @@ export default function BottomToolbar({
           showsHorizontalScrollIndicator={false}
           bounces
           decelerationRate="fast"
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            !isDark && styles.scrollContentLight,
+          ]}
           style={{ flex: 1 }}
         >
-          {pinnedTools.map((tool) => {
-            const highlight =
-              tool.label === "Captions" || tool.label === "Assemble";
-            return (
-              <TouchableOpacity
-                key={tool.label}
-                style={styles.tool}
-                activeOpacity={0.7}
-                onPress={() => handlePress(tool)}
-                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+          {pinnedTools.map((tool) => (
+            <TouchableOpacity
+              key={tool.label}
+              style={[styles.tool, !isDark && styles.toolLight]}
+              activeOpacity={0.7}
+              onPress={() => handlePress(tool)}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            >
+              <View style={[styles.iconWrap, !isDark && styles.iconWrapLight]}>
+                <Ionicons
+                  name={tool.icon}
+                  size={isDark ? s(18) : s(20)}
+                  color={iconColor}
+                />
+              </View>
+              <Text
+                style={[styles.label, { color: labelColor }, !isDark && styles.labelLight]}
+                numberOfLines={1}
               >
-                <View
-                  style={[
-                    styles.iconWrap,
-                    {
-                      backgroundColor: highlight
-                        ? "rgba(245,197,24,0.15)"
-                        : p.iconBg,
-                      borderColor: highlight ? p.yellow : "transparent",
-                      borderWidth: highlight ? 1 : 0,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={tool.icon}
-                    size={s(20)}
-                    color={highlight ? p.yellow : p.textPrimary}
-                  />
+                {tool.label}
+              </Text>
+              {tool.badge ? (
+                <View style={[styles.badge, { backgroundColor: p.yellow }]}>
+                  <Text style={styles.badgeText}>{tool.badge}</Text>
                 </View>
-                <Text
-                  style={[
-                    styles.label,
-                    { color: highlight ? p.yellow : p.textSecondary },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {tool.label}
-                </Text>
-                {tool.badge ? (
-                  <View
-                    style={[styles.badge, { backgroundColor: p.yellow }]}
-                  >
-                    <Text style={styles.badgeText}>{tool.badge}</Text>
-                  </View>
-                ) : null}
-              </TouchableOpacity>
-            );
-          })}
+              ) : null}
+            </TouchableOpacity>
+          ))}
 
           <TouchableOpacity
-            style={styles.tool}
+            style={[styles.tool, !isDark && styles.toolLight]}
             activeOpacity={0.7}
             onPress={() =>
               readOnly ? onReadOnlyPress?.() : onOpenSearch?.()
             }
             hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
           >
-            <View
-              style={[
-                styles.iconWrap,
-                {
-                  backgroundColor: "rgba(245,197,24,0.15)",
-                  borderColor: p.yellow,
-                  borderWidth: 1,
-                },
-              ]}
-            >
-              <Ionicons name="apps-outline" size={s(20)} color={p.yellow} />
+            <View style={[styles.iconWrap, !isDark && styles.iconWrapLight]}>
+              <Ionicons
+                name="apps-outline"
+                size={isDark ? s(18) : s(20)}
+                color={iconColor}
+              />
             </View>
             <Text
-              style={[styles.label, { color: p.yellow }]}
+              style={[styles.label, { color: labelColor }, !isDark && styles.labelLight]}
               numberOfLines={1}
             >
               More
@@ -678,24 +674,44 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: s(2),
   },
+  scrollContentLight: {
+    paddingHorizontal: s(14),
+    gap: s(10),
+    paddingBottom: s(2),
+  },
   tool: {
-    width: s(58),
+    width: s(52),
     alignItems: "center",
     justifyContent: "flex-start",
     paddingVertical: s(2),
   },
+  toolLight: {
+    width: s(58),
+    paddingVertical: s(4),
+  },
   iconWrap: {
-    width: s(36),
-    height: s(36),
-    borderRadius: s(10),
+    width: s(28),
+    height: s(28),
+    borderRadius: s(8),
     alignItems: "center",
     justifyContent: "center",
     marginBottom: s(2),
+    backgroundColor: "transparent",
+  },
+  iconWrapLight: {
+    width: s(34),
+    height: s(34),
+    borderRadius: s(10),
+    marginBottom: s(4),
   },
   label: {
+    fontSize: s(8),
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  labelLight: {
     fontSize: s(9),
     fontWeight: "600",
-    textAlign: "center",
   },
   badge: {
     marginTop: s(2),
@@ -716,13 +732,12 @@ const modalStyles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "flex-end",
   },
-  sheetWrap: { width: "100%" },
   sheet: {
-    borderTopLeftRadius: s(18),
-    borderTopRightRadius: s(18),
+    width: "100%",
+    borderTopLeftRadius: s(22),
+    borderTopRightRadius: s(22),
     paddingHorizontal: s(16),
-    paddingTop: s(8),
-    maxHeight: "88%",
+    paddingTop: s(10),
   },
   handle: {
     alignSelf: "center",
@@ -730,12 +745,12 @@ const modalStyles = StyleSheet.create({
     height: s(4),
     borderRadius: 2,
     backgroundColor: "rgba(128,128,128,0.4)",
-    marginBottom: s(10),
+    marginBottom: s(12),
   },
   title: {
-    fontSize: s(16),
+    fontSize: s(17),
     fontWeight: "800",
-    marginBottom: s(10),
+    marginBottom: s(12),
   },
   searchRow: {
     flexDirection: "row",
@@ -744,23 +759,46 @@ const modalStyles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: s(12),
     paddingHorizontal: s(12),
-    paddingVertical: s(10),
-    marginBottom: s(10),
+    paddingVertical: s(12),
+    marginBottom: s(12),
   },
   input: {
     flex: 1,
     fontSize: s(14),
     padding: 0,
   },
+  chipsScroll: {
+    flexGrow: 0,
+    marginBottom: s(4),
+  },
   chips: {
     gap: s(8),
-    paddingBottom: s(8),
+    alignItems: "center",
+    paddingVertical: s(4),
+    paddingRight: s(8),
   },
   chip: {
-    paddingHorizontal: s(12),
-    paddingVertical: s(6),
-    borderRadius: s(16),
+    paddingHorizontal: s(14),
+    paddingVertical: s(9),
+    borderRadius: s(18),
     borderWidth: 1,
+    minHeight: s(36),
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  chipText: {
+    fontWeight: "700",
+    fontSize: s(12),
+    lineHeight: s(16),
+    includeFontPadding: false,
+    textAlignVertical: "center",
+  },
+  list: {
+    flex: 1,
+    marginTop: s(8),
+  },
+  listContent: {
+    paddingBottom: s(8),
   },
   empty: {
     textAlign: "center",
@@ -771,7 +809,7 @@ const modalStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: s(12),
-    paddingVertical: s(12),
+    paddingVertical: s(14),
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   iconWrap: {

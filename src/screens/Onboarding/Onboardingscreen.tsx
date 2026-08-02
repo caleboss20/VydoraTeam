@@ -18,12 +18,14 @@ import { useNavigation, NavigationProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../Contexts/Authcontext';
 import { useWowPath } from '../Contexts/useWowPath';
+import { isProfileSetupRequired } from '../services/profileSetupGate';
 
 type RootStackParamList = {
   home: undefined;
   signin: undefined;
   signup: { resumeWow?: boolean } | undefined;
   projects: undefined;
+  profilesetup: { resumeWow?: boolean } | undefined;
   editorscreen: { wow?: boolean; initialTool?: string } | undefined;
 };
 interface Slide {
@@ -77,19 +79,47 @@ function Onboarding() {
     }
   ).current;
 
-  const goDashboard = async (): Promise<void> => {
+  const goAfterOnboarding = async (opts?: {
+    resumeWow?: boolean;
+  }): Promise<void> => {
     await AsyncStorage.setItem('vydora:onboarding:done', 'true');
-    if (user) {
+    if (!user) {
       navigation.reset({
         index: 0,
-        routes: [{ name: 'projects' }],
+        routes: [
+          {
+            name: 'signup',
+            params: opts?.resumeWow ? { resumeWow: true } : undefined,
+          },
+        ],
       });
-    } else {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'signin' }],
-      });
+      return;
     }
+    const needsProfile = await isProfileSetupRequired();
+    if (needsProfile) {
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'profilesetup',
+            params: opts?.resumeWow ? { resumeWow: true } : undefined,
+          },
+        ],
+      });
+      return;
+    }
+    if (opts?.resumeWow) {
+      await startWowPath();
+      return;
+    }
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'projects' }],
+    });
+  };
+
+  const goDashboard = async (): Promise<void> => {
+    await goAfterOnboarding();
   };
 
   const handleNext = async (): Promise<void> => {
@@ -100,16 +130,8 @@ function Onboarding() {
       });
       return;
     }
-    // Final slide — wow path when signed in; signup with resumeWow when not.
-    await AsyncStorage.setItem('vydora:onboarding:done', 'true');
-    if (user) {
-      await startWowPath();
-      return;
-    }
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'signup', params: { resumeWow: true } }],
-    });
+    // Final slide — profile setup (optional wow resume) when signed in.
+    await goAfterOnboarding({ resumeWow: true });
   };
 
   const renderSlide = ({ item }: { item: Slide }) => (
@@ -144,7 +166,7 @@ function Onboarding() {
       </View>
       <Pressable
         style={[styles.cta, starting && styles.ctaDisabled]}
-        onPress={handleNext}
+        onPress={() => void handleNext()}
         disabled={starting}
       >
         {starting ? (

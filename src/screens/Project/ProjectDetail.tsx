@@ -38,6 +38,7 @@ import {
 } from "../services/reviewService";
 import { useVersionHistory } from "../Contexts/VersionHistoryContext";
 import { uploadService } from "../services/uploadService";
+import { markProjectCoverSynced } from "../services/projectCoverSync";
 import { CONFIG } from "../config";
 import { Clip, Member, Comment } from "../types";
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -134,9 +135,9 @@ const ClipsTab = ({
           size={moderateScale(36)}
           color={TEXT_MUTED}
         />
-        <Text style={styles.emptyTitle}>No clips yet</Text>
+        <Text style={styles.emptyTitle}>No media yet</Text>
         <Text style={styles.emptySubtitle}>
-          Upload your first clip to get started
+          Add a video, photo, or blank screen in the editor to get started
         </Text>
         <TouchableOpacity
           style={styles.emptyBtn}
@@ -144,11 +145,11 @@ const ClipsTab = ({
           activeOpacity={0.8}
         >
           <Ionicons
-            name="cloud-upload-outline"
+            name="add-circle-outline"
             size={moderateScale(16)}
             color="#000"
           />
-          <Text style={styles.emptyBtnText}>Upload clip</Text>
+          <Text style={styles.emptyBtnText}>Add media</Text>
         </TouchableOpacity>
       </View>
     );
@@ -704,6 +705,7 @@ export default function ProjectDetailScreen() {
         mime
       );
       await updateThumbnail(currentProject.id, uploaded.url);
+      markProjectCoverSynced(currentProject.id, uploaded.url);
     } catch (e: any) {
       Alert.alert("Couldn’t update cover", e?.message || "Try again.");
     }
@@ -1103,7 +1105,19 @@ export default function ProjectDetailScreen() {
           <ClipsTab
             clips={projectClips}
             isLoading={clipsLoading}
-            onUpload={() => navigation.navigate("uploadvideo")}
+            onUpload={() => {
+              Alert.alert("Add media", "Open the editor to add video, photo, or a blank screen.", [
+                {
+                  text: "Open editor",
+                  onPress: openEditor,
+                },
+                {
+                  text: "Upload video",
+                  onPress: () => navigation.navigate("uploadvideo"),
+                },
+                { text: "Cancel", style: "cancel" },
+              ]);
+            }}
             onOpenClip={openEditor}
             onClipMenu={(clip) => {
               Alert.alert(clip.title, undefined, [

@@ -228,6 +228,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       const updatedList = projects.map((p) => (p.id === projectId ? updated : p));
       await persistList(updatedList);
       if (currentProject?.id === projectId) setCurrentProject(updated);
+      if (updated.thumbnailUrl) {
+        const { markProjectCoverSynced } = await import('../services/projectCoverSync');
+        markProjectCoverSynced(projectId, updated.thumbnailUrl);
+      }
     } catch (e: any) {
       setError(e.message);
     }

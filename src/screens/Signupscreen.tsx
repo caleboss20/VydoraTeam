@@ -29,6 +29,7 @@ import { useAuth } from "./Contexts/Authcontext";
 import { useWowPath } from "./Contexts/useWowPath";
 import { CONFIG } from "./config"; // adjust path if config.ts sits elsewhere relative to this file
 import { useGoogleIdToken } from "./services/googleAuth";
+import { resetProfileSetupGate } from "./services/profileSetupGate";
 // ── Types ─────────────────────────────────────────────────────────
 // signup params + AcceptInvite added to support the invite-driven signup path:
 // - prefillEmail / pendingInviteToken arrive when AcceptInviteScreen sends a
@@ -44,6 +45,7 @@ type RootStackParamList = {
       }
     | undefined;
   onboarding: undefined;
+  profilesetup: { resumeWow?: boolean } | undefined;
   projects: undefined;
   signup:
     | {
@@ -77,7 +79,7 @@ export default function Signupscreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "signup">>();
   const { register, loginWithGoogle, isLoadingAuth, error } = useAuth();
-  const { startWowPath, starting } = useWowPath();
+  const { starting } = useWowPath();
   const { promptGoogle, ready: googleReady } = useGoogleIdToken();
   const [googleBusy, setGoogleBusy] = useState(false);
   const [fullName, setFullName] = useState<string>("");
@@ -136,10 +138,15 @@ export default function Signupscreen() {
       const resumeWow = !!route.params?.resumeWow;
       if (resumeWow) {
         await AsyncStorage.setItem("vydora:onboarding:done", "true");
-        await startWowPath();
+        await resetProfileSetupGate();
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "profilesetup", params: { resumeWow: true } }],
+        });
         return;
       }
       await AsyncStorage.removeItem("vydora:onboarding:done");
+      await resetProfileSetupGate();
       navigation.reset({
         index: 0,
         routes: [{ name: "onboarding" }],
@@ -177,14 +184,18 @@ export default function Signupscreen() {
       await AsyncStorage.removeItem("vydora:onboarding:done");
       await AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.WOW_PATH_DONE);
       await AsyncStorage.removeItem(CONFIG.ASYNC_STORAGE_KEYS.WOW_PATH_ACTIVE);
+      await resetProfileSetupGate();
 
       const resumeWow = !!route.params?.resumeWow;
       if (resumeWow) {
         await AsyncStorage.setItem("vydora:onboarding:done", "true");
-        await startWowPath();
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "profilesetup", params: { resumeWow: true } }],
+        });
         return;
       }
-      // First-time signup → onboarding (create promise) → wow CTA on last slide.
+      // First-time signup → onboarding → profile setup → dashboard / wow.
       navigation.reset({
         index: 0,
         routes: [{ name: "onboarding" }],
