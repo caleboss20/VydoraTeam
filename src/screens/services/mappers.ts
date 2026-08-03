@@ -78,7 +78,13 @@ export function mapAuthUser(data: {
   initials?: string | null;
   color?: string | null;
   avatarUrl?: string | null;
+  referralCode?: string | null;
+  isPro?: boolean;
+  proUntil?: string | null;
 }): User {
+  const isPro =
+    data.isPro === true ||
+    (!!data.proUntil && Date.parse(data.proUntil) > Date.now());
   return {
     id: data.userId,
     name: data.name,
@@ -86,6 +92,10 @@ export function mapAuthUser(data: {
     initials: data.initials?.trim() || initialsFromName(data.name),
     color: data.color?.trim() || colorFromId(data.userId),
     avatarUrl: data.avatarUrl || undefined,
+    referralCode: data.referralCode || undefined,
+    isPro,
+    plan: isPro ? 'pro' : undefined,
+    proUntil: data.proUntil || undefined,
   };
 }
 
@@ -122,6 +132,7 @@ export type ApiProject = {
   visibility?: string | null;
   memberCount?: number;
   clipCount?: number;
+  myRole?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -146,6 +157,7 @@ export function mapProjectFromApi(p: ApiProject): Project {
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     members: [],
+    myRole: p.myRole ? mapMemberRoleFromApi(p.myRole) : undefined,
   };
 }
 
@@ -298,6 +310,12 @@ export type ApiMessage = {
 };
 
 export function mapMessageFromApi(m: ApiMessage): ChatMessage {
+  const created =
+    typeof m.createdAt === 'string'
+      ? m.createdAt
+      : m.createdAt
+        ? new Date(m.createdAt as unknown as string | number).toISOString()
+        : new Date().toISOString();
   return {
     id: m.id,
     projectId: m.projectId,
@@ -307,8 +325,10 @@ export function mapMessageFromApi(m: ApiMessage): ChatMessage {
     color: m.authorColor?.trim() || colorFromId(m.userId),
     avatarUrl: m.authorAvatarUrl || undefined,
     text: m.content,
-    timestamp: dayjs(m.createdAt).fromNow(),
-    createdAt: m.createdAt,
+    timestamp: dayjs(created).isValid()
+      ? dayjs(created).format('h:mm A')
+      : dayjs().format('h:mm A'),
+    createdAt: created,
   };
 }
 
@@ -323,6 +343,7 @@ export type ApiExport = {
   status: string;
   progress: number;
   downloadUrl?: string | null;
+  errorMessage?: string | null;
   createdAt: string;
   completedAt?: string | null;
 };
@@ -355,5 +376,6 @@ export function mapExportFromApi(e: ApiExport, projectName = 'Export'): Export {
     status: mapExportStatusFromApi(e.status),
     createdAt: e.createdAt,
     fileUrl: e.downloadUrl || undefined,
+    errorMessage: e.errorMessage || undefined,
   };
 }

@@ -164,4 +164,72 @@ export const memberService = {
       { method: 'POST' }
     );
   },
+
+  /** Viewer asks Owner for Editor access. */
+  requestRoleUpgrade: async (
+    projectId: string,
+    _token?: string
+  ): Promise<{ id: string; status: string }> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock members disabled.');
+    return apiRequest<{ id: string; status: string }>(
+      `/projects/${projectId}/members/role-upgrade-requests`,
+      { method: 'POST' }
+    );
+  },
+
+  listRoleUpgradeRequests: async (
+    projectId: string,
+    _token: string
+  ): Promise<
+    Array<{
+      id: string;
+      projectId: string;
+      userId: string;
+      requestedById: string;
+      requestedByName: string;
+      requestedRole: string;
+      status: string;
+      createdAt: string;
+    }>
+  > => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock members disabled.');
+    const data = await apiRequest<{
+      items: Array<{
+        id: string;
+        projectId: string;
+        userId: string;
+        requestedById: string;
+        requestedByName: string;
+        requestedRole: string;
+        status: string;
+        createdAt: string;
+      }>;
+    }>(`/projects/${projectId}/members/role-upgrade-requests`);
+    return data.items || [];
+  },
+
+  approveRoleUpgrade: async (
+    projectId: string,
+    requestId: string,
+    _token: string
+  ): Promise<Member> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock members disabled.');
+    const data = await apiRequest<ApiMember>(
+      `/projects/${projectId}/members/role-upgrade-requests/${requestId}/approve`,
+      { method: 'POST' }
+    );
+    return mapMemberFromApi(data);
+  },
+
+  rejectRoleUpgrade: async (
+    projectId: string,
+    requestId: string,
+    _token: string
+  ): Promise<void> => {
+    if (CONFIG.USE_MOCK) throw new Error('Mock members disabled.');
+    await apiRequest<void>(
+      `/projects/${projectId}/members/role-upgrade-requests/${requestId}/reject`,
+      { method: 'POST' }
+    );
+  },
 };

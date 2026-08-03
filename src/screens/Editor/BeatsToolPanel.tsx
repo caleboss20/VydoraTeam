@@ -43,6 +43,8 @@ interface BeatsToolPanelProps {
   /** Opt-in auto-detect; resolves with how many beats were added. */
   onDetectBeats?: () => Promise<number>;
   detecting?: boolean;
+  /** Split active clip on every marker inside it. */
+  onAutoCut?: () => void;
 }
 
 export default function BeatsToolPanel({
@@ -55,6 +57,7 @@ export default function BeatsToolPanel({
   onClose,
   onDetectBeats,
   detecting = false,
+  onAutoCut,
 }: BeatsToolPanelProps) {
   const __palette = useAppPalette();
   COLORS = {
@@ -118,6 +121,17 @@ export default function BeatsToolPanel({
             <Text style={styles.secondaryBtnText}>Detect beats</Text>
           </TouchableOpacity>
         )
+      )}
+
+      {onAutoCut && markers.length > 0 && (
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={onAutoCut}
+          disabled={detecting}
+        >
+          <Ionicons name="cut-outline" size={scale(16)} color={COLORS.textPrimary} />
+          <Text style={styles.secondaryBtnText}>Auto beat-cut</Text>
+        </TouchableOpacity>
       )}
 
       {lastAdded !== null && !detecting && (

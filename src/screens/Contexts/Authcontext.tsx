@@ -32,9 +32,17 @@ interface AuthContextType {
   isLoadingAuth: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string, referralCode?: string) => Promise<void>;
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    referralCode?: string
+  ) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  /** Merge profile fields locally (e.g. after referral redeem). */
+  applyUserPatch: (patch: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -163,12 +171,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const register = async (name: string, email: string, password: string) => {
+  const loginWithGoogle = async (idToken: string, referralCode?: string) => {
     try {
       setIsLoadingAuth(true);
       setError(null);
       await clearDomainCachesForUser(user?.id);
-      const result = await authService.register(name.trim(), email.trim(), password);
+      const result = await authService.loginWithGoogle(idToken, referralCode);
+      setUser(result.user);
+      setToken(result.token);
+      setRefreshToken(result.refreshToken);
+      await persistSession(result.user, result.token, result.refreshToken);
+    } catch (e: any) {
+      setError(e.message);
+      throw e;
+    } finally {
+      setIsLoadingAuth(false);
+    }
+  };
+
+  const register = async (
+    name: string,
+    email: string,
+    password: string,
+    referralCode?: string
+  ) => {
+    try {
+      setIsLoadingAuth(true);
+      setError(null);
+      await clearDomainCachesForUser(user?.id);
+      const result = await authService.register(
+        name.trim(),
+        email.trim(),
+        password,
+        referralCode
+      );
       setUser(result.user);
       setToken(result.token);
       setRefreshToken(result.refreshToken);
@@ -229,6 +265,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const applyUserPatch = async (patch: Partial<User>) => {
+    if (!user) return;
+    const updatedUser = { ...user, ...patch };
+    setUser(updatedUser);
+    await AsyncStorage.setItem(
+      CONFIG.ASYNC_STORAGE_KEYS.USER,
+      JSON.stringify(updatedUser)
+    );
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -237,9 +283,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoadingAuth,
         error,
         login,
+        loginWithGoogle,
         register,
         logout,
         updateUser,
+        applyUserPatch,
       }}
     >
       {children}

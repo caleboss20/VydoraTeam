@@ -60,6 +60,64 @@ function isRemoteUrl(uri: string): boolean {
   return /^https?:\/\//i.test(uri.trim());
 }
 
+/** Cap concurrency for uploads so we don't slam the network / Cloudinary. */
+async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const runners = Array.from(
+    { length: Math.min(Math.max(1, limit), Math.max(1, items.length)) },
+    async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await worker(items[i], i);
+      }
+    }
+  );
+  await Promise.all(runners);
+  return results;
+}
+
+function friendlyExportError(err: unknown, fallback: string): Error {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : fallback;
+  const msg = (raw || fallback).trim();
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes('network') ||
+    lower.includes('failed to fetch') ||
+    lower.includes('timeout') ||
+    lower.includes('econnrefused') ||
+    lower.includes('network request failed')
+  ) {
+    return new Error(
+      'Couldn’t reach the export server. Check Wi‑Fi / that the backend is running, then try again.'
+    );
+  }
+  if (lower.includes('unauthorized') || lower.includes('401')) {
+    return new Error('Session expired. Sign in again, then export.');
+  }
+  if (lower.includes('ffmpeg')) {
+    return new Error(
+      'Render failed on the server (FFmpeg). Try 720p / MP4, or re-upload the clip and retry.'
+    );
+  }
+  if (lower.includes('no clips') || lower.includes('empty')) {
+    return new Error(
+      'This project has no exportable clips. Add a video, then try again.'
+    );
+  }
+  if (msg.length > 220) return new Error(`${msg.slice(0, 220)}…`);
+  return new Error(msg || fallback);
+}
+
 /**
  * Upload every local clip URI (and register clips in the backend `files`
  * table when it's empty, since export refuses empty projects). Returns a
@@ -82,21 +140,34 @@ async function resolveClipUrls(
 
   const resolved: Record<string, string> = {};
   const durations: Record<string, number> = {};
-  const mediaClips = timeline.filter((c) => c.kind !== 'title' && !!c.uri);
-  if (mediaClips.length === 0 && timeline.every((c) => c.kind === 'title')) {
+  const mediaClips = timeline.filter(
+    (c) => c.kind !== 'title' && !!c.uri
+  );
+  if (
+    mediaClips.length === 0 &&
+    timeline.every((c) => c.kind === 'title')
+  ) {
     // Title-only projects are fine — server generates color sheets.
     onProgress(8);
     return resolved;
   }
 
-  for (let i = 0; i < timeline.length; i++) {
-    const clip = timeline[i];
-    if (clip.kind === 'title') {
-      onProgress(2 + Math.round(((i + 1) / timeline.length) * 6));
-      continue;
-    }
+  let finished = 0;
+  const work = timeline
+    .map((clip, i) => ({ clip, i }))
+    .filter(({ clip }) => clip.kind !== 'title');
+
+  await mapPool(work, 3, async ({ clip, i }) => {
     if (isRemoteUrl(clip.uri)) {
       resolved[clip.id] = clip.uri.trim();
+    } else if (clip.kind === 'flyer') {
+      const name =
+        clip.uri.toLowerCase().includes('.png')
+          ? `export_flyer_${i + 1}.png`
+          : `export_flyer_${i + 1}.jpg`;
+      const mime = name.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const uploaded = await uploadService.uploadImage(clip.uri, name, mime);
+      resolved[clip.id] = uploaded.url;
     } else {
       const uploaded = await uploadService.uploadVideo(
         clip.uri,
@@ -108,7 +179,14 @@ async function resolveClipUrls(
         durations[clip.id] = Math.round(uploaded.durationSeconds);
       }
     }
-    onProgress(2 + Math.round(((i + 1) / timeline.length) * 6));
+    finished += 1;
+    onProgress(2 + Math.round((finished / Math.max(1, work.length)) * 6));
+  });
+
+  // Titles contribute to progress even though they need no upload.
+  const titleCount = timeline.filter((c) => c.kind === 'title').length;
+  if (titleCount > 0 && work.length === 0) {
+    onProgress(8);
   }
 
   // Register clips in the collab `files` table if it's empty (backend
@@ -118,7 +196,8 @@ async function resolveClipUrls(
     let order = 0;
     for (let i = 0; i < timeline.length; i++) {
       const clip = timeline[i];
-      if (clip.kind === 'title' || !resolved[clip.id]) continue;
+      if (clip.kind === 'title' || clip.kind === 'flyer' || !resolved[clip.id])
+        continue;
       const durationSeconds =
         durations[clip.id] ?? Math.max(1, Math.round((clip.durationMs || 1000) / 1000));
       await clipService.addClip(
@@ -242,11 +321,46 @@ function buildRenderTimeline(
   voiceoverUrls: Record<string, string>,
   settings: ExportSettings
 ) {
-  const clips = [...(project.clips || [])]
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    .map((c) => {
+  const sorted = [...(project.clips || [])].sort(
+    (a, b) => (a.order ?? 0) - (b.order ?? 0)
+  );
+  const adj = project.adjustmentLayers ?? [];
+  let timelineCursor = 0;
+  const clips = sorted.map((c) => {
+      const trimStart = c.trimStartMs ?? 0;
+      const trimEnd = c.trimEndMs ?? c.durationMs;
+      const visibleMs = Math.max(0, trimEnd - trimStart);
+      const clipStart = timelineCursor;
+      const clipEnd = timelineCursor + visibleMs;
+      timelineCursor = clipEnd;
+
+      // Bake overlapping adjustment layers into this clip's grade for export.
+      let mergedGrade = { ...(c.colorGrade ?? {}) } as Record<string, number>;
+      let mergedEffectId = c.effectId;
+      let mergedEffectIntensity = c.effectIntensity;
+      for (const layer of adj) {
+        const ls = layer.startMs;
+        const le = layer.startMs + layer.durationMs;
+        if (le <= clipStart || ls >= clipEnd) continue;
+        if (layer.colorGrade) {
+          for (const [k, v] of Object.entries(layer.colorGrade)) {
+            if (typeof v === 'number') {
+              mergedGrade[k] = Math.max(
+                -1,
+                Math.min(1, (mergedGrade[k] ?? 0) + v)
+              );
+            }
+          }
+        }
+        if (layer.effectId && layer.effectId !== 'none') {
+          mergedEffectId = layer.effectId;
+          mergedEffectIntensity = layer.effectIntensity ?? 0.55;
+        }
+      }
+
       const filter = settings.includeFilters ? getFilterById(c.filterId) : getFilterById('none');
       const isTitle = c.kind === 'title';
+      const isFlyer = c.kind === 'flyer';
       const titleTexts =
         isTitle && c.titleCard
           ? [
@@ -303,7 +417,7 @@ function buildRenderTimeline(
             ]
           : null;
       return {
-        kind: isTitle ? 'title' : 'video',
+        kind: isTitle ? 'title' : isFlyer ? 'flyer' : 'video',
         titleCard: isTitle && c.titleCard
           ? {
               backgroundColor: c.titleCard.backgroundColor,
@@ -314,8 +428,11 @@ function buildRenderTimeline(
             }
           : null,
         url: isTitle ? '' : clipUrls[c.id] ?? c.uri,
-        trimStartMs: isTitle ? 0 : c.trimStartMs ?? 0,
-        trimEndMs: isTitle ? c.durationMs : c.trimEndMs ?? c.durationMs,
+        trimStartMs: isTitle || isFlyer ? 0 : c.trimStartMs ?? 0,
+        trimEndMs:
+          isTitle || isFlyer
+            ? c.durationMs
+            : c.trimEndMs ?? c.durationMs,
         // When a curve is set, bake its segments; otherwise use constant speed.
         speed:
           c.speedCurve && c.speedCurve !== 'none'
@@ -361,9 +478,15 @@ function buildRenderTimeline(
           : null,
         tintColor: filter.tintColor,
         tintOpacity: filter.tintOpacity,
-        effectId: c.effectId ?? 'none',
-        effectIntensity: c.effectIntensity ?? 0.55,
-        colorGrade: c.colorGrade ?? null,
+        effectId: mergedEffectId ?? 'none',
+        effectIntensity: mergedEffectIntensity ?? 0.55,
+        colorGrade:
+          Object.keys(mergedGrade).length > 0
+            ? mergedGrade
+            : c.colorGrade ?? null,
+        colorCurves: c.colorCurves ?? null,
+        lutUri: c.lutUri ?? null,
+        lutIntensity: c.lutIntensity ?? 1,
         colorGradeKeyframes: (c.colorGradeKeyframes ?? []).map((k) => ({
           timeMs: k.timeMs,
           grade: k.grade,
@@ -395,12 +518,28 @@ function buildRenderTimeline(
           ? {
               noiseReduction: c.audioFx.noiseReduction ?? 0,
               enhanceSpeech: !!c.audioFx.enhanceSpeech,
+              enhanceStrength: c.audioFx.enhanceStrength ?? 0.75,
+              eqSub: c.audioFx.eqSub ?? 0,
               eqLow: c.audioFx.eqLow ?? 0,
               eqMid: c.audioFx.eqMid ?? 0,
+              eqPresence: c.audioFx.eqPresence ?? 0,
               eqHigh: c.audioFx.eqHigh ?? 0,
+              eqAir: c.audioFx.eqAir ?? 0,
               compressor: !!c.audioFx.compressor,
               compThreshold: c.audioFx.compThreshold ?? -18,
               compRatio: c.audioFx.compRatio ?? 3,
+              deEsser: c.audioFx.deEsser ?? 0,
+              gate: c.audioFx.gate ?? 0,
+            }
+          : null,
+        lookOverlay: c.lookOverlay
+          ? {
+              darkOpacity: c.lookOverlay.darkOpacity ?? 0,
+              gradientOpacity: c.lookOverlay.gradientOpacity ?? 0,
+              gradientColorTop: c.lookOverlay.gradientColorTop ?? '#000000',
+              gradientColorBottom:
+                c.lookOverlay.gradientColorBottom ?? '#F5C518',
+              gradientAngle: c.lookOverlay.gradientAngle ?? 0,
             }
           : null,
         transitionType: c.transitionOut?.type ?? 'none',
@@ -505,6 +644,9 @@ function buildRenderTimeline(
       opacity: o.opacity,
       flipH: !!o.flipH,
       flipV: !!o.flipV,
+      label: o.label ?? null,
+      role: o.role ?? null,
+      animationIn: o.animationIn ?? null,
       keyframes: (o.keyframes ?? []).map((k) => ({
         timeMs: k.timeMs,
         x: k.x,
@@ -642,57 +784,121 @@ async function createExport(
     throw new Error('No project selected for export.');
   }
 
+  const clips = project.clips ?? [];
+  if (clips.length === 0) {
+    throw new Error(
+      'This project has no clips to export. Add a video first, then try again.'
+    );
+  }
+
   projectNameCache[projectId] = project.title;
 
-  onProgress(2);
-  // 1. Make sure every source the server must download is a remote URL.
-  const clipUrls = await resolveClipUrls(projectId, project, token, onProgress);
-  const overlayUrls = await resolveOverlayUrls(project);
-  const voiceoverUrls = await resolveVoiceoverUrls(project);
-  const musicUrls = await resolveMusicUrls(project);
-  onProgress(9);
-
-  // 2. Kick off the baked render with the full edit timeline.
-  const created = await apiRequest<ApiExport>(
-    `/projects/${projectId}/exports`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        format: settings.format,
-        resolution: settings.resolution,
-        timeline: buildRenderTimeline(
-          project,
-          clipUrls,
-          overlayUrls,
-          musicUrls,
-          voiceoverUrls,
-          settings
-        ),
-      }),
+  /** Keep the bar moving during silent network work (uploads / DB register). */
+  let floor = 0;
+  const report = (n: number) => {
+    floor = Math.max(floor, Math.min(99, Math.round(n)));
+    onProgress(floor);
+  };
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const startHeartbeat = (cap: number, step = 1, everyMs = 450) => {
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = setInterval(() => {
+      if (floor >= cap) return;
+      report(floor + step);
+    }, everyMs);
+  };
+  const stopHeartbeat = () => {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
     }
-  );
+  };
 
-  onProgress(Math.max(10, created.progress || 10));
+  try {
+    report(2);
+    startHeartbeat(12, 1, 400);
 
-  // 3. Poll until terminal status — real renders can take minutes.
-  let latest = created;
-  for (let i = 0; i < 900; i++) {
-    await sleep(1000);
-    latest = await apiRequest<ApiExport>(`/exports/${created.id}`);
-    onProgress(Math.min(99, Math.max(10, latest.progress || 0)));
-    const status = (latest.status || '').toUpperCase();
-    // Backend enum is Ready | Processing | Failed (not COMPLETED).
-    if (status === 'READY' || status === 'COMPLETED' || status === 'FAILED') {
-      break;
+    // 1. Make sure every source the server must download is a remote URL.
+    const [clipUrls, overlayUrls, voiceoverUrls, musicUrls] = await Promise.all([
+      resolveClipUrls(projectId, project, token, report),
+      resolveOverlayUrls(project),
+      resolveVoiceoverUrls(project),
+      resolveMusicUrls(project),
+    ]);
+    stopHeartbeat();
+    report(16);
+
+    // 2. Kick off the baked render with the full edit timeline.
+    startHeartbeat(22, 1, 500);
+    const created = await apiRequest<ApiExport>(
+      `/projects/${projectId}/exports`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          format: settings.format,
+          resolution: settings.resolution,
+          timeline: buildRenderTimeline(
+            project,
+            clipUrls,
+            overlayUrls,
+            musicUrls,
+            voiceoverUrls,
+            settings
+          ),
+        }),
+      }
+    );
+    stopHeartbeat();
+    report(Math.max(24, created.progress || 24));
+
+    // 3. Poll until terminal status — real renders can take minutes.
+    // Map server progress into a smoother UI range so it doesn't sit on 2%.
+    let latest = created;
+    let timedOut = true;
+    for (let i = 0; i < 900; i++) {
+      const serverPct = latest.progress || 0;
+      const uiPct =
+        serverPct <= 3
+          ? 24 + Math.min(8, i) // downloading / queueing
+          : serverPct < 35
+            ? 28 + (serverPct / 35) * 12 // ~28–40
+            : serverPct < 92
+              ? 40 + ((serverPct - 35) / 57) * 50 // ~40–90
+              : 90 + ((serverPct - 92) / 8) * 9; // ~90–99
+      report(uiPct);
+
+      await sleep(serverPct < 35 ? 350 : serverPct < 85 ? 500 : 700);
+      latest = await apiRequest<ApiExport>(`/exports/${created.id}`);
+      const status = (latest.status || '').toUpperCase();
+      if (status === 'READY' || status === 'COMPLETED' || status === 'FAILED') {
+        timedOut = false;
+        break;
+      }
     }
-  }
 
-  const mapped = mapExportFromApi(latest, project.title);
-  if (mapped.status === 'Failed') {
-    throw new Error(mapped.errorMessage || 'Export failed on the server. Please try again.');
+    const mapped = mapExportFromApi(latest, project.title);
+    if (timedOut && mapped.status === 'Processing') {
+      throw new Error(
+        'Export is still processing on the server. Check the Exports tab in a minute — it will update when ready.'
+      );
+    }
+    if (mapped.status === 'Failed') {
+      throw new Error(
+        mapped.errorMessage ||
+          latest.errorMessage ||
+          'Export failed on the server. Please try again.'
+      );
+    }
+    if (!mapped.fileUrl) {
+      throw new Error('Export finished but no download URL was returned.');
+    }
+    stopHeartbeat();
+    onProgress(100);
+    return mapped;
+  } catch (e) {
+    stopHeartbeat();
+    throw friendlyExportError(e, 'Export failed. Please try again.');
   }
-  onProgress(100);
-  return mapped;
 }
 
 export const exportService = {

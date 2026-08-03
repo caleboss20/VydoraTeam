@@ -14,7 +14,7 @@
  * comments live and tears the connection down on unmount. UI is unchanged —
  * this only feeds the existing contexts.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Client, IMessage } from '@stomp/stompjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config';
@@ -30,18 +30,21 @@ import {
   LiveCursor,
   bindEditorSocket,
   emitRemoteCursor,
+  emitEditToast,
   unbindEditorSocket,
   publishHello,
   publishState,
+  setLocalActorName,
 } from './editorSync';
 
 export function useProjectSocket(projectId: string) {
   const { token, user } = useAuth();
   const { fetchComments } = useComment();
   const { setOnlineMembers, setMemberOnline } = useMember();
-  const { receiveMessage } = useMessage();
+  const { receiveMessage, fetchMessages } = useMessage();
   const { applyRemoteProjectState, currentVideoProject } = useVideoProject();
   const clientRef = useRef<Client | null>(null);
+  const [connected, setConnected] = useState(false);
 
   // Keep the latest context callbacks/state in a ref so ordinary re-renders
   // never tear down and rebuild the socket (only projectId / auth changes should).
@@ -50,24 +53,33 @@ export function useProjectSocket(projectId: string) {
     setOnlineMembers,
     setMemberOnline,
     receiveMessage,
+    fetchMessages,
     applyRemoteProjectState,
     currentVideoProject,
     userId: user?.id as string | undefined,
+    userName: user?.name as string | undefined,
   });
   handlersRef.current = {
     fetchComments,
     setOnlineMembers,
     setMemberOnline,
     receiveMessage,
+    fetchMessages,
     applyRemoteProjectState,
     currentVideoProject,
     userId: user?.id,
+    userName: user?.name,
   };
 
   useEffect(() => {
-    if (!projectId || !token) return;
+    if (!projectId || !token) {
+      setConnected(false);
+      return;
+    }
 
     let cancelled = false;
+
+    if (user?.name) setLocalActorName(user.name);
 
     const client = new Client({
       brokerURL: CONFIG.WS_BROKER_URL,
@@ -76,11 +88,14 @@ export function useProjectSocket(projectId: string) {
       heartbeatOutgoing: 10000,
       // Always send the freshest token (apiClient rotates it on refresh).
       beforeConnect: async () => {
+        // Pick up LAN/cloud failover without rebuilding the client.
+        client.brokerURL = CONFIG.WS_BROKER_URL;
         const stored = await AsyncStorage.getItem(CONFIG.ASYNC_STORAGE_KEYS.TOKEN);
         client.connectHeaders = { Authorization: `Bearer ${stored ?? token}` };
       },
       onConnect: () => {
         if (cancelled) return;
+        setConnected(true);
 
         // Presence — server pushes the full set of online userIds. Subscribing
         // to this destination is also what registers THIS user as online.
@@ -92,7 +107,11 @@ export function useProjectSocket(projectId: string) {
               : Array.isArray(raw?.userIds)
                 ? raw.userIds.map((id: unknown) => String(id))
                 : [];
-            handlersRef.current.setOnlineMembers(projectId, ids);
+            handlersRef.current.setOnlineMembers(
+              projectId,
+              ids,
+              handlersRef.current.userId
+            );
             // Keep yourself online even if the first broadcast raced without you.
             const myId = handlersRef.current.userId;
             if (myId && !ids.includes(myId)) {
@@ -110,6 +129,11 @@ export function useProjectSocket(projectId: string) {
         if (myId) {
           handlersRef.current.setMemberOnline(projectId, myId, true);
         }
+
+        // After (re)connect, reload chat history so messages sent while offline
+        // aren't missing from the panel.
+        void handlersRef.current.fetchMessages(projectId);
+        void handlersRef.current.fetchComments(projectId);
 
         // Project group chat
         client.subscribe(`/topic/project/${projectId}/messages`, (msg: IMessage) => {
@@ -138,7 +162,13 @@ export function useProjectSocket(projectId: string) {
                 !mine ||
                 mine.projectId !== projectId ||
                 (evt.project.updatedAt ?? '') >= (mine.updatedAt ?? '');
-              if (adopt) handlersRef.current.applyRemoteProjectState(evt.project);
+              if (adopt) {
+                handlersRef.current.applyRemoteProjectState(evt.project);
+                emitEditToast({
+                  actorName: evt.actorName || 'Teammate',
+                  summary: evt.summary || 'updated the timeline',
+                });
+              }
             } else if (evt.type === 'hello') {
               // A member just joined — send them our current timeline.
               const mine = handlersRef.current.currentVideoProject;
@@ -171,6 +201,19 @@ export function useProjectSocket(projectId: string) {
         console.log('[Socket] STOMP error', frame.headers['message'], frame.body),
       onWebSocketError: (e: any) =>
         console.log('[Socket] WebSocket error', e?.message ?? e),
+      onWebSocketClose: () => {
+        setConnected(false);
+        // Drop peer presence on disconnect; keep yourself marked online
+        // optimistically so reconnect doesn't flash "0 online" for you.
+        const myId = handlersRef.current.userId;
+        handlersRef.current.setOnlineMembers(projectId, [], myId);
+        console.log('[Socket] disconnected — will reconnect');
+      },
+      onDisconnect: () => {
+        setConnected(false);
+        const myId = handlersRef.current.userId;
+        handlersRef.current.setOnlineMembers(projectId, [], myId);
+      },
     });
 
     clientRef.current = client;
@@ -178,11 +221,12 @@ export function useProjectSocket(projectId: string) {
 
     return () => {
       cancelled = true;
+      setConnected(false);
       unbindEditorSocket();
       client.deactivate().catch(() => {});
       clientRef.current = null;
     };
   }, [projectId, token]);
 
-  return clientRef;
+  return { clientRef, connected };
 }

@@ -1,9 +1,8 @@
 /**
  * InviteContext — wraps inviteService with loading/error state.
  *
- * Uses AuthContext so accept/decline can pass the current userId into
- * POST /projects/{projectId}/members/{userId}/accept|decline.
- * Deep-link “token” === projectId (see inviteService header comments).
+ * Hybrid model: email notify + share link + request-to-join (Owner admit).
+ * Deep-link “token” === projectId.
  */
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import {
@@ -11,6 +10,7 @@ import {
   getInviteByToken as getInviteByTokenService,
   acceptInvite as acceptInviteService,
   declineInvite as declineInviteService,
+  requestJoinViaLink as requestJoinViaLinkService,
   InviteDetails,
   InviteRole,
 } from '../services/inviteService';
@@ -32,6 +32,8 @@ interface InviteContextValue {
   /** Returns projectId on success so AcceptInvite can navigate. */
   acceptInvite: (token: string) => Promise<string | null>;
   declineInvite: (token: string) => Promise<void>;
+  /** Wrong-account / link-join: ask Owner to Admit. */
+  requestJoin: (token: string) => Promise<boolean>;
   clearInviteError: () => void;
 }
 
@@ -95,7 +97,9 @@ export function InviteProvider({ children }: { children: ReactNode }) {
         token || undefined
       );
       setCurrentInvite((prev) =>
-        prev ? { ...prev, status: 'accepted' } : prev
+        prev
+          ? { ...prev, status: 'accepted', state: 'ALREADY_ACTIVE' }
+          : prev
       );
       return result.projectId;
     } catch (err) {
@@ -121,6 +125,32 @@ export function InviteProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function requestJoin(inviteToken: string): Promise<boolean> {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await requestJoinViaLinkService(inviteToken, 'Editor');
+      setCurrentInvite((prev) =>
+        prev
+          ? {
+              ...prev,
+              state: 'JOIN_REQUEST_PENDING',
+              message:
+                'Request sent. The Owner will Admit or Decline — like Zoom’s waiting room.',
+            }
+          : prev
+      );
+      return true;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not request to join'
+      );
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   function clearInviteError() {
     setError(null);
   }
@@ -134,6 +164,7 @@ export function InviteProvider({ children }: { children: ReactNode }) {
     loadInviteByToken,
     acceptInvite,
     declineInvite,
+    requestJoin,
     clearInviteError,
   };
 

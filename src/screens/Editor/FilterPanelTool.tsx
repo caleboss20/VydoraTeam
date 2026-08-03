@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX } from './toolSheetLayout';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { VideoFilter } from '../types';
 import { useAppPalette } from '../Contexts/ThemeContext';
@@ -59,6 +60,18 @@ export default function FilterToolPanel({
     let cancelled = false;
     setFrameError(false);
     const generateFrame = async () => {
+      const lower = clipUri.toLowerCase();
+      const looksStill =
+        lower.includes('.png') ||
+        lower.includes('.jpg') ||
+        lower.includes('.jpeg') ||
+        lower.includes('.webp') ||
+        lower.includes('.gif') ||
+        lower.includes('image');
+      if (looksStill) {
+        if (!cancelled) setFrameUri(clipUri);
+        return;
+      }
       try {
         const { uri } = await VideoThumbnails.getThumbnailAsync(clipUri, {
           time: frameTimeMs,
@@ -66,7 +79,11 @@ export default function FilterToolPanel({
         if (!cancelled) setFrameUri(uri);
       } catch (e) {
         console.log('Filter preview thumbnail failed', e);
-        if (!cancelled) setFrameError(true);
+        // Flyer / still fallback — show the source itself.
+        if (!cancelled) {
+          setFrameUri(clipUri);
+          setFrameError(false);
+        }
       }
     };
     generateFrame();
@@ -151,6 +168,8 @@ function __makeStyles() {
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
     paddingBottom: verticalScale(16),
+    maxHeight: TOOL_SHEET_MAX,
+    minHeight: Math.round(TOOL_SHEET_MAX * 0.55),
   },
   header: {
     flexDirection: 'row',

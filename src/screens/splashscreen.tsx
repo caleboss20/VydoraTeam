@@ -5,6 +5,7 @@ import { s } from "react-native-size-matters";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "./Contexts/Authcontext";
+import { isProfileSetupRequired } from "./services/profileSetupGate";
 
 const Splashscreen = () => {
   const navigation = useNavigation<any>();
@@ -21,11 +22,16 @@ const Splashscreen = () => {
       );
 
       if (user) {
-        // Signed-in users see onboarding once before the dashboard.
+        // Signed-in users see onboarding once, then profile setup, then dashboard.
         if (!onboardingDone) {
           navigation.reset({
             index: 0,
             routes: [{ name: "onboarding" }],
+          });
+        } else if (await isProfileSetupRequired()) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "profilesetup" }],
           });
         } else {
           navigation.reset({

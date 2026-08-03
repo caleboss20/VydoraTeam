@@ -66,25 +66,63 @@ interface ExportProgressSheetProps {
   progress: number;
   quote: string;
   isDone: boolean;
+  /** When set, sheet switches to a fail state with dismiss / retry. */
+  error?: string | null;
   onClose: () => void;
+  onRetry?: () => void;
 }
 
-export function ExportProgressSheet({ visible, progress, quote, isDone, onClose }: ExportProgressSheetProps) {
+export function ExportProgressSheet({
+  visible,
+  progress,
+  quote,
+  isDone,
+  error,
+  onClose,
+  onRetry,
+}: ExportProgressSheetProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const failed = !!error;
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => {}}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={failed || isDone ? onClose : () => {}}
+    >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <Text style={styles.title}>{isDone ? "Export complete" : "Exporting..."}</Text>
-          <WaveProgressBar progress={progress} isDone={isDone} />
-          <Text style={styles.percent}>{Math.round(progress)}%</Text>
-          <Text style={styles.quote}>{quote}</Text>
-          {isDone && (
+          <Text style={styles.title}>
+            {failed ? "Export failed" : isDone ? "Export complete" : "Exporting..."}
+          </Text>
+          {!failed ? (
+            <>
+              <WaveProgressBar progress={progress} isDone={isDone} />
+              <Text style={styles.percent}>{Math.round(progress)}%</Text>
+              <Text style={styles.quote}>{quote}</Text>
+            </>
+          ) : (
+            <Text style={styles.errorText}>{error}</Text>
+          )}
+          {failed ? (
+            <View style={styles.actions}>
+              {onRetry ? (
+                <TouchableOpacity onPress={onRetry} style={styles.primaryAction}>
+                  <Text style={styles.primaryActionText}>Try again</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity onPress={onClose}>
+                <Text style={styles.doneAction}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          {isDone && !failed ? (
             <TouchableOpacity onPress={onClose}>
               <Text style={styles.doneAction}>Done</Text>
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </View>
     </Modal>
@@ -99,6 +137,23 @@ function makeStyles(c: ThemeColors) {
     track: { width: BAR_WIDTH, height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, backgroundColor: c.border, overflow: "hidden", marginBottom: 12 },
     percent: { color: c.accent, fontSize: 24, fontWeight: "700" },
     quote: { color: c.textSecondary, fontSize: 13, textAlign: "center", marginTop: 12 },
+    errorText: {
+      color: c.danger ?? "#E05C5C",
+      fontSize: 14,
+      lineHeight: 20,
+      textAlign: "center",
+      marginBottom: 8,
+      paddingHorizontal: 8,
+    },
+    actions: { alignItems: "center", marginTop: 12, gap: 10 },
+    primaryAction: {
+      backgroundColor: c.accent,
+      paddingHorizontal: 22,
+      paddingVertical: 12,
+      borderRadius: 12,
+      marginTop: 8,
+    },
+    primaryActionText: { color: c.accentOn ?? "#111", fontWeight: "700", fontSize: 15 },
     doneAction: { color: c.accent, fontSize: 16, fontWeight: "600", marginTop: 20 },
   });
 }

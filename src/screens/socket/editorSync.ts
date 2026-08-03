@@ -19,11 +19,24 @@ export const ACTOR_ID =
   `actor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export type EditEvent =
-  | { type: 'full_state'; actorId: string; projectId: string; project: VideoProject }
+  | {
+      type: 'full_state';
+      actorId: string;
+      projectId: string;
+      project: VideoProject;
+      actorName?: string;
+      summary?: string;
+    }
   | { type: 'hello'; actorId: string; projectId: string };
 
 let client: Client | null = null;
 let boundProjectId: string | null = null;
+let localActorName = 'Teammate';
+
+/** Set from the socket hook so broadcasts carry a human name. */
+export function setLocalActorName(name: string) {
+  if (name?.trim()) localActorName = name.trim();
+}
 
 /** Called by useProjectSocket once the STOMP client is connected. */
 export function bindEditorSocket(nextClient: Client, projectId: string) {
@@ -40,6 +53,45 @@ function canPublish(projectId: string): boolean {
   return !!client && client.connected && boundProjectId === projectId;
 }
 
+export type EditToast = {
+  id: string;
+  actorName: string;
+  summary: string;
+};
+
+const editToastListeners = new Set<(toast: EditToast) => void>();
+
+export function emitEditToast(toast: Omit<EditToast, 'id'>) {
+  const full: EditToast = {
+    id: `edit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    ...toast,
+  };
+  editToastListeners.forEach((fn) => fn(full));
+}
+
+/** React hook — latest teammate edit toast (auto-clears after a few seconds). */
+export function useEditToasts(): EditToast | null {
+  const [toast, setToast] = useState<EditToast | null>(null);
+
+  useEffect(() => {
+    const onToast = (next: EditToast) => {
+      setToast(next);
+    };
+    editToastListeners.add(onToast);
+    return () => {
+      editToastListeners.delete(onToast);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast?.id]);
+
+  return toast;
+}
+
 /** Broadcast the full timeline snapshot to every collaborator. */
 export function publishState(project: VideoProject | null) {
   if (!project?.projectId || !canPublish(project.projectId)) return;
@@ -48,6 +100,8 @@ export function publishState(project: VideoProject | null) {
     actorId: ACTOR_ID,
     projectId: project.projectId,
     project,
+    actorName: localActorName,
+    summary: 'updated the timeline',
   };
   try {
     client!.publish({

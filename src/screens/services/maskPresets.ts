@@ -207,7 +207,7 @@ export const MASK_PRESETS: MaskPreset[] = [
     hint: 'Diagonal split wipe',
     icon: 'git-commit-outline',
     apply: () => ({
-      mask: maskWithShape('splitDiag', { feather: 0.08, rotation: 1, rotation: 0 }),
+      mask: maskWithShape('splitDiag', { feather: 0.08, scale: 1, rotation: 0 }),
     }),
   },
   {

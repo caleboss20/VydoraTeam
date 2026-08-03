@@ -5,7 +5,6 @@ import { StyleSheet } from 'react-native'
 import { s } from 'react-native-size-matters'
 import { useMemo } from 'react'
 import DashboardScreen from '../Dashboard/Dashboard'
-import LibraryScreen from '../Dashboard/LibraryScreen'
 import ActivityScreen from '../Dashboard/ActivityScreen'
 import ProfileScreen from '../Dashboard/ProfileScreen'
 import ExportLibraryScreen from '../Editor/Export'
@@ -41,10 +40,13 @@ export default function Dashboardtabbar() {
         route: RouteProp<DashboardTabParamList, keyof DashboardTabParamList>
       }) => ({
         headerShown: false,
-        tabBarActiveTintColor: colors.accent,
+        tabBarActiveTintColor: isDark ? '#FFFFFF' : '#111111',
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle,
-        tabBarLabelStyle: { color: isDark ? undefined : colors.textSecondary },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+        },
         tabBarIcon: ({
           color,
           focused,
@@ -55,11 +57,11 @@ export default function Dashboardtabbar() {
         }) => {
           let iconName: IoniconName = 'ellipse-outline'
           if (route.name === 'projects') {
-            iconName = focused ? 'folder' : 'folder-outline'
+            iconName = focused ? 'cut' : 'cut-outline'
           } else if (route.name === 'export') {
-            iconName = focused ? 'film' : 'film-outline'
+            iconName = focused ? 'albums' : 'albums-outline'
           } else if (route.name === 'Activity') {
-            iconName = focused ? 'pulse' : 'pulse-outline'
+            iconName = focused ? 'time' : 'time-outline'
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline'
           }
@@ -67,10 +69,26 @@ export default function Dashboardtabbar() {
         },
       })}
     >
-      <Tab.Screen name="projects" component={DashboardScreen} />
-      <Tab.Screen name="export" component={ExportLibraryScreen} />
-      <Tab.Screen name="Activity" component={ActivityScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen
+        name="projects"
+        component={DashboardScreen}
+        options={{ tabBarLabel: 'Edit' }}
+      />
+      <Tab.Screen
+        name="export"
+        component={ExportLibraryScreen}
+        options={{ tabBarLabel: 'Projects' }}
+      />
+      <Tab.Screen
+        name="Activity"
+        component={ActivityScreen}
+        options={{ tabBarLabel: 'Activity' }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{ tabBarLabel: 'Me' }}
+      />
     </Tab.Navigator>
   )
 }

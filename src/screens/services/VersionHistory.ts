@@ -20,6 +20,7 @@ type ApiAuthor = {
   name: string;
   initials: string;
   color: string;
+  avatarUrl?: string | null;
 };
 
 type ApiVersion = {
@@ -42,6 +43,27 @@ type ApiVersion = {
 type ItemsVersions = { items: ApiVersion[] };
 
 function mapVersion(v: ApiVersion): ProjectVersion {
+  // Normalize Instant / epoch / odd ISO shapes to a stable ISO string.
+  const created = (() => {
+    const raw = v.createdAt as unknown;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      const ms = raw < 1e12 ? raw * 1000 : raw;
+      return new Date(ms).toISOString();
+    }
+    const s = String(raw ?? '').trim();
+    if (!s) return new Date().toISOString();
+    if (/^\d+$/.test(s)) {
+      const n = Number(s);
+      const ms = n < 1e12 ? n * 1000 : n;
+      return new Date(ms).toISOString();
+    }
+    const normalized =
+      s.includes(' ') && !s.includes('T') ? s.replace(' ', 'T') : s;
+    const hasZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized);
+    const d = new Date(hasZone ? normalized : `${normalized}Z`);
+    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  })();
+
   return {
     id: v.id,
     versionNumber: v.versionNumber,
@@ -53,8 +75,9 @@ function mapVersion(v: ApiVersion): ProjectVersion {
       name: v.author?.name || 'Unknown',
       initials: v.author?.initials || '?',
       color: v.author?.color || '#555555',
+      avatarUrl: v.author?.avatarUrl || undefined,
     },
-    createdAt: v.createdAt,
+    createdAt: created,
     isCurrent: !!v.isCurrent,
     isRestored: !!v.isRestored,
     changeSummary: v.changeSummary || undefined,

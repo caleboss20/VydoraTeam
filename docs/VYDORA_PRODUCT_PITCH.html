@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Vydora — Product, Architecture & Business Brief</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+    color: #161618;
+    line-height: 1.45;
+    font-size: 10.5pt;
+  }
+  h1 {
+    color: #0B0B0D;
+    font-size: 22pt;
+    border-bottom: 3px solid #F5C518;
+    padding-bottom: 8px;
+    margin-top: 0;
+  }
+  h2 {
+    color: #0B0B0D;
+    font-size: 14pt;
+    margin-top: 22px;
+    border-left: 4px solid #F5C518;
+    padding-left: 10px;
+    page-break-after: avoid;
+  }
+  h3 {
+    color: #222;
+    font-size: 11.5pt;
+    margin-top: 16px;
+    page-break-after: avoid;
+  }
+  p, li { orphans: 3; widows: 3; }
+  strong { color: #0B0B0D; }
+  a { color: #8a6d00; text-decoration: none; }
+  code {
+    background: #f4f4f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9pt;
+  }
+  pre {
+    background: #0B0B0D;
+    color: #f2f2f2;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 8.5pt;
+    overflow-x: auto;
+    border-top: 3px solid #F5C518;
+    page-break-inside: avoid;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  th {
+    background: #0B0B0D;
+    color: #F5C518;
+    text-align: left;
+    padding: 8px;
+  }
+  td {
+    border-bottom: 1px solid #e5e5e7;
+    padding: 7px 8px;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #fafafa; }
+  blockquote {
+    margin: 12px 0;
+    padding: 8px 14px;
+    border-left: 4px solid #F5C518;
+    background: #fffbeb;
+    color: #333;
+  }
+  hr { border: none; border-top: 1px solid #ddd; margin: 20px 0; }
+  ul, ol { padding-left: 22px; }
+  .cover {
+    background: #0B0B0D;
+    color: #fff;
+    padding: 28px 24px;
+    border-radius: 10px;
+    margin-bottom: 22px;
+  }
+  .cover h1 {
+    color: #fff;
+    border: none;
+    margin: 0 0 8px 0;
+    padding: 0;
+  }
+  .cover .accent { color: #F5C518; font-weight: 700; }
+  .cover p { margin: 4px 0; color: #d4d4d8; font-size: 10pt; }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <h1>Vydora</h1>
+    <p class="accent">Product · Architecture · Business Brief</p>
+    <p>Investors · Lecturers · Colleagues · Partners</p>
+    <p>Mobile-first collaborative video editor · Black + gold</p>
+  </div>
+  <h1>Vydora — Product, Architecture &amp; Business Brief</h1>
+<p><strong>Audience:</strong> Investors · Lecturers · Colleagues · Partners<br><strong>Product:</strong> Mobile-first collaborative video editor with AI assist and live team co-editing<br><strong>Brand:</strong> Black + gold (<code>#F5C518</code>) · Domains: <code>vydora.io</code> / <code>vydora.app</code><br><strong>Version of this doc:</strong> July 2026 (aligned with current codebase)</p>
+<hr>
+<h2>1. One-line pitch</h2>
+<p><strong>Vydora is CapCut for teams</strong> — a mobile video editor that combines consumer-grade AI editing with <em>live collaborative timelines</em>, guest review links, and role-based project workflows so creators and student/creator teams can go from raw clip to shared export without leaving the phone.</p>
+<hr>
+<h2>2. Executive summary</h2>
+<p>Short-form video is how brands, students, creators, and campuses communicate — but the tools people use are split:</p>
+<table>
+<thead>
+<tr>
+<th>Need</th>
+<th>Typical tool</th>
+<th>Gap</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Fast AI edits on phone</td>
+<td>CapCut, VN, InShot</td>
+<td>Built for <em>solo</em> creators; weak real-time team editing</td>
+</tr>
+<tr>
+<td>Team review &amp; approval</td>
+<td>Frame.io, Filestage</td>
+<td>Desktop-first, expensive, not an editor</td>
+</tr>
+<tr>
+<td>Live co-edit</td>
+<td>Rare on mobile</td>
+<td>Almost none combine editor + live presence + chat</td>
+</tr>
+<tr>
+<td>Guest feedback</td>
+<td>Email / WhatsApp</td>
+<td>No timecode comments, no project context</td>
+</tr>
+</tbody></table>
+<p><strong>Vydora closes that gap:</strong> one mobile app where you edit like CapCut <em>and</em> collaborate like a lightweight Frame.io — with AI tools (captions, silence/filler rough-cut, shorts suggest, beats, auto-reframe) and cloud export baked in.</p>
+<p>We are building for:</p>
+<ol>
+<li><strong>Creator teams</strong> (2–10 people shipping Reels/TikTok/Shorts weekly)  </li>
+<li><strong>Students &amp; campus clubs</strong> (group projects, events, summit intros)  </li>
+<li><strong>Small agencies / freelancers</strong> who need client guest review without enterprise software</li>
+</ol>
+<hr>
+<h2>3. The problem (why this matters)</h2>
+<ol>
+<li><strong>Editing is social, tools are solo.</strong> Most CapCut-class apps assume one person owns the timeline. Real projects involve shooters, editors, captioners, and approvers.</li>
+<li><strong>Feedback is broken.</strong> Stakeholders reply in WhatsApp with “change the part at 0:42” — no pin on the frame, no version history, no locked final.</li>
+<li><strong>AI is bolted on, not team-aware.</strong> Auto-captions help one editor; they don’t help a Viewer request Editor access, or a client leave timestamped notes without an account.</li>
+<li><strong>Desktop collab doesn’t travel.</strong> Students and creators work on phones first. Desktop-only review tools don’t match how they already create.</li>
+</ol>
+<p><strong>Insight:</strong> The next winning editor isn’t “more filters.” It’s <strong>shared editing + AI speed + mobile-native workflow</strong>.</p>
+<hr>
+<h2>4. Solution — what Vydora is</h2>
+<p>Vydora is a <strong>mobile-first collaborative video production workspace</strong>:</p>
+<ul>
+<li><strong>Edit</strong> — CapCut-style timeline, tools, AI assist, publish presets  </li>
+<li><strong>Collaborate</strong> — live presence, cursor/playhead sync, project chat, role upgrades  </li>
+<li><strong>Review</strong> — guest links (no signup) with timestamped comments  </li>
+<li><strong>Ship</strong> — cloud FFmpeg export (720p / 1080p / 4K), version history, Final Locked status  </li>
+<li><strong>Grow</strong> — referral codes → Pro trial; freemium path toward paid plans</li>
+</ul>
+<p><strong>Brand personality:</strong> dark cinematic UI, gold accent, “make a reel” energy — premium but approachable for students and creators.</p>
+<hr>
+<h2>5. Product surface (what exists today)</h2>
+<h3>5.1 Core editing</h3>
+<ul>
+<li>Multi-clip timeline: split, duplicate, delete, reorder / assemble  </li>
+<li>Preview + fullscreen playback  </li>
+<li>Beginner-friendly toolbar (Captions, Assemble, Filter, Text, Split) + searchable “More tools” catalog  </li>
+<li>Looks: filters, effects, animation, color grade, curves/LUT, canvas, crop, stabilize, auto-reframe  </li>
+<li>Text &amp; graphics: captions, title cards (“Sheet”), flyer, stickers, overlay / PiP + masks  </li>
+<li>Advanced: keyframes, compound clips, adjustment layers, speed curves, transitions, multi-cam, motion track, rough cut  </li>
+<li>Audio: music library + weekly drop, SFX, mixer (duck / denoise / EQ), voiceover, beats  </li>
+<li>Publish presets: TikTok / Reels / Shorts / square / YouTube</li>
+</ul>
+<h3>5.2 AI suite (wired to backend <code>/api/v1/ai</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Auto captions</strong></td>
+<td>Speech → timed segments / words / SRT; speaker-colored turns</td>
+</tr>
+<tr>
+<td><strong>Silence detect</strong></td>
+<td>FFmpeg-based keep/cut ranges for rough cut</td>
+</tr>
+<tr>
+<td><strong>Filler detect</strong></td>
+<td>Whisper-backed “um/uh” style hits + keep windows</td>
+</tr>
+<tr>
+<td><strong>Shorts suggest</strong></td>
+<td>Heuristic hooks for 15–60s cuts</td>
+</tr>
+<tr>
+<td><strong>Beat detect</strong></td>
+<td>Onset/energy peaks for music-synced edits</td>
+</tr>
+<tr>
+<td><strong>Auto-reframe</strong></td>
+<td>Motion/edge analysis → 9:16 keyframes</td>
+</tr>
+<tr>
+<td><strong>Motion track</strong></td>
+<td>Frame analysis for tracking overlays</td>
+</tr>
+<tr>
+<td><strong>Multi-cam sync</strong></td>
+<td>Audio correlation offset between cameras</td>
+</tr>
+</tbody></table>
+<p>Providers: Gemini, Groq Whisper, OpenAI Whisper (optional keys) + local FFmpeg where no key is needed.</p>
+<h3>5.3 Collaboration</h3>
+<ul>
+<li>Project roles: <strong>Owner / Editor / Viewer</strong>  </li>
+<li>Email invites + deep links (<code>vydora://invite</code>)  </li>
+<li>Invite-request approval (Zoom-style) when Editors invite  </li>
+<li><strong>Role upgrade requests</strong> (Viewer → Editor) with live Owner admit  </li>
+<li>In-editor <strong>Collaboration Desk</strong>: presence, chat, activity  </li>
+<li>Timecode + canvas-pin comments  </li>
+<li><strong>Realtime STOMP</strong>: timeline sync (LWW), live cursors/playheads, comments, messages, presence, user notifications</li>
+</ul>
+<h3>5.4 Guest review (differentiator)</h3>
+<ul>
+<li>Create / list / revoke review links  </li>
+<li>Guests watch + leave timestamped comments <strong>without an account</strong>  </li>
+<li>Links: <code>vydora://review/:token</code>, <code>https://vydora.io/review/:token</code></li>
+</ul>
+<h3>5.5 Projects, export, versions</h3>
+<ul>
+<li>Project CRUD; statuses: Active / Archived / Draft / <strong>FinalLocked</strong>  </li>
+<li>Visibility: Private / Team / Public  </li>
+<li>Cloud export jobs: MP4 / MOV / WebM × 720p / 1080p / 4K with progress polling  </li>
+<li>Version history: snapshot + restore  </li>
+<li>Media library; project covers from thumbnails / first frames</li>
+</ul>
+<h3>5.6 Account, growth, UX</h3>
+<ul>
+<li>Email/password + Google Sign-In  </li>
+<li>Forgot password → OTP → reset  </li>
+<li>Referral hub (<code>VYD-</code> codes) → soft Pro / trial  </li>
+<li>Pro screen (Paystack WebView scaffold; production billing still being wired)  </li>
+<li>Onboarding + <strong>5-minute Wow Path</strong> (seeded first edit → captions → export → invite)  </li>
+<li>Dashboard: Get-started cards, explore tools, typing hero, projects with covers  </li>
+<li>Settings: theme, auto-save, proxy editing, notifications, presence, export quality</li>
+</ul>
+<h3>5.7 Honest maturity notes (for lecturers &amp; investors)</h3>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Editor + collab + AI APIs + export</td>
+<td><strong>Built and integrated</strong></td>
+</tr>
+<tr>
+<td>Guest review + referrals</td>
+<td><strong>Built</strong></td>
+</tr>
+<tr>
+<td>Paystack Pro billing</td>
+<td><strong>UI scaffold; not fully production-wired</strong></td>
+</tr>
+<tr>
+<td>Horizontal scale (Redis broker / rate limit)</td>
+<td><strong>Designed for; single-instance today</strong></td>
+</tr>
+<tr>
+<td>Some advanced tools</td>
+<td>Depth varies; CapCut-parity is a roadmap, not a claim of 1:1 feature match</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>6. User journeys (how people use it)</h2>
+<pre><code>Splash → Sign in / Sign up (Google optional)
+      → Onboarding / Wow Path (optional)
+      → Tabs: Edit | Projects (exports) | Activity | Me
+
+Typical creator path
+  New project → Upload → Editor (AI captions / rough cut) → Export → Share
+
+Typical team path
+  Owner creates project → Invite Editors/Viewers
+  → Live co-edit (presence + cursors + chat)
+  → Guest review link to client/lecturer
+  → Version snapshot → FinalLocked → Export
+
+Typical student path
+  Group assignment → shared project → Viewer comments → request Editor
+  → Captions for accessibility → Export for submission
+</code></pre>
+<hr>
+<h2>7. System architecture</h2>
+<h3>7.1 High-level</h3>
+<pre><code>┌─────────────────────────────┐
+│  Vydora Mobile (Expo RN)    │
+│  Editor · Dashboard · Auth  │
+└──────────────┬──────────────┘
+               │ HTTPS REST + STOMP / WebSocket
+┌──────────────▼──────────────┐
+│  Spring Boot API (Java 17)  │
+│  /api/v1 · JWT · Access ctrl│
+├──────────────┬──────────────┤
+│ PostgreSQL   │ FFmpeg       │
+│ (Supabase /  │ Export + AI  │
+│  Railway)    │ media jobs   │
+├──────────────┼──────────────┤
+│ Cloudinary   │ Local /files │
+│ (videos)     │ (images)     │
+├──────────────┼──────────────┤
+│ Gemini/Groq/ │ SMTP mail    │
+│ OpenAI (opt) │ (OTP/invite) │
+└──────────────┴──────────────┘
+</code></pre>
+<h3>7.2 Frontend stack</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Choice</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Runtime</td>
+<td>Expo ~54, React Native 0.81, React 19</td>
+</tr>
+<tr>
+<td>Navigation</td>
+<td>React Navigation (stack + tabs)</td>
+</tr>
+<tr>
+<td>Media</td>
+<td>expo-video / av / audio / image-picker / thumbnails / file-system</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>JWT + refresh; Google via expo-auth-session</td>
+</tr>
+<tr>
+<td>Realtime</td>
+<td>@stomp/stompjs</td>
+</tr>
+<tr>
+<td>Forms</td>
+<td>react-hook-form + zod</td>
+</tr>
+<tr>
+<td>Brand</td>
+<td>Dark <code>#0B0B0D</code> + accent <code>#F5C518</code></td>
+</tr>
+</tbody></table>
+<h3>7.3 Backend stack</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Choice</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Runtime</td>
+<td>Java 17, Spring Boot 3.2</td>
+</tr>
+<tr>
+<td>API</td>
+<td>REST under <code>/api/v1</code></td>
+</tr>
+<tr>
+<td>DB</td>
+<td>PostgreSQL + Flyway migrations; JPA validate</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>Stateless JWT, hashed refresh tokens, BCrypt, Google ID tokens</td>
+</tr>
+<tr>
+<td>Realtime</td>
+<td>STOMP over SockJS <code>/ws</code> + raw <code>/ws-native</code></td>
+</tr>
+<tr>
+<td>Export / AI media</td>
+<td>FFmpeg / ffprobe</td>
+</tr>
+<tr>
+<td>Video CDN</td>
+<td>Cloudinary</td>
+</tr>
+<tr>
+<td>Images</td>
+<td>Local disk served at <code>/files/**</code></td>
+</tr>
+<tr>
+<td>Deploy</td>
+<td>Docker + Railway-oriented prod profile</td>
+</tr>
+</tbody></table>
+<h3>7.4 Major API domains</h3>
+<p><code>auth</code> · <code>projects</code> · <code>clips</code> · <code>members</code> · <code>comments</code> · <code>messages</code> · <code>notifications</code> · <code>versions</code> · <code>uploads</code> · <code>exports</code> · <code>review</code> · <code>referrals</code> · <code>ai/*</code> · <code>health</code></p>
+<p>Realtime topics include project edits, cursors, comments, messages, presence, and per-user notification queues.</p>
+<hr>
+<h2>8. Architecture decisions (and why)</h2>
+<p>These are deliberate choices — useful for lecturers grading design reasoning and for investors assessing engineering maturity.</p>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Mobile-first Expo app</strong></td>
+<td>Creators and students already shoot and edit on phones; native reach via one codebase</td>
+</tr>
+<tr>
+<td><strong>Separate Spring Boot API</strong></td>
+<td>Strong typing, security, long-running FFmpeg jobs, clear ownership vs “all-in-one BaaS”</td>
+</tr>
+<tr>
+<td><strong>Flyway-owned schema</strong></td>
+<td>Predictable migrations on Postgres/Supabase; Hibernate validates only</td>
+</tr>
+<tr>
+<td><strong>Hybrid storage</strong></td>
+<td>Cloudinary for durable video CDN; local files for cheap avatars/covers (LAN-friendly for Expo Go)</td>
+</tr>
+<tr>
+<td><strong>Client timeline as export source of truth</strong></td>
+<td>Bake what the editor actually shows (timeline JSON) rather than reconstructing from fragmented tables</td>
+</tr>
+<tr>
+<td><strong>Dual AI strategy</strong></td>
+<td>Cloud Whisper/Gemini for speech; <strong>local FFmpeg</strong> for silence/beats/reframe/multicam (works offline-of-keys, lower cost)</td>
+</tr>
+<tr>
+<td><strong>STOMP + SimpleBroker</strong></td>
+<td>Fast iteration for collab; explicitly noted that Redis is next for multi-instance scale</td>
+</tr>
+<tr>
+<td><strong>Guest review tokens</strong></td>
+<td>Async stakeholder feedback without forcing signup friction</td>
+</tr>
+<tr>
+<td><strong>Roles + upgrade requests</strong></td>
+<td>Mirrors real classroom/agency permission dynamics</td>
+</tr>
+<tr>
+<td><strong>Long-lived mobile JWTs (dev-friendly)</strong></td>
+<td>Editor sessions shouldn’t expire mid-cut; refresh + revoke on logout/reset</td>
+</tr>
+<tr>
+<td><strong>Rate-limit auth endpoints</strong></td>
+<td>Basic abuse protection; Redis planned for multi-node</td>
+</tr>
+<tr>
+<td><strong>Wow Path + referrals</strong></td>
+<td>Product-led growth before heavy paid acquisition</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>9. Competitive landscape &amp; edge</h2>
+<h3>9.1 Comparison snapshot</h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>CapCut</th>
+<th>VN / InShot</th>
+<th>Frame.io</th>
+<th><strong>Vydora</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Mobile AI editing</td>
+<td>★★★★★</td>
+<td>★★★★</td>
+<td>★</td>
+<td>★★★★</td>
+</tr>
+<tr>
+<td>Live multi-user timeline</td>
+<td>★</td>
+<td>★</td>
+<td>★★</td>
+<td>★★★★</td>
+</tr>
+<tr>
+<td>In-editor chat + presence</td>
+<td>★</td>
+<td>★</td>
+<td>★★★</td>
+<td>★★★★</td>
+</tr>
+<tr>
+<td>Guest review (no account)</td>
+<td>★</td>
+<td>★</td>
+<td>★★★★</td>
+<td>★★★★</td>
+</tr>
+<tr>
+<td>Role upgrade workflow</td>
+<td>★</td>
+<td>★</td>
+<td>★★</td>
+<td>★★★★</td>
+</tr>
+<tr>
+<td>Cloud team export + versions</td>
+<td>★★</td>
+<td>★</td>
+<td>★★★★</td>
+<td>★★★</td>
+</tr>
+<tr>
+<td>Price accessibility (students)</td>
+<td>Free tier</td>
+<td>Free</td>
+<td>Enterprise-ish</td>
+<td>Freemium + referral Pro</td>
+</tr>
+<tr>
+<td>Conference / flyer / sheet tools</td>
+<td>Partial</td>
+<td>Partial</td>
+<td>N/A</td>
+<td>Designed-in</td>
+</tr>
+</tbody></table>
+<h3>9.2 Why we can win a <em>segment</em> (not “beat CapCut globally”)</h3>
+<p>We do <strong>not</strong> claim to out-feature CapCut’s entire effect library on day one. We win where CapCut is weak:</p>
+<ol>
+<li><strong>Team-native editing</strong> — live cursors, LWW timeline sync, presence, chat inside the editor  </li>
+<li><strong>Review without friction</strong> — guest links for lecturers, clients, club executives  </li>
+<li><strong>Permission realism</strong> — Viewer → Editor upgrade requests; FinalLocked handoff  </li>
+<li><strong>Campus / Africa-friendly GTM</strong> — referral Pro, mobile-first, Paystack-oriented billing path  </li>
+<li><strong>Vertical tools</strong> — conference slates, flyer, sheet / title cards for events and summits  </li>
+<li><strong>Guided first success</strong> — Wow Path so first-time users ship a reel in minutes</li>
+</ol>
+<p><strong>Positioning line:</strong>  </p>
+<blockquote>
+<p>CapCut makes <em>you</em> faster. Vydora makes <em>your team</em> faster.</p>
+</blockquote>
+<h3>9.3 Moat trajectory</h3>
+<table>
+<thead>
+<tr>
+<th>Near-term</th>
+<th>Medium-term</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Collab UX + guest review habit</td>
+<td>Org/workspace accounts for clubs &amp; agencies</td>
+</tr>
+<tr>
+<td>Template + music packs</td>
+<td>Marketplace + brand kits</td>
+</tr>
+<tr>
+<td>Referral graph</td>
+<td>Campus ambassador program</td>
+</tr>
+<tr>
+<td>Export quality</td>
+<td>Proxy editing + cloud render tiers</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>10. Intended business model</h2>
+<h3>10.1 Monetization</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Who</th>
+<th>What they get</th>
+<th>How we charge</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Free</strong></td>
+<td>Individuals / students</td>
+<td>Core edit, limited AI / export quality, watermark options as needed</td>
+<td>$0</td>
+</tr>
+<tr>
+<td><strong>Pro</strong></td>
+<td>Serious creators</td>
+<td>Higher export quality, more AI runs, templates, no/low watermark</td>
+<td>Monthly / yearly (Paystack)</td>
+</tr>
+<tr>
+<td><strong>Team</strong> (planned)</td>
+<td>Clubs, agencies</td>
+<td>Seats, shared brand kit, admin, priority export</td>
+<td>Per seat / month</td>
+</tr>
+<tr>
+<td><strong>Education</strong> (planned)</td>
+<td>Lecturers / departments</td>
+<td>Classroom workspaces, guest review quotas</td>
+<td>Annual campus license</td>
+</tr>
+</tbody></table>
+<p><strong>Growth loops already in product:</strong></p>
+<ul>
+<li>Referral codes → Pro trial (<code>pro_until</code>)  </li>
+<li>Wow Path → export → invite teammate  </li>
+<li>Guest review → guest becomes registered user</li>
+</ul>
+<h3>10.2 Unit economics (directional)</h3>
+<ul>
+<li><strong>Costs:</strong> Cloudinary storage/bandwidth, Whisper/Gemini API calls, FFmpeg CPU on export, Postgres hosting  </li>
+<li><strong>Levers:</strong> Prefer FFmpeg-local AI where possible; cache captions; tier AI/export quotas on Free vs Pro  </li>
+<li><strong>ARPU path:</strong> Free → Pro via referral or export friction; Team when projects regularly exceed 2 members</li>
+</ul>
+<h3>10.3 Go-to-market</h3>
+<ol>
+<li><strong>Campus-first:</strong> film clubs, media students, hackathons, entrepreneurship courses  </li>
+<li><strong>Creator pods:</strong> 3–5 person TikTok/Reel teams  </li>
+<li><strong>Event vertical:</strong> summit intros, conference lower-thirds, end cards (Flyer / Sheet tools)  </li>
+<li><strong>Content:</strong> “edit with your team on phone” demos vs CapCut solo workflow</li>
+</ol>
+<hr>
+<h2>11. Market context (for investors)</h2>
+<ul>
+<li>Short-form video remains the default content format for Gen Z / Gen Alpha communication  </li>
+<li>Creator economy tools expand from <em>solo influence</em> → <em>small production teams</em>  </li>
+<li>Collaboration SaaS (Notion, Figma, Frame.io) proved willingness to pay for multiplayer creative work  </li>
+<li>Mobile-first markets (Africa, SEA, LatAm) often skip desktop-heavy creative suites</li>
+</ul>
+<p><strong>Vydora’s bet:</strong> multiplayer editing on mobile is underserved; AI makes the editor “good enough” while collab becomes the reason to switch.</p>
+<hr>
+<h2>12. Academic / lecturer framing</h2>
+<h3>12.1 What this project demonstrates</h3>
+<table>
+<thead>
+<tr>
+<th>Course theme</th>
+<th>How Vydora maps</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Software engineering</td>
+<td>Full-stack product: RN client + Spring API + DB + realtime + media pipeline</td>
+</tr>
+<tr>
+<td>Distributed systems lite</td>
+<td>STOMP presence, LWW timeline sync, async export worker</td>
+</tr>
+<tr>
+<td>HCI / UX</td>
+<td>Beginner toolbar, Wow Path, guest review without signup</td>
+</tr>
+<tr>
+<td>AI systems</td>
+<td>Hybrid cloud LLM/ASR + classical media DSP (FFmpeg)</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>JWT, refresh hashing, role-based access, public tokenized review routes</td>
+</tr>
+<tr>
+<td>Entrepreneurship</td>
+<td>Freemium + referral, competitive positioning, GTM</td>
+</tr>
+</tbody></table>
+<h3>12.2 Suggested demo script (5–7 minutes)</h3>
+<ol>
+<li>Create project → upload clip  </li>
+<li>Auto captions → silence/filler rough cut  </li>
+<li>Invite second user → show live cursor / chat  </li>
+<li>Open guest review link on another device → leave comment  </li>
+<li>Snapshot version → export 1080p → share</li>
+</ol>
+<h3>12.3 Learning outcomes for teammates</h3>
+<ul>
+<li>How product requirements become API modules  </li>
+<li>Why hybrid storage and export-as-job matter  </li>
+<li>Tradeoffs: SimpleBroker vs Redis; Free AI vs paid ASR  </li>
+<li>How to pitch <em>segment leadership</em> instead of “we beat CapCut at everything”</li>
+</ul>
+<hr>
+<h2>13. Risks &amp; mitigations</h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CapCut feature gravity</td>
+<td>Differentiate on collab + review; don’t compete on effect count alone</td>
+</tr>
+<tr>
+<td>AI cost spikes</td>
+<td>FFmpeg-local tools; quota Free/Pro; cache transcripts</td>
+</tr>
+<tr>
+<td>Single-instance realtime</td>
+<td>Redis broker + sticky sessions on roadmap</td>
+</tr>
+<tr>
+<td>Export CPU cost</td>
+<td>Queue, resolution tiers, Pro priority</td>
+</tr>
+<tr>
+<td>Billing incomplete</td>
+<td>Finish Paystack; keep referral Pro for early traction</td>
+</tr>
+<tr>
+<td>Content moderation</td>
+<td>Report flows + ToS; private-by-default projects</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>14. Roadmap (indicative)</h2>
+<p><strong>Now — polish &amp; reliability</strong></p>
+<ul>
+<li>Harden export bake parity with editor timeline  </li>
+<li>Production Paystack Pro  </li>
+<li>Collab conflict UX + reconnect resilience</li>
+</ul>
+<p><strong>Next — team product</strong></p>
+<ul>
+<li>Workspaces / brand kits  </li>
+<li>Proxy editing for large files  </li>
+<li>Education guest-review quotas</li>
+</ul>
+<p><strong>Later — platform</strong></p>
+<ul>
+<li>Template marketplace  </li>
+<li>Org SSO / campus licenses  </li>
+<li>Multi-region render workers</li>
+</ul>
+<hr>
+<h2>15. The ask (customize per audience)</h2>
+<h3>Investors</h3>
+<ul>
+<li>Capital for: cloud/AI burn, campus GTM, 2–3 engineers focused on collab + export reliability  </li>
+<li>Traction plan: campus cohorts → creator pods → Team SKU</li>
+</ul>
+<h3>Lecturers</h3>
+<ul>
+<li>Recognition of full-stack + product thinking, not only UI screens  </li>
+<li>Feedback on evaluation criteria: architecture quality, UX research, business clarity</li>
+</ul>
+<h3>Colleagues</h3>
+<ul>
+<li>Shared north star: <strong>team-native mobile editing</strong>  </li>
+<li>Ownership map: Editor UX · Collab/realtime · AI/export · Growth/billing · Brand/dashboard</li>
+</ul>
+<hr>
+<h2>16. Appendix — module map</h2>
+<h3>Mobile (<code>Vydora/</code>)</h3>
+<p>Dashboard · Editor · Auth · Projects · Invite · Guest Review · Export · Referral · Pro · Settings · Activity · Wow Path · AI service clients · STOMP sync</p>
+<h3>Backend (<code>vydora-backend/</code>)</h3>
+<p><code>auth</code> <code>project</code> <code>clip</code> <code>member</code> <code>comment</code> <code>message</code> <code>notification</code> <code>version</code> <code>upload</code> <code>export</code> <code>ai</code> <code>review</code> <code>referral</code> <code>mail</code> <code>ws</code> <code>security</code> <code>config</code></p>
+<hr>
+<h2>17. Closing statement</h2>
+<p>Vydora exists because <strong>video creation became a team sport</strong>, while the most popular mobile editors stayed solo apps. We combine CapCut-like AI speed with live collaboration, guest review, and a freemium growth model designed for creators and campuses.</p>
+<p><strong>Edit alone if you want. Ship together if you want to win.</strong></p>
+<hr>
+<p><em>Document generated from the Vydora application and API codebases for internal pitching and academic presentation. Update billing/roadmap sections as product status changes.</em></p>
+
+</body>
+</html>

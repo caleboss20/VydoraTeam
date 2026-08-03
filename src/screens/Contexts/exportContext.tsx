@@ -22,7 +22,7 @@ import { exportService } from '../services/exportService';
 import { useAuth } from './Authcontext';
 import { CONFIG } from '../config';
 
-const POLL_INTERVAL_MS = 15000;
+const POLL_INTERVAL_MS = 3000;
 
 interface ExportContextType {
   exports: Export[];

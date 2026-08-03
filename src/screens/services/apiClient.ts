@@ -2,15 +2,17 @@
  * Shared HTTP client for Vydora ↔ Spring Boot.
  *
  * Responsibilities:
- * 1. Prefix every path with `CONFIG.API_BASE`.
+ * 1. Prefix every path with `CONFIG.API_BASE` (Railway or local — live getter).
  * 2. Attach the access JWT as `Authorization: Bearer <token>`.
  * 3. On HTTP 401, attempt one silent refresh via `/auth/refresh`, then retry.
  * 4. Only clear the session when the refresh token is actually rejected —
  *    never on a network blip (that was kicking users out mid-edit).
- * 5. Parse the backend error envelope: `{ error: { message, code, status } }`.
+ * 5. On hard network failure, try the alternate host once (cloud ↔ local).
+ * 6. Parse the backend error envelope: `{ error: { message, code, status } }`.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config';
+import { failoverApiEndpoint } from './apiEndpoint';
 
 type AuthHandlers = {
   /** Called after a successful token refresh so React state stays in sync. */
@@ -76,9 +78,44 @@ async function clearSession() {
 async function parseErrorMessage(res: Response): Promise<string> {
   try {
     const body = await res.json();
-    return body?.error?.message || body?.message || `Request failed (${res.status})`;
+    const code = body?.error?.code || body?.code;
+    const raw =
+      body?.error?.message || body?.message || null;
+    if (raw && typeof raw === 'string' && raw.trim()) {
+      // Avoid showing bare codes like "NOT_FOUND" with no explanation.
+      if (code && typeof code === 'string' && raw === code) {
+        return humanizeErrorCode(code);
+      }
+      if (code && typeof code === 'string' && code !== raw) {
+        return `${raw} (${code})`;
+      }
+      return raw;
+    }
+    if (code && typeof code === 'string') return humanizeErrorCode(code);
+    return `Request failed (${res.status})`;
   } catch {
     return `Request failed (${res.status})`;
+  }
+}
+
+function humanizeErrorCode(code: string): string {
+  switch (code) {
+    case 'NOT_FOUND':
+      return 'That item was not found. Try again or refresh.';
+    case 'AI_NOT_CONFIGURED':
+      return 'AI is not configured on the backend. Set GEMINI_API_KEY (or GROQ_API_KEY) and restart.';
+    case 'MEDIA_TOO_LARGE':
+      return 'This clip is too large for AI captions. Use a shorter clip.';
+    case 'MEDIA_DOWNLOAD_FAILED':
+      return 'Could not download the clip for AI. Re-upload or wait for upload to finish.';
+    case 'TRANSCRIPTION_FAILED':
+      return 'Transcription failed. Check your Gemini/Groq key and try again.';
+    case 'FFMPEG_MISSING':
+      return 'FFmpeg is missing on the backend for this feature.';
+    case 'FILE_TOO_LARGE':
+      return 'File is too large to upload.';
+    default:
+      return code.replace(/_/g, ' ').toLowerCase();
   }
 }
 
@@ -138,6 +175,8 @@ export type ApiRequestOptions = RequestInit & {
   skipAuth?: boolean;
   /** Do not attempt refresh+retry on 401 (used by refresh itself). */
   skipRefresh?: boolean;
+  /** Internal: already tried cloud↔local failover for this call. */
+  skipFailover?: boolean;
 };
 
 /**
@@ -148,7 +187,7 @@ export async function apiRequest<T = unknown>(
   path: string,
   options: ApiRequestOptions = {}
 ): Promise<T> {
-  const { skipAuth, skipRefresh, headers: initHeaders, ...rest } = options;
+  const { skipAuth, skipRefresh, skipFailover, headers: initHeaders, ...rest } = options;
   const headers = new Headers(initHeaders || {});
 
   if (!skipAuth) {
@@ -166,23 +205,29 @@ export async function apiRequest<T = unknown>(
   const timeoutMs = 25_000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const apiBase = CONFIG.API_BASE;
   try {
-    res = await fetch(`${CONFIG.API_BASE}${path}`, {
+    res = await fetch(`${apiBase}${path}`, {
       ...rest,
       headers,
       signal: rest.signal ?? controller.signal,
     });
   } catch (e: any) {
+    if (!skipFailover) {
+      const switched = await failoverApiEndpoint();
+      if (switched) {
+        return apiRequest<T>(path, { ...options, skipFailover: true });
+      }
+    }
     if (e?.name === 'AbortError') {
       throw new Error(
         `Request timed out talking to ${CONFIG.API_BASE}. ` +
-          'Make sure the backend is running and reachable from your phone.'
+          'Make sure Railway is up or the local backend is running (USB reverse / same Wi‑Fi).'
       );
     }
     throw new Error(
       `Cannot reach the Vydora API at ${CONFIG.API_BASE}. ` +
-        'Make sure the backend is running, your phone is on the same Wi‑Fi, ' +
-        'and EXPO_PUBLIC_API_BASE uses your computer’s LAN IP (not localhost).'
+        'Tried the alternate host too. Check Railway deploy or local Spring Boot on :8080.'
     );
   } finally {
     clearTimeout(timer);

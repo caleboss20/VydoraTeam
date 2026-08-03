@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
 import type { TextAnimationType, TitleCardSettings } from '../types';
 import { TEXT_ANIM_IN_PRESETS } from '../services/textAnimPresets';
@@ -319,7 +320,7 @@ function __makeStyles() {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
-    maxHeight: verticalScale(460),
+    maxHeight: TOOL_SHEET_MAX,
   },
   header: {
     flexDirection: 'row',
@@ -335,7 +336,7 @@ function __makeStyles() {
     fontSize: moderateScale(16),
     fontWeight: '700',
   },
-  body: { maxHeight: verticalScale(400), paddingHorizontal: scale(16) },
+  body: { maxHeight: TOOL_SHEET_BODY, paddingHorizontal: scale(16) },
   hint: {
     color: COLORS.textSecondary,
     fontSize: moderateScale(11),

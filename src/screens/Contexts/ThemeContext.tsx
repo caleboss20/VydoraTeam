@@ -37,26 +37,26 @@ export type ThemeColors = {
 };
 
 export const darkColors: ThemeColors = {
-  background: '#13151c',
-  surface: '#1e1e1e',
-  card: '#1a1a1a',
-  border: '#2a2a2a',
+  background: '#0B0B0D',
+  surface: '#161618',
+  card: '#1C1C1F',
+  border: '#2A2A2E',
   text: '#FFFFFF',
-  textSecondary: '#AAAAAA',
-  textMuted: '#666666',
+  textSecondary: '#9A9AA0',
+  textMuted: '#66666C',
   accent: '#F5C518',
   accentOn: '#1A0E00',
-  iconBg: '#222222',
-  tabBar: '#0E0E10',
-  tabBarBorder: '#2A2A2E',
+  iconBg: '#222226',
+  tabBar: '#0B0B0D',
+  tabBarBorder: '#1C1C1F',
   danger: '#E05C5C',
   online: '#25D366',
-  inputBg: '#1e1e1e',
+  inputBg: '#161618',
   overlay: 'rgba(0,0,0,0.55)',
 };
 
 export const lightColors: ThemeColors = {
-  background: '#F4F4F5',
+  background: '#F2F3F5',
   surface: '#FFFFFF',
   card: '#FFFFFF',
   border: '#E4E4E7',

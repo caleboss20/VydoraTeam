@@ -12,8 +12,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import { TOOL_SHEET_MAX, TOOL_SHEET_BODY, TOOL_SHEET_LIST, TOOL_SHEET_LIST_SM } from './toolSheetLayout';
 import Slider from '@react-native-community/slider';
-import type { BgRemoveSettings, VideoClip } from '../types';
+import type { BgRemoveSettings, ClipLookOverlay, VideoClip } from '../types';
+import { DEFAULT_LOOK_OVERLAY } from '../types';
 import { useAppPalette } from '../Contexts/ThemeContext';
 
 
@@ -39,6 +41,15 @@ const CANVAS_SWATCHES = [
   '#10B981',
 ];
 
+const GRADIENT_SWATCHES: [string, string][] = [
+  ['#000000', '#F5C518'],
+  ['#000000', '#FF4D6D'],
+  ['#1A1A2E', '#4DA6FF'],
+  ['#000000', '#10B981'],
+  ['#2D1B4E', '#F5C518'],
+  ['#0B0D13', '#FFFFFF'],
+];
+
 interface CanvasToolPanelProps {
   visible: boolean;
   clip: VideoClip | null;
@@ -53,6 +64,7 @@ interface CanvasToolPanelProps {
     opacity?: number;
     bgRemove?: BgRemoveSettings;
   }) => void;
+  onLookOverlayChange?: (patch: Partial<ClipLookOverlay>) => void;
   onDoubleExposure: () => void;
   /** Nested tools — keeps the bottom toolbar uncluttered. */
   onOpenRotate?: () => void;
@@ -66,6 +78,7 @@ export default function CanvasToolPanel({
   canvasColor,
   onCanvasColorChange,
   onLayoutChange,
+  onLookOverlayChange,
   onDoubleExposure,
   onOpenRotate,
   onOpenMask,
@@ -93,6 +106,7 @@ export default function CanvasToolPanel({
   const flipH = !!clip?.flipH;
   const flipV = !!clip?.flipV;
   const bg = clip?.bgRemove;
+  const look = { ...DEFAULT_LOOK_OVERLAY, ...clip?.lookOverlay };
 
   return (
     <View style={styles.wrapper}>
@@ -148,6 +162,102 @@ export default function CanvasToolPanel({
             />
           ))}
         </ScrollView>
+
+        {clip && onLookOverlayChange && (
+          <>
+            <Text style={styles.section}>DARK OVERLAY</Text>
+            <Text style={styles.subHint}>
+              Drag to dim the frame — great for captions and posters.
+            </Text>
+            <View style={styles.sliderRow}>
+              <Ionicons name="moon-outline" size={scale(16)} color={COLORS.yellow} />
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={0.85}
+                value={look.darkOpacity ?? 0}
+                onValueChange={(darkOpacity) =>
+                  onLookOverlayChange({ darkOpacity })
+                }
+                minimumTrackTintColor={COLORS.yellow}
+                maximumTrackTintColor={COLORS.border}
+                thumbTintColor={COLORS.yellow}
+              />
+              <Text style={styles.val}>
+                {Math.round((look.darkOpacity ?? 0) * 100)}%
+              </Text>
+            </View>
+
+            <Text style={styles.section}>GRADIENT COLOR</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.swatchRow}
+            >
+              {GRADIENT_SWATCHES.map(([a, b]) => {
+                const on =
+                  (look.gradientColorTop ?? '').toLowerCase() === a.toLowerCase() &&
+                  (look.gradientColorBottom ?? '').toLowerCase() === b.toLowerCase();
+                return (
+                  <TouchableOpacity
+                    key={`${a}-${b}`}
+                    style={[styles.gradSwatch, on && styles.swatchOn]}
+                    onPress={() =>
+                      onLookOverlayChange({
+                        gradientColorTop: a,
+                        gradientColorBottom: b,
+                        gradientOpacity: Math.max(
+                          look.gradientOpacity ?? 0,
+                          0.35
+                        ),
+                      })
+                    }
+                  >
+                    <View style={[styles.gradHalf, { backgroundColor: a }]} />
+                    <View style={[styles.gradHalf, { backgroundColor: b }]} />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.sliderRow}>
+              <Ionicons name="color-filter-outline" size={scale(16)} color={COLORS.purple} />
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={0.9}
+                value={look.gradientOpacity ?? 0}
+                onValueChange={(gradientOpacity) =>
+                  onLookOverlayChange({ gradientOpacity })
+                }
+                minimumTrackTintColor={COLORS.purple}
+                maximumTrackTintColor={COLORS.border}
+                thumbTintColor={COLORS.purple}
+              />
+              <Text style={styles.val}>
+                {Math.round((look.gradientOpacity ?? 0) * 100)}%
+              </Text>
+            </View>
+            <View style={styles.sliderRow}>
+              <Text style={styles.label}>Angle</Text>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={90}
+                step={90}
+                value={(look.gradientAngle ?? 0) >= 45 ? 90 : 0}
+                onValueChange={(gradientAngle) =>
+                  onLookOverlayChange({ gradientAngle })
+                }
+                minimumTrackTintColor={COLORS.textSecondary}
+                maximumTrackTintColor={COLORS.border}
+                thumbTintColor={COLORS.yellow}
+              />
+              <Text style={styles.val}>
+                {(look.gradientAngle ?? 0) >= 45 ? 'H' : 'V'}
+              </Text>
+            </View>
+          </>
+        )}
 
         {!clip ? (
           <Text style={styles.empty}>Select a clip on the timeline to place it.</Text>
@@ -351,7 +461,7 @@ function __makeStyles() {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: scale(16),
     borderTopRightRadius: scale(16),
-    maxHeight: verticalScale(440),
+    maxHeight: TOOL_SHEET_MAX,
   },
   header: {
     flexDirection: 'row',
@@ -367,7 +477,7 @@ function __makeStyles() {
     fontSize: moderateScale(16),
     fontWeight: '700',
   },
-  body: { maxHeight: verticalScale(380) },
+  body: { maxHeight: TOOL_SHEET_BODY },
   bodyContent: { paddingBottom: verticalScale(24) },
   hint: {
     color: COLORS.textSecondary,
@@ -407,6 +517,16 @@ function __makeStyles() {
     borderColor: COLORS.yellow,
     borderWidth: 2,
   },
+  gradSwatch: {
+    width: scale(36),
+    height: scale(28),
+    borderRadius: scale(8),
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    flexDirection: 'column',
+  },
+  gradHalf: { flex: 1 },
   empty: {
     color: COLORS.textSecondary,
     padding: scale(16),

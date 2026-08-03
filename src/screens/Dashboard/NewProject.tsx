@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useTheme } from "../Contexts/ThemeContext";
 import {
   View,
@@ -13,6 +13,8 @@ import {
   Platform,
   Image,
   Alert,
+  Animated,
+  Easing,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { ms, s, vs } from 'react-native-size-matters'
@@ -79,7 +81,89 @@ const NewProjectScreen: React.FC = () => {
   const [creating, setCreating]       = useState<boolean>(false)
   const [nameError, setNameError]     = useState<string>('')
   const [descError, setDescError]     = useState<string>('')
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null) // ADDED
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+  const [nameFocused, setNameFocused] = useState(false)
+  const [createDone, setCreateDone] = useState(false)
+
+  const enterY = useRef(new Animated.Value(28)).current
+  const enterOp = useRef(new Animated.Value(0)).current
+  const coverBreath = useRef(new Animated.Value(1)).current
+  const coverFade = useRef(new Animated.Value(0)).current
+  const focusBorder = useRef(new Animated.Value(0)).current
+  const createScale = useRef(new Animated.Value(1)).current
+  const visScales = useRef(
+    VISIBILITY_OPTIONS.map((opt) => new Animated.Value(opt.value === 'Team' ? 1.06 : 1))
+  ).current
+
+  useEffect(() => {
+    VISIBILITY_OPTIONS.forEach((opt, i) => {
+      Animated.spring(visScales[i], {
+        toValue: visibility === opt.value ? 1.06 : 1,
+        friction: 6,
+        tension: 140,
+        useNativeDriver: true,
+      }).start()
+    })
+  }, [visibility])
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(enterOp, {
+        toValue: 1,
+        duration: 380,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(enterY, {
+        toValue: 0,
+        duration: 420,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start()
+
+    const breath = Animated.loop(
+      Animated.sequence([
+        Animated.timing(coverBreath, {
+          toValue: 1.06,
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(coverBreath, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    )
+    breath.start()
+    return () => breath.stop()
+  }, [])
+
+  useEffect(() => {
+    if (!thumbnailUrl) {
+      coverFade.setValue(0)
+      return
+    }
+    coverFade.setValue(0)
+    Animated.timing(coverFade, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start()
+  }, [thumbnailUrl])
+
+  useEffect(() => {
+    Animated.timing(focusBorder, {
+      toValue: nameFocused ? 1 : 0,
+      duration: 180,
+      useNativeDriver: false,
+    }).start()
+  }, [nameFocused])
+
   // ── Validation ──
   const validate = (): boolean => {
     let valid = true
@@ -128,14 +212,28 @@ const NewProjectScreen: React.FC = () => {
         visibility,
         thumbnailUrl ?? undefined
       )
-      navigation.navigate('projectdetail')
+      setCreateDone(true)
+      Animated.sequence([
+        Animated.spring(createScale, {
+          toValue: 1.04,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+        Animated.timing(createScale, {
+          toValue: 1,
+          duration: 160,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        navigation.navigate('projectdetail')
+      })
     } catch (e: any) {
       Alert.alert(
         'Couldn’t create project',
         e?.message || contextError || 'Check that the backend is running and try again.'
       )
-    } finally {
       setCreating(false)
+      setCreateDone(false)
     }
   }
   return (
@@ -163,6 +261,13 @@ const NewProjectScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
           <View style={styles.divider} />
+          <Animated.View
+            style={{
+              flex: 1,
+              opacity: enterOp,
+              transform: [{ translateY: enterY }],
+            }}
+          >
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
@@ -176,23 +281,55 @@ const NewProjectScreen: React.FC = () => {
               </View>
             ) : null}
             {/* ── Cover Image ── */}
-            {/* CHANGED: onPress + conditional rendering added */}
             <TouchableOpacity style={styles.coverBox} activeOpacity={0.8} onPress={pickCoverImage} disabled={creating}>
               {thumbnailUrl ? (
-                // ADDED: shows picked image
-                <Image source={{ uri: thumbnailUrl }} style={styles.coverImage} />
+                <Animated.Image
+                  source={{ uri: thumbnailUrl }}
+                  style={[
+                    styles.coverImage,
+                    {
+                      opacity: coverFade,
+                      transform: [
+                        {
+                          scale: coverFade.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1.04, 1],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                />
               ) : (
                 <>
-                  <View style={styles.coverIconCircle}>
+                  <Animated.View
+                    style={[
+                      styles.coverIconCircle,
+                      { transform: [{ scale: coverBreath }] },
+                    ]}
+                  >
                     <Ionicons name="image-outline" size={ms(26)} color={C.accent} />
-                  </View>
+                  </Animated.View>
                   <Text style={styles.coverLabel}>Add cover image</Text>
                 </>
               )}
             </TouchableOpacity>
             {/* ── Project Name ── */}
             <Text style={styles.fieldLabel}>PROJECT NAME</Text>
-            <View style={[styles.inputBox, nameError ? styles.inputBoxError : null]}>
+            <Animated.View
+              style={[
+                styles.inputBox,
+                nameError ? styles.inputBoxError : null,
+                {
+                  borderColor: nameError
+                    ? C.errorRed
+                    : focusBorder.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [C.inputBorder, C.accent],
+                      }),
+                },
+              ]}
+            >
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Summer campaign 2026"
@@ -204,9 +341,11 @@ const NewProjectScreen: React.FC = () => {
                 }}
                 maxLength={NAME_MAX}
                 editable={!creating}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => setNameFocused(false)}
               />
               <Text style={styles.charCount}>{NAME_MAX - projectName.length}</Text>
-            </View>
+            </Animated.View>
             {nameError ? (
               <View style={styles.errorRow}>
                 <Ionicons name="alert-circle-outline" size={ms(13)} color={C.errorRed} />
@@ -239,7 +378,7 @@ const NewProjectScreen: React.FC = () => {
             ) : null}
             {/* ── Visibility ── */}
             <Text style={[styles.fieldLabel, { marginTop: vs(18) }]}>VISIBILITY</Text>
-            {VISIBILITY_OPTIONS.map((opt) => {
+            {VISIBILITY_OPTIONS.map((opt, index) => {
               const isSelected = visibility === opt.value
               return (
                 <TouchableOpacity
@@ -249,13 +388,19 @@ const NewProjectScreen: React.FC = () => {
                   activeOpacity={0.8}
                   disabled={creating}
                 >
-                  <View style={[styles.visibilityIconBox, isSelected && styles.visibilityIconBoxSelected]}>
+                  <Animated.View
+                    style={[
+                      styles.visibilityIconBox,
+                      isSelected && styles.visibilityIconBoxSelected,
+                      { transform: [{ scale: visScales[index] }] },
+                    ]}
+                  >
                     <Ionicons
                       name={opt.icon}
                       size={ms(18)}
                       color={isSelected ? C.accent : C.textSecondary}
                     />
-                  </View>
+                  </Animated.View>
                   <View style={styles.visibilityText}>
                     <Text style={[styles.visibilityLabel, isSelected && { color: C.accent }]}>
                       {opt.label}
@@ -269,26 +414,34 @@ const NewProjectScreen: React.FC = () => {
               )
             })}
             {/* ── Create Button ── */}
-            <TouchableOpacity
-              style={[styles.createBtn, creating && styles.createBtnLoading]}
-              onPress={handleCreate}
-              activeOpacity={0.85}
-              disabled={creating}
-            >
-              {creating ? (
-                <View style={styles.createBtnInner}>
-                  <ActivityIndicator size="small" color="#000000" style={{ marginRight: s(8) }} />
-                  <Text style={styles.createBtnText}>Creating...</Text>
-                </View>
-              ) : (
-                <View style={styles.createBtnInner}>
-                  <Ionicons name="add" size={ms(20)} color="#000000" style={{ marginRight: s(4) }} />
-                  <Text style={styles.createBtnText}>Create project</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <Animated.View style={{ transform: [{ scale: createScale }] }}>
+              <TouchableOpacity
+                style={[styles.createBtn, creating && styles.createBtnLoading]}
+                onPress={handleCreate}
+                activeOpacity={0.85}
+                disabled={creating}
+              >
+                {createDone ? (
+                  <View style={styles.createBtnInner}>
+                    <Ionicons name="checkmark-circle" size={ms(20)} color="#000000" style={{ marginRight: s(6) }} />
+                    <Text style={styles.createBtnText}>Created</Text>
+                  </View>
+                ) : creating ? (
+                  <View style={styles.createBtnInner}>
+                    <ActivityIndicator size="small" color="#000000" style={{ marginRight: s(8) }} />
+                    <Text style={styles.createBtnText}>Creating...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.createBtnInner}>
+                    <Ionicons name="add" size={ms(20)} color="#000000" style={{ marginRight: s(4) }} />
+                    <Text style={styles.createBtnText}>Create project</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
             <View style={{ height: vs(32) }} />
           </ScrollView>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

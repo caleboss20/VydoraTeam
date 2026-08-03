@@ -1,346 +1,422 @@
-// import React, { useState, useEffect } from 'react';
-// import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
-// import { Ionicons } from '@expo/vector-icons';
-// import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
-// import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-// import Animated, {
-//   useSharedValue,
-//   useAnimatedStyle,
-// } from 'react-native-reanimated';
-// import * as VideoThumbnails from 'expo-video-thumbnails';
-// import { CropRatioPreset } from '../types';
-// import { CROP_RATIO_PRESETS, getCropPresetById } from '../services/cropService';
-// const COLORS = {
-//   background: '#0B0D13',
-//   overlayDim: 'rgba(0,0,0,0.7)',
-//   border: '#222633',
-//   yellow: '#e7e55c',
-//   textPrimary: '#FFFFFF',
-//   textSecondary: '#8F9BB3',
-// };
+/**
+ * Interactive crop overlay — pan/zoom against a thumbnail frame.
+ * Uses RN Animated + PanResponder (no Reanimated/worklets) so Expo Go stays stable.
+ */
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Dimensions,
+  Animated,
+  PanResponder,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
+import * as VideoThumbnails from 'expo-video-thumbnails';
+import { CROP_RATIO_PRESETS, getCropPresetById } from '../services/cropService';
+import { useAppPalette } from '../Contexts/ThemeContext';
 
-// const SCREEN_WIDTH = Dimensions.get('window').width;
-// const SCREEN_HEIGHT = Dimensions.get('window').height;
+let COLORS: Record<string, string> = {
+  background: '#0B0D13',
+  border: '#222633',
+  yellow: '#e7e55c',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#8F9BB3',
+};
 
-// // The crop box's max footprint on screen — leaves room for the header and
-// // bottom ratio-switcher strip so the box never collides with controls.
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const STAGE_HEIGHT = SCREEN_HEIGHT * 0.62;
+const STAGE_WIDTH = SCREEN_WIDTH;
 
-// const STAGE_HEIGHT = SCREEN_HEIGHT * 0.62;
-// const STAGE_WIDTH = SCREEN_WIDTH;
-// interface CropOverlayProps {
-//   visible: boolean;
-//   clipUri: string;
-//   cropRatioId: string;          // ratio the overlay opened with (from CropRatioPanel)
-//   initialOffsetX?: number;      // 0 to 1, previous focal point if re-opening
-//   initialOffsetY?: number;      // 0 to 1
-//   initialZoom?: number;         // 1 = no zoom
-//   onConfirm: (cropData: {
-//     cropRatioId: string;
-//     cropOffsetX: number;
-//     cropOffsetY: number;
-//     cropZoom: number;
-//   }) => void;
-//   onClose: () => void;
-// }
-// // Computes the crop box's on-screen width/height for a given ratio,
-// // fit within the stage bounds without exceeding either dimension.
-// function getBoxDimensions(ratioValue: number) {
-//   let boxWidth = STAGE_WIDTH * 0.9;
-//   let boxHeight = boxWidth / ratioValue;
-//   const maxHeight = STAGE_HEIGHT * 0.9;
-//   if (boxHeight > maxHeight) {
-//     boxHeight = maxHeight;
-//     boxWidth = boxHeight * ratioValue;
-//   }
-//   return { boxWidth, boxHeight };
-// }
-// export default function CropOverlay({
-//   visible,
-//   clipUri,
-//   cropRatioId,
-//   initialOffsetX = 0.5,
-//   initialOffsetY = 0.5,
-//   initialZoom = 1,
-//   onConfirm,
-//   onClose,
-// }: CropOverlayProps) {
-//   const [activeRatioId, setActiveRatioId] = useState(cropRatioId);
-//   const [frameUri, setFrameUri] = useState<string | null>(null);
-//   const preset = getCropPresetById(activeRatioId);
-//   const { boxWidth, boxHeight } = getBoxDimensions(preset.ratioValue);
-//   // Focal point as a fraction (0 to 1) of the frame, and zoom level.
-//   // Shared values so gestures can update them on the UI thread.
-//   const offsetX = useSharedValue(initialOffsetX);
-//   const offsetY = useSharedValue(initialOffsetY);
-//   const zoom = useSharedValue(initialZoom);
-//   const savedOffsetX = useSharedValue(initialOffsetX);
-//   const savedOffsetY = useSharedValue(initialOffsetY);
-//   const savedZoom = useSharedValue(initialZoom);
-//   // Generate one real frame from the clip to crop against, same approach
-//   // as FilterToolPanel — a single representative frame, not a live player,
-//   // since positioning doesn't need playback, just a stable image to frame.
-//   useEffect(() => {
-//     if (!visible || !clipUri) return;
-//     let cancelled = false;
-//     const generateFrame = async () => {
-//       try {
-//         const { uri } = await VideoThumbnails.getThumbnailAsync(clipUri, { time: 0 });
-//         if (!cancelled) setFrameUri(uri);
-//       } catch (e) {
-//         console.log('Crop preview thumbnail failed', e);
-//       }
-//     };
-//     generateFrame();
-//     return () => {
-//       cancelled = true;
-//     };
-//   }, [visible, clipUri]);
-//   // Reset local ratio state whenever the overlay is (re)opened with a
-//   // different starting ratio, e.g. reopening crop on a different clip.
-//   useEffect(() => {
-//     setActiveRatioId(cropRatioId);
-//   }, [cropRatioId, visible]);
-//   const clamp = (val: number, min: number, max: number) => {
-//     'worklet';
-//     return Math.min(Math.max(val, min), max);
-//   };
-//   // Pan moves the focal point within the frame. Bounds are kept loose
-//   // (0 to 1) here; visually the image is large enough behind the box that
-//   // small over-pans still look reasonable, consistent with "always allow
-//   // the person to adjust" rather than hard-locking movement.
-//   const panGesture = Gesture.Pan()
-//     .onStart(() => {
-//       savedOffsetX.value = offsetX.value;
-//       savedOffsetY.value = offsetY.value;
-//     })
-//     .onUpdate((e) => {
-//       const dx = e.translationX / STAGE_WIDTH;
-//       const dy = e.translationY / STAGE_HEIGHT;
-//       offsetX.value = clamp(savedOffsetX.value - dx, 0, 1);
-//       offsetY.value = clamp(savedOffsetY.value - dy, 0, 1);
-//     });
-//   // Pinch adjusts zoom. 1 = fit, up to 3x, never below 1 (no zooming out
-//   // past the original frame).
-//   const pinchGesture = Gesture.Pinch()
-//     .onStart(() => {
-//       savedZoom.value = zoom.value;
-//     })
-//     .onUpdate((e) => {
-//       zoom.value = clamp(savedZoom.value * e.scale, 1, 3);
-//     });
-//   const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
-//   const animatedImageStyle = useAnimatedStyle(() => {
-//     return {
-//       transform: [
-//         { scale: zoom.value },
-//         {
-//           translateX: (0.5 - offsetX.value) * boxWidth,
-//         },
-//         {
-//           translateY: (0.5 - offsetY.value) * boxHeight,
-//         },
-//       ],
-//     };
-//   });
-//   const handleSelectRatio = (ratioId: string) => {
-//     // Keep the current focal point and zoom — only the box shape changes.
-//     // Matches the "always allow the person to adjust, nothing resets"
-//     // behavior confirmed for this feature.
-//     setActiveRatioId(ratioId);
-//   };
-//   const handleConfirm = () => {
-//     onConfirm({
-//       cropRatioId: activeRatioId,
-//       cropOffsetX: offsetX.value,
-//       cropOffsetY: offsetY.value,
-//       cropZoom: zoom.value,
-//     });
-//   };
-//   if (!visible) return null;
-//   return (
-//     <View style={styles.wrapper}>
-//       {/* Header */}
-//       <View style={styles.header}>
-//         <TouchableOpacity onPress={onClose} hitSlop={8}>
-//           <Ionicons name="close" size={scale(24)} color={COLORS.textPrimary} />
-//         </TouchableOpacity>
-//         <Text style={styles.headerTitle}>Crop</Text>
-//         <TouchableOpacity onPress={handleConfirm} hitSlop={8}>
-//           <Ionicons name="checkmark" size={scale(24)} color={COLORS.yellow} />
-//         </TouchableOpacity>
-//       </View>
-//       {/* Crop stage */}
-//       <View style={styles.stage}>
-//         <View
-//           style={[
-//             styles.cropBox,
-//             { width: boxWidth, height: boxHeight },
-//           ]}
-//         >
-//           <GestureDetector gesture={composedGesture}>
-//             <Animated.View style={[styles.imageWrapper, animatedImageStyle]}>
-//               {frameUri ? (
-//                 <Image
-//                   source={{ uri: frameUri }}
-//                   style={styles.image}
-//                   resizeMode="cover"
-//                 />
-//               ) : (
-//                 <View style={styles.imageFallback} />
-//               )}
-//             </Animated.View>
-//           </GestureDetector>
-//           {/* Grid overlay, rule-of-thirds style */}
-//           <View style={styles.gridOverlay} pointerEvents="none">
-//             <View style={[styles.gridLineVertical, { left: '33.33%' }]} />
-//             <View style={[styles.gridLineVertical, { left: '66.66%' }]} />
-//             <View style={[styles.gridLineHorizontal, { top: '33.33%' }]} />
-//             <View style={[styles.gridLineHorizontal, { top: '66.66%' }]} />
-//           </View>
-//           {/* Corner handles (visual indicators; box itself stays ratio-locked) */}
-//           <View style={[styles.cornerHandle, styles.cornerTL]} pointerEvents="none" />
-//           <View style={[styles.cornerHandle, styles.cornerTR]} pointerEvents="none" />
-//           <View style={[styles.cornerHandle, styles.cornerBL]} pointerEvents="none" />
-//           <View style={[styles.cornerHandle, styles.cornerBR]} pointerEvents="none" />
-//         </View>
-//       </View>
-//       {/* Compact ratio switcher */}
-//       <View style={styles.switcherRow}>
-//         {CROP_RATIO_PRESETS.map((p) => {
-//           const isActive = p.id === activeRatioId;
-//           return (
-//             <TouchableOpacity
-//               key={p.id}
-//               style={[styles.switcherItem, isActive && styles.switcherItemActive]}
-//               onPress={() => handleSelectRatio(p.id)}
-//               activeOpacity={0.8}
-//             >
-//               <Ionicons
-//                 name="crop-outline"
-//                 size={scale(14)}
-//                 color={isActive ? COLORS.yellow : COLORS.textSecondary}
-//               />
-//               <Text
-//                 style={[styles.switcherText, isActive && styles.switcherTextActive]}
-//                 numberOfLines={1}
-//               >
-//                 {p.ratioLabel}
-//               </Text>
-//             </TouchableOpacity>
-//           );
-//         })}
-//       </View>
-//     </View>
-//   );
-// }
+interface CropOverlayProps {
+  visible: boolean;
+  clipUri: string;
+  cropRatioId: string;
+  initialOffsetX?: number;
+  initialOffsetY?: number;
+  initialZoom?: number;
+  onConfirm: (cropData: {
+    cropRatioId: string;
+    cropOffsetX: number;
+    cropOffsetY: number;
+    cropZoom: number;
+  }) => void;
+  onClose: () => void;
+}
 
+function getBoxDimensions(ratioValue: number) {
+  let boxWidth = STAGE_WIDTH * 0.9;
+  let boxHeight = boxWidth / ratioValue;
+  const maxHeight = STAGE_HEIGHT * 0.9;
+  if (boxHeight > maxHeight) {
+    boxHeight = maxHeight;
+    boxWidth = boxHeight * ratioValue;
+  }
+  return { boxWidth, boxHeight };
+}
 
-// const styles = StyleSheet.create({
-//   wrapper: {
-//     position: 'absolute',
-//     top: 0,
-//     left: 0,
-//     right: 0,
-//     bottom: 0,
-//     backgroundColor: COLORS.background,
-//     zIndex: 999,
-//   },
-//   header: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     alignItems: 'center',
-//     paddingHorizontal: scale(16),
-//     paddingTop: verticalScale(50),
-//     paddingBottom: verticalScale(14),
-//   },
-//   headerTitle: {
-//     color: COLORS.textPrimary,
-//     fontSize: moderateScale(16),
-//     fontWeight: '600',
-//   },
-//   stage: {
-//     flex: 1,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     backgroundColor: '#000000',
-//   },
-//   cropBox: {
-//     overflow: 'hidden',
-//     borderWidth: 1,
-//     borderColor: COLORS.yellow,
-//     position: 'relative',
-//   },
-//   imageWrapper: {
-//     width: '100%',
-//     height: '100%',
-//   },
-//   image: {
-//     width: '100%',
-//     height: '100%',
-//   },
-//   imageFallback: {
-//     width: '100%',
-//     height: '100%',
-//     backgroundColor: COLORS.border,
-//   },
-//   gridOverlay: {
-//     position: 'absolute',
-//     top: 0,
-//     left: 0,
-//     right: 0,
-//     bottom: 0,
-//   },
-//   gridLineVertical: {
-//     position: 'absolute',
-//     top: 0,
-//     bottom: 0,
-//     width: 1,
-//     backgroundColor: 'rgba(255,255,255,0.4)',
-//   },
-//   gridLineHorizontal: {
-//     position: 'absolute',
-//     left: 0,
-//     right: 0,
-//     height: 1,
-//     backgroundColor: 'rgba(255,255,255,0.4)',
-//   },
-//   cornerHandle: {
-//     position: 'absolute',
-//     width: scale(16),
-//     height: scale(16),
-//     borderColor: COLORS.yellow,
-//   },
-//   cornerTL: { top: -1, left: -1, borderTopWidth: 3, borderLeftWidth: 3 },
-//   cornerTR: { top: -1, right: -1, borderTopWidth: 3, borderRightWidth: 3 },
-//   cornerBL: { bottom: -1, left: -1, borderBottomWidth: 3, borderLeftWidth: 3 },
-//   cornerBR: { bottom: -1, right: -1, borderBottomWidth: 3, borderRightWidth: 3 },
-//   switcherRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'center',
-//     flexWrap: 'wrap',
-//     paddingHorizontal: scale(12),
-//     paddingVertical: verticalScale(16),
-//     gap: scale(8),
-//   },
-//   switcherItem: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     paddingHorizontal: scale(10),
-//     paddingVertical: verticalScale(6),
-//     borderRadius: scale(20),
-//     borderWidth: 1,
-//     borderColor: COLORS.border,
-//     gap: scale(4),
-//   },
-//   switcherItemActive: {
-//     borderColor: COLORS.yellow,
-//   },
-//   switcherText: {
-//     color: COLORS.textSecondary,
-//     fontSize: moderateScale(10),
-//   },
-//   switcherTextActive: {
-//     color: COLORS.yellow,
-//     fontWeight: '600',
-//   },
-// });
+function clamp(val: number, min: number, max: number) {
+  return Math.min(Math.max(val, min), max);
+}
+
+export default function CropOverlay({
+  visible,
+  clipUri,
+  cropRatioId,
+  initialOffsetX = 0.5,
+  initialOffsetY = 0.5,
+  initialZoom = 1,
+  onConfirm,
+  onClose,
+}: CropOverlayProps) {
+  const __palette = useAppPalette();
+  COLORS = {
+    ...COLORS,
+    background: __palette.background,
+    border: __palette.border,
+    yellow: __palette.yellow,
+    textPrimary: __palette.textPrimary,
+    textSecondary: __palette.textSecondary,
+  };
+  styles = __makeStyles();
+
+  const [activeRatioId, setActiveRatioId] = useState(cropRatioId);
+  const [frameUri, setFrameUri] = useState<string | null>(null);
+  const preset = getCropPresetById(activeRatioId);
+  const { boxWidth, boxHeight } = getBoxDimensions(preset.ratioValue);
+
+  const offsetX = useRef(initialOffsetX).current;
+  const offsetY = useRef(initialOffsetY).current;
+  const zoom = useRef(initialZoom).current;
+  // Mutable live values (refs) + Animated mirrors for transform.
+  const live = useRef({
+    offsetX: initialOffsetX,
+    offsetY: initialOffsetY,
+    zoom: initialZoom,
+    startOffsetX: initialOffsetX,
+    startOffsetY: initialOffsetY,
+    startZoom: initialZoom,
+    startDistance: 0,
+  });
+  const animX = useRef(new Animated.Value(0)).current;
+  const animY = useRef(new Animated.Value(0)).current;
+  const animZoom = useRef(new Animated.Value(initialZoom)).current;
+
+  const syncAnim = () => {
+    const L = live.current;
+    animX.setValue((0.5 - L.offsetX) * boxWidth);
+    animY.setValue((0.5 - L.offsetY) * boxHeight);
+    animZoom.setValue(L.zoom);
+  };
+
+  useEffect(() => {
+    live.current.offsetX = initialOffsetX;
+    live.current.offsetY = initialOffsetY;
+    live.current.zoom = initialZoom;
+    syncAnim();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialOffsetX, initialOffsetY, initialZoom, boxWidth, boxHeight]);
+
+  useEffect(() => {
+    setActiveRatioId(cropRatioId);
+  }, [cropRatioId, visible]);
+
+  useEffect(() => {
+    if (!visible || !clipUri) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { uri } = await VideoThumbnails.getThumbnailAsync(clipUri, {
+          time: 0,
+        });
+        if (!cancelled) setFrameUri(uri);
+      } catch (e) {
+        console.log('Crop preview thumbnail failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, clipUri]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          const L = live.current;
+          L.startOffsetX = L.offsetX;
+          L.startOffsetY = L.offsetY;
+          L.startZoom = L.zoom;
+          const touches = evt.nativeEvent.touches;
+          if (touches.length >= 2) {
+            const dx = touches[0].pageX - touches[1].pageX;
+            const dy = touches[0].pageY - touches[1].pageY;
+            L.startDistance = Math.sqrt(dx * dx + dy * dy) || 1;
+          } else {
+            L.startDistance = 0;
+          }
+        },
+        onPanResponderMove: (evt, gesture) => {
+          const L = live.current;
+          const touches = evt.nativeEvent.touches;
+          if (touches.length >= 2) {
+            const dx = touches[0].pageX - touches[1].pageX;
+            const dy = touches[0].pageY - touches[1].pageY;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const base = L.startDistance || dist;
+            L.zoom = clamp((L.startZoom * dist) / base, 1, 3);
+          } else {
+            const dx = gesture.dx / STAGE_WIDTH;
+            const dy = gesture.dy / STAGE_HEIGHT;
+            L.offsetX = clamp(L.startOffsetX - dx, 0, 1);
+            L.offsetY = clamp(L.startOffsetY - dy, 0, 1);
+          }
+          syncAnim();
+        },
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boxWidth, boxHeight]
+  );
+
+  // silence unused — kept for API parity / future keyframe seeding
+  void offsetX;
+  void offsetY;
+  void zoom;
+
+  const handleConfirm = () => {
+    const L = live.current;
+    onConfirm({
+      cropRatioId: activeRatioId,
+      cropOffsetX: L.offsetX,
+      cropOffsetY: L.offsetY,
+      cropZoom: L.zoom,
+    });
+  };
+
+  if (!visible) return null;
+
+  return (
+    <View style={styles.wrapper}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onClose} hitSlop={8}>
+          <Ionicons name="close" size={scale(24)} color={COLORS.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Crop</Text>
+        <TouchableOpacity onPress={handleConfirm} hitSlop={8}>
+          <Ionicons name="checkmark" size={scale(24)} color={COLORS.yellow} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.stage}>
+        <View style={[styles.cropBox, { width: boxWidth, height: boxHeight }]}>
+          <Animated.View
+            {...panResponder.panHandlers}
+            style={[
+              styles.imageWrapper,
+              {
+                transform: [
+                  { scale: animZoom },
+                  { translateX: animX },
+                  { translateY: animY },
+                ],
+              },
+            ]}
+          >
+            {frameUri ? (
+              <Image
+                source={{ uri: frameUri }}
+                style={styles.image}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.imageFallback} />
+            )}
+          </Animated.View>
+
+          <View style={styles.gridOverlay} pointerEvents="none">
+            <View style={[styles.gridLineVertical, { left: '33.33%' }]} />
+            <View style={[styles.gridLineVertical, { left: '66.66%' }]} />
+            <View style={[styles.gridLineHorizontal, { top: '33.33%' }]} />
+            <View style={[styles.gridLineHorizontal, { top: '66.66%' }]} />
+          </View>
+
+          <View
+            style={[styles.cornerHandle, styles.cornerTL]}
+            pointerEvents="none"
+          />
+          <View
+            style={[styles.cornerHandle, styles.cornerTR]}
+            pointerEvents="none"
+          />
+          <View
+            style={[styles.cornerHandle, styles.cornerBL]}
+            pointerEvents="none"
+          />
+          <View
+            style={[styles.cornerHandle, styles.cornerBR]}
+            pointerEvents="none"
+          />
+        </View>
+        <Text style={styles.hint}>Drag to pan · pinch to zoom</Text>
+      </View>
+
+      <View style={styles.switcherRow}>
+        {CROP_RATIO_PRESETS.map((p) => {
+          const isActive = p.id === activeRatioId;
+          return (
+            <TouchableOpacity
+              key={p.id}
+              style={[styles.switcherItem, isActive && styles.switcherItemActive]}
+              onPress={() => setActiveRatioId(p.id)}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="crop-outline"
+                size={scale(14)}
+                color={isActive ? COLORS.yellow : COLORS.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.switcherText,
+                  isActive && styles.switcherTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                {p.ratioLabel}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function __makeStyles() {
+  return StyleSheet.create({
+    wrapper: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: COLORS.background,
+      zIndex: 999,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: scale(16),
+      paddingTop: verticalScale(50),
+      paddingBottom: verticalScale(14),
+    },
+    headerTitle: {
+      color: COLORS.textPrimary,
+      fontSize: moderateScale(16),
+      fontWeight: '600',
+    },
+    stage: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#000000',
+    },
+    cropBox: {
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: COLORS.yellow,
+      position: 'relative',
+    },
+    imageWrapper: {
+      width: '100%',
+      height: '100%',
+    },
+    image: {
+      width: '100%',
+      height: '100%',
+    },
+    imageFallback: {
+      width: '100%',
+      height: '100%',
+      backgroundColor: COLORS.border,
+    },
+    hint: {
+      color: COLORS.textSecondary,
+      fontSize: moderateScale(11),
+      marginTop: verticalScale(12),
+    },
+    gridOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    gridLineVertical: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      width: 1,
+      backgroundColor: 'rgba(255,255,255,0.4)',
+    },
+    gridLineHorizontal: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      height: 1,
+      backgroundColor: 'rgba(255,255,255,0.4)',
+    },
+    cornerHandle: {
+      position: 'absolute',
+      width: scale(16),
+      height: scale(16),
+      borderColor: COLORS.yellow,
+    },
+    cornerTL: { top: -1, left: -1, borderTopWidth: 3, borderLeftWidth: 3 },
+    cornerTR: { top: -1, right: -1, borderTopWidth: 3, borderRightWidth: 3 },
+    cornerBL: { bottom: -1, left: -1, borderBottomWidth: 3, borderLeftWidth: 3 },
+    cornerBR: {
+      bottom: -1,
+      right: -1,
+      borderBottomWidth: 3,
+      borderRightWidth: 3,
+    },
+    switcherRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      flexWrap: 'wrap',
+      paddingHorizontal: scale(12),
+      paddingVertical: verticalScale(16),
+      gap: scale(8),
+    },
+    switcherItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: scale(10),
+      paddingVertical: verticalScale(6),
+      borderRadius: scale(20),
+      borderWidth: 1,
+      borderColor: COLORS.border,
+      gap: scale(4),
+    },
+    switcherItemActive: {
+      borderColor: COLORS.yellow,
+    },
+    switcherText: {
+      color: COLORS.textSecondary,
+      fontSize: moderateScale(10),
+    },
+    switcherTextActive: {
+      color: COLORS.yellow,
+      fontWeight: '600',
+    },
+  });
+}
+let styles = __makeStyles();

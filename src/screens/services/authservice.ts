@@ -29,6 +29,9 @@ type AuthResponseDto = {
   initials?: string | null;
   color?: string | null;
   avatarUrl?: string | null;
+  referralCode?: string | null;
+  isPro?: boolean;
+  proUntil?: string | null;
 };
 
 function sessionFromAuthResponse(data: AuthResponseDto): AuthSession {
@@ -61,23 +64,48 @@ export const authService = {
     return sessionFromAuthResponse(data);
   },
 
-  /** Register — persists the user in Postgres via Spring, returns JWT pair. */
-  register: async (
-    name: string,
-    email: string,
-    password: string
+  /** Google ID token → same JWT session as email/password. */
+  loginWithGoogle: async (
+    idToken: string,
+    referralCode?: string
   ): Promise<AuthSession> => {
     if (CONFIG.USE_MOCK) {
       throw new Error('Mock auth is disabled. Use the real API (CONFIG.USE_MOCK = false).');
     }
+    const body: Record<string, string> = { idToken };
+    if (referralCode?.trim()) {
+      body.referralCode = referralCode.trim().toUpperCase();
+    }
+    const data = await apiRequest<AuthResponseDto>('/auth/google', {
+      method: 'POST',
+      skipAuth: true,
+      body: JSON.stringify(body),
+    });
+    return sessionFromAuthResponse(data);
+  },
+
+  /** Register — persists the user in Postgres via Spring, returns JWT pair. */
+  register: async (
+    name: string,
+    email: string,
+    password: string,
+    referralCode?: string
+  ): Promise<AuthSession> => {
+    if (CONFIG.USE_MOCK) {
+      throw new Error('Mock auth is disabled. Use the real API (CONFIG.USE_MOCK = false).');
+    }
+    const body: Record<string, string> = {
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      password,
+    };
+    if (referralCode?.trim()) {
+      body.referralCode = referralCode.trim().toUpperCase();
+    }
     const data = await apiRequest<AuthResponseDto>('/auth/register', {
       method: 'POST',
       skipAuth: true,
-      body: JSON.stringify({
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password,
-      }),
+      body: JSON.stringify(body),
     });
     return sessionFromAuthResponse(data);
   },

@@ -8,6 +8,7 @@ import {
   Dimensions,
   Animated,
   ViewToken,
+  ActivityIndicator,
 } from 'react-native'
 import React, { useRef, useState, useMemo } from "react"
 import { useTheme, ThemeColors } from "../Contexts/ThemeContext";
@@ -16,10 +17,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../Contexts/Authcontext';
+import { useWowPath } from '../Contexts/useWowPath';
+import { isProfileSetupRequired } from '../services/profileSetupGate';
+
 type RootStackParamList = {
   home: undefined;
   signin: undefined;
+  signup: { resumeWow?: boolean } | undefined;
   projects: undefined;
+  profilesetup: { resumeWow?: boolean } | undefined;
+  editorscreen: { wow?: boolean; initialTool?: string } | undefined;
 };
 interface Slide {
   id: string;
@@ -31,28 +38,32 @@ const { width } = Dimensions.get('window');
 const slides: Slide[] = [
   {
     id: '1',
-    title: 'Edit Your Videos Together, In Real Time',
-    description: 'Work with your team on the same timeline simultaneously. See every change as it happens.',
+    title: 'Make a Reel in 60 Seconds',
+    description:
+      'Open a demo, add captions, and feel the edit — no setup, no learning curve.',
     image: require("../../../assets/editimage.png"),
   },
   {
     id: '2',
-    title: 'Share & Comment Instantly',
-    description: 'Pin feedback directly on timeline segments. Tag teammates and resolve notes fast.',
+    title: 'Auto Looks & Captions',
+    description:
+      'One-tap Auto Movie, filters, and karaoke-style captions that already look shareable.',
     image: require("../../../assets/editimage2.png"),
   },
   {
     id: '3',
-    title: 'Export In Seconds',
-    description: 'Finish editing and ship your video instantly. Share directly to any platform.',
+    title: 'Export & Share Fast',
+    description:
+      'Ship to Reels, TikTok, or YouTube in seconds. Invite your team to edit live when you’re ready.',
     image: require("../../../assets/editimage3.png"),
   },
 ];
 function Onboarding() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { user } = useAuth();
+  const { startWowPath, starting } = useWowPath();
   const flatListRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -67,29 +78,62 @@ function Onboarding() {
       }
     }
   ).current;
+
+  const goAfterOnboarding = async (opts?: {
+    resumeWow?: boolean;
+  }): Promise<void> => {
+    await AsyncStorage.setItem('vydora:onboarding:done', 'true');
+    if (!user) {
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'signup',
+            params: opts?.resumeWow ? { resumeWow: true } : undefined,
+          },
+        ],
+      });
+      return;
+    }
+    const needsProfile = await isProfileSetupRequired();
+    if (needsProfile) {
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'profilesetup',
+            params: opts?.resumeWow ? { resumeWow: true } : undefined,
+          },
+        ],
+      });
+      return;
+    }
+    if (opts?.resumeWow) {
+      await startWowPath();
+      return;
+    }
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'projects' }],
+    });
+  };
+
+  const goDashboard = async (): Promise<void> => {
+    await goAfterOnboarding();
+  };
+
   const handleNext = async (): Promise<void> => {
     if (currentIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({
         index: currentIndex + 1,
         animated: true,
       });
-    } else {
-      // mark onboarding as done so splash never shows it again
-      await AsyncStorage.setItem('vydora:onboarding:done', 'true');
-      // After signup → signin → onboarding, user is logged in → dashboard.
-      if (user) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'projects' }],
-        });
-      } else {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'signin' }],
-        });
-      }
+      return;
     }
+    // Final slide — profile setup (optional wow resume) when signed in.
+    await goAfterOnboarding({ resumeWow: true });
   };
+
   const renderSlide = ({ item }: { item: Slide }) => (
     <View style={styles.slide}>
       <Image style={styles.editimage} source={item.image} />
@@ -97,6 +141,7 @@ function Onboarding() {
       <Text style={styles.description}>{item.description}</Text>
     </View>
   );
+  const isLast = currentIndex === slides.length - 1;
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
@@ -119,11 +164,26 @@ function Onboarding() {
           />
         ))}
       </View>
-      <Pressable style={styles.cta} onPress={handleNext}>
-        <Text style={styles.ctaText}>
-          {currentIndex === slides.length - 1 ? 'Get Started' : 'Continue'}
-        </Text>
+      <Pressable
+        style={[styles.cta, starting && styles.ctaDisabled]}
+        onPress={() => void handleNext()}
+        disabled={starting}
+      >
+        {starting ? (
+          <ActivityIndicator color={colors.accentOn} />
+        ) : (
+          <Text style={styles.ctaText}>
+            {isLast ? 'Try a 60-second edit' : 'Continue'}
+          </Text>
+        )}
       </Pressable>
+      {isLast && user ? (
+        <Pressable onPress={() => void goDashboard()} disabled={starting}>
+          <Text style={styles.skip}>Skip to dashboard</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.skipSpacer} />
+      )}
     </SafeAreaView>
   );
 };
@@ -189,14 +249,26 @@ function makeStyles(c: ThemeColors) {
     backgroundColor: c.accent,
     borderRadius: s(50),
     paddingVertical: vs(11),
-    paddingHorizontal: s(110),
+    paddingHorizontal: s(48),
+    minWidth: s(220),
     alignItems: 'center',
-    marginBottom: vs(32),
+    marginBottom: vs(10),
   },
+  ctaDisabled: { opacity: 0.7 },
   ctaText: {
     fontSize: ms(15),
     fontWeight: '700',
     color: c.accentOn,
+  },
+  skip: {
+    fontSize: ms(13),
+    fontWeight: '600',
+    color: c.textMuted,
+    marginBottom: vs(24),
+  },
+  skipSpacer: {
+    height: vs(24) + ms(13),
+    marginBottom: vs(24),
   },
 });
 }

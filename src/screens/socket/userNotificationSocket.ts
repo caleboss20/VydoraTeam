@@ -1,8 +1,8 @@
 /**
  * App-wide STOMP connection for private user queues.
  *
- * Subscribes to `/user/queue/notifications` so project invites + Zoom-style
- * invite-approval requests land instantly while the user is logged in.
+ * Subscribes to `/user/queue/notifications` so project invites, Zoom-style
+ * invite-approvals, and Viewer→Editor upgrade requests land instantly.
  */
 import { useEffect, useRef } from 'react';
 import { Client, IMessage } from '@stomp/stompjs';
@@ -41,16 +41,40 @@ export type InviteApprovalResolvedPush = {
   inviteeEmail: string;
 };
 
+/** Viewer asked Owner for Editor access. */
+export type RoleUpgradePush = {
+  type: 'role_upgrade';
+  requestId: string;
+  projectId: string;
+  projectTitle: string;
+  requestedById: string;
+  requestedByName: string;
+  requestedRole: string;
+  requestedAt?: string;
+};
+
+export type RoleUpgradeResolvedPush = {
+  type: 'role_upgrade_resolved';
+  approved: boolean;
+  projectId: string;
+  projectTitle: string;
+  requestedRole?: string;
+};
+
 export type UserNotificationPush =
   | InvitePushPayload
   | InviteApprovalPush
   | InviteApprovalResolvedPush
+  | RoleUpgradePush
+  | RoleUpgradeResolvedPush
   | Record<string, unknown>;
 
 type Handlers = {
   onInvite?: (payload: InvitePushPayload) => void;
   onInviteApproval?: (payload: InviteApprovalPush) => void;
   onInviteApprovalResolved?: (payload: InviteApprovalResolvedPush) => void;
+  onRoleUpgrade?: (payload: RoleUpgradePush) => void;
+  onRoleUpgradeResolved?: (payload: RoleUpgradeResolvedPush) => void;
   onNotification?: () => void;
 };
 
@@ -88,6 +112,12 @@ export function useUserNotificationSocket(handlers: Handlers) {
               handlersRef.current.onInviteApprovalResolved?.(
                 body as InviteApprovalResolvedPush
               );
+            } else if (type === 'role_upgrade' && 'requestId' in body) {
+              handlersRef.current.onRoleUpgrade?.(body as RoleUpgradePush);
+            } else if (type === 'role_upgrade_resolved') {
+              handlersRef.current.onRoleUpgradeResolved?.(
+                body as RoleUpgradeResolvedPush
+              );
             } else if (
               (type === 'invite' || !type) &&
               'projectId' in body &&
@@ -102,7 +132,7 @@ export function useUserNotificationSocket(handlers: Handlers) {
           handlersRef.current.onNotification?.();
         });
 
-        console.log('[UserSocket] connected — invites + host approvals');
+        console.log('[UserSocket] connected — invites + role upgrades');
       },
       onStompError: (frame) =>
         console.log('[UserSocket] STOMP error', frame.headers['message'], frame.body),

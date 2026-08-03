@@ -19,8 +19,11 @@ import {
   InvitePushPayload,
   InviteApprovalPush,
   InviteApprovalResolvedPush,
+  RoleUpgradePush,
+  RoleUpgradeResolvedPush,
 } from '../socket/userNotificationSocket';
 import InviteApprovalModal from '../components/InviteApprovalModal';
+import RoleUpgradeApprovalModal from '../components/RoleUpgradeApprovalModal';
 
 interface NotificationContextType {
   notifications: Notification[];
@@ -29,10 +32,17 @@ interface NotificationContextType {
   error: string | null;
   latestInvite: InvitePushPayload | null;
   pendingApproval: InviteApprovalPush | null;
+  pendingRoleUpgrade: RoleUpgradePush | null;
   clearLatestInvite: () => void;
   clearPendingApproval: () => void;
+  clearPendingRoleUpgrade: () => void;
   /** Owner: load pending admit queue for a project (Activity / Team). */
   openPendingApprovals: (
+    projectId: string,
+    projectTitle?: string
+  ) => Promise<void>;
+  /** Owner: load pending Viewer→Editor upgrade requests. */
+  openPendingRoleUpgrades: (
     projectId: string,
     projectTitle?: string
   ) => Promise<void>;
@@ -55,6 +65,14 @@ function enqueueUnique(
   return [...prev, next];
 }
 
+function enqueueRoleUnique(
+  prev: RoleUpgradePush[],
+  next: RoleUpgradePush
+): RoleUpgradePush[] {
+  if (prev.some((p) => p.requestId === next.requestId)) return prev;
+  return [...prev, next];
+}
+
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -63,11 +81,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [latestInvite, setLatestInvite] = useState<InvitePushPayload | null>(null);
   const [approvalQueue, setApprovalQueue] = useState<InviteApprovalPush[]>([]);
   const [approvalBusy, setApprovalBusy] = useState(false);
+  const [roleUpgradeQueue, setRoleUpgradeQueue] = useState<RoleUpgradePush[]>([]);
+  const [roleUpgradeBusy, setRoleUpgradeBusy] = useState(false);
   const hasItemsRef = useRef(false);
   const fetchInFlightRef = useRef(false);
   const lastInviteAlertKey = useRef('');
 
   const pendingApproval = approvalQueue[0] ?? null;
+  const pendingRoleUpgrade = roleUpgradeQueue[0] ?? null;
 
   useEffect(() => {
     hasItemsRef.current = notifications.length > 0;
@@ -96,6 +117,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const clearLatestInvite = useCallback(() => setLatestInvite(null), []);
   const clearPendingApproval = useCallback(() => {
     setApprovalQueue((q) => q.slice(1));
+  }, []);
+  const clearPendingRoleUpgrade = useCallback(() => {
+    setRoleUpgradeQueue((q) => q.slice(1));
   }, []);
 
   const openPendingApprovals = useCallback(
@@ -131,6 +155,41 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     [token]
   );
 
+  const openPendingRoleUpgrades = useCallback(
+    async (projectId: string, projectTitle?: string) => {
+      if (!token) return;
+      try {
+        const items = await memberService.listRoleUpgradeRequests(projectId, token);
+        if (items.length === 0) {
+          Alert.alert(
+            'No pending requests',
+            'There are no Editor access requests waiting for you.'
+          );
+          return;
+        }
+        setRoleUpgradeQueue((prev) => {
+          let next = [...prev];
+          for (const r of items) {
+            next = enqueueRoleUnique(next, {
+              type: 'role_upgrade',
+              requestId: r.id,
+              projectId: r.projectId,
+              projectTitle: projectTitle || 'Project',
+              requestedById: r.requestedById,
+              requestedByName: r.requestedByName,
+              requestedRole: r.requestedRole,
+              requestedAt: r.createdAt,
+            });
+          }
+          return next;
+        });
+      } catch (e: any) {
+        Alert.alert('Could not load requests', e?.message ?? 'Try again later.');
+      }
+    },
+    [token]
+  );
+
   useUserNotificationSocket({
     onInvite: (payload) => {
       setLatestInvite(payload);
@@ -145,7 +204,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       }
     },
     onInviteApproval: (payload) => {
-      // Zoom-style host modal — queue if one is already open.
       setApprovalQueue((prev) => enqueueUnique(prev, payload));
     },
     onInviteApprovalResolved: (payload: InviteApprovalResolvedPush) => {
@@ -154,6 +212,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         payload.approved
           ? `Host admitted ${payload.inviteeEmail} to "${payload.projectTitle}".`
           : `Host declined your invite for ${payload.inviteeEmail} on "${payload.projectTitle}".`
+      );
+    },
+    onRoleUpgrade: (payload) => {
+      setRoleUpgradeQueue((prev) => enqueueRoleUnique(prev, payload));
+    },
+    onRoleUpgradeResolved: (payload: RoleUpgradeResolvedPush) => {
+      Alert.alert(
+        payload.approved ? 'Editor access granted' : 'Request declined',
+        payload.approved
+          ? `You're now an Editor on "${payload.projectTitle}". You can cut and export.`
+          : `The Owner declined your Editor request on "${payload.projectTitle}".`
       );
     },
     onNotification: () => {
@@ -168,6 +237,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       setNotifications([]);
       setLatestInvite(null);
       setApprovalQueue([]);
+      setRoleUpgradeQueue([]);
       return;
     }
     void fetchNotifications();
@@ -227,6 +297,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setApprovalQueue((q) => q.slice(1));
   }, []);
 
+  const shiftRoleQueue = useCallback(() => {
+    setRoleUpgradeQueue((q) => q.slice(1));
+  }, []);
+
   const handleAdmit = useCallback(async () => {
     if (!pendingApproval || !token) return;
     try {
@@ -263,6 +337,42 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     }
   }, [pendingApproval, token, fetchNotifications, shiftQueue]);
 
+  const handleGrantEditor = useCallback(async () => {
+    if (!pendingRoleUpgrade || !token) return;
+    try {
+      setRoleUpgradeBusy(true);
+      await memberService.approveRoleUpgrade(
+        pendingRoleUpgrade.projectId,
+        pendingRoleUpgrade.requestId,
+        token
+      );
+      shiftRoleQueue();
+      void fetchNotifications();
+    } catch (e: any) {
+      Alert.alert('Could not grant access', e?.message ?? 'Try again from Activity.');
+    } finally {
+      setRoleUpgradeBusy(false);
+    }
+  }, [pendingRoleUpgrade, token, fetchNotifications, shiftRoleQueue]);
+
+  const handleDeclineRoleUpgrade = useCallback(async () => {
+    if (!pendingRoleUpgrade || !token) return;
+    try {
+      setRoleUpgradeBusy(true);
+      await memberService.rejectRoleUpgrade(
+        pendingRoleUpgrade.projectId,
+        pendingRoleUpgrade.requestId,
+        token
+      );
+      shiftRoleQueue();
+      void fetchNotifications();
+    } catch (e: any) {
+      Alert.alert('Could not decline', e?.message ?? 'Try again later.');
+    } finally {
+      setRoleUpgradeBusy(false);
+    }
+  }, [pendingRoleUpgrade, token, fetchNotifications, shiftRoleQueue]);
+
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.read).length,
     [notifications]
@@ -276,9 +386,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       error,
       latestInvite,
       pendingApproval,
+      pendingRoleUpgrade,
       clearLatestInvite,
       clearPendingApproval,
+      clearPendingRoleUpgrade,
       openPendingApprovals,
+      openPendingRoleUpgrades,
       fetchNotifications,
       markAsRead,
       markAllAsRead,
@@ -292,9 +405,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       error,
       latestInvite,
       pendingApproval,
+      pendingRoleUpgrade,
       clearLatestInvite,
       clearPendingApproval,
+      clearPendingRoleUpgrade,
       openPendingApprovals,
+      openPendingRoleUpgrades,
       fetchNotifications,
       markAsRead,
       markAllAsRead,
@@ -307,12 +423,20 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     <NotificationContext.Provider value={value}>
       {children}
       <InviteApprovalModal
-        visible={!!pendingApproval}
+        visible={!!pendingApproval && !pendingRoleUpgrade}
         request={pendingApproval}
         busy={approvalBusy}
         onAdmit={handleAdmit}
         onDecline={handleDeclineApproval}
         onDismiss={clearPendingApproval}
+      />
+      <RoleUpgradeApprovalModal
+        visible={!!pendingRoleUpgrade}
+        request={pendingRoleUpgrade}
+        busy={roleUpgradeBusy}
+        onAdmit={handleGrantEditor}
+        onDecline={handleDeclineRoleUpgrade}
+        onDismiss={clearPendingRoleUpgrade}
       />
     </NotificationContext.Provider>
   );

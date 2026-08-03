@@ -21,6 +21,7 @@ import {
 } from 'react-native-size-matters';
 import { CONFIG } from '../config';
 import { useTheme, ThemeColors } from '../Contexts/ThemeContext';
+import { setDevUnlockPro } from '../Contexts/subscription';
 
 export type AppSettings = {
   darkMode: boolean;
@@ -28,8 +29,12 @@ export type AppSettings = {
   proxyEditing: boolean;
   notifications: boolean;
   presence: boolean;
+  /** Soft join/leave chime when teammates enter the editor. */
+  collabSounds: boolean;
   language: string;
   exportQuality: '720p' | '1080p' | '4K';
+  /** Soft unlock Pro features until Paystack is live. */
+  devUnlockPro: boolean;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -38,8 +43,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxyEditing: false,
   notifications: true,
   presence: true,
+  collabSounds: true,
   language: 'English',
   exportQuality: '1080p',
+  devUnlockPro: false,
 };
 
 export async function loadAppSettings(): Promise<AppSettings> {
@@ -298,6 +305,32 @@ const SettingsScreen: FC = () => {
             switchValue={prefs.proxyEditing}
             onSwitch={(v) => patch({ proxyEditing: v })}
           />
+          <View style={styles.divider} />
+          <SettingItem
+            colors={colors}
+            styles={styles}
+            icon="diamond-outline"
+            title="Unlock Pro features (dev)"
+            subtitle="Demo Pro unlock until Paystack is live"
+            switchValue={prefs.devUnlockPro}
+            onSwitch={(v) => {
+              void patch({ devUnlockPro: v });
+              void setDevUnlockPro(v);
+            }}
+          />
+        </View>
+
+        <Text style={styles.section}>GROWTH</Text>
+        <View style={styles.card}>
+          <SettingItem
+            colors={colors}
+            styles={styles}
+            icon="gift-outline"
+            title="Invite & earn"
+            subtitle="Share your code — both get Pro days"
+            showArrow
+            onPress={() => navigation.navigate('referral')}
+          />
         </View>
 
         <Text style={styles.section}>COLLABORATION</Text>
@@ -318,6 +351,16 @@ const SettingsScreen: FC = () => {
             title="Show presence to others"
             switchValue={prefs.presence}
             onSwitch={(v) => patch({ presence: v })}
+          />
+          <View style={styles.divider} />
+          <SettingItem
+            colors={colors}
+            styles={styles}
+            icon="notifications-outline"
+            title="Teammate join sounds"
+            subtitle="Soft chime when someone enters or leaves the editor"
+            switchValue={prefs.collabSounds}
+            onSwitch={(v) => patch({ collabSounds: v })}
           />
         </View>
 

@@ -22,8 +22,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import Slider from '@react-native-community/slider';
 import * as ImagePicker from 'expo-image-picker';
-import { MediaOverlay, MediaOverlayType } from '../types';
+import { MediaOverlay, MediaOverlayType, ClipEffectId } from '../types';
 import { useAppPalette } from '../Contexts/ThemeContext';
+import { STOCK_FX_PRESETS } from '../services/stockFxPresets';
 
 
 const CHROMA_COLORS = ['#00FF00', '#00FF55', '#0000FF', '#00B140'];
@@ -58,6 +59,8 @@ interface OverlayToolPanelProps {
   onDelete: () => void;
   /** Jump to CapCut-style Mask tool for the selected media overlay. */
   onOpenMask?: () => void;
+  /** One-tap atmosphere FX (lightning / grain / dust) on the active clip. */
+  onApplyStockFx?: (effectId: ClipEffectId, intensity: number) => void;
   onClose: () => void;
 }
 
@@ -72,6 +75,7 @@ export default function OverlayToolPanel({
   onClearKeyframes,
   onDelete,
   onOpenMask,
+  onApplyStockFx,
   onClose,
 }: OverlayToolPanelProps) {
   const __palette = useAppPalette();
@@ -357,6 +361,33 @@ export default function OverlayToolPanel({
             </TouchableOpacity>
           </View>
 
+          {onApplyStockFx ? (
+            <>
+              <Text style={styles.sectionLabel}>STOCK FX · DRAMA</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.emojiRow}
+              >
+                {STOCK_FX_PRESETS.map((fx) => (
+                  <TouchableOpacity
+                    key={fx.id}
+                    style={styles.fxChip}
+                    onPress={() => onApplyStockFx(fx.effectId, fx.intensity)}
+                  >
+                    <Ionicons
+                      name={fx.icon as keyof typeof Ionicons.glyphMap}
+                      size={scale(16)}
+                      color={COLORS.yellow}
+                    />
+                    <Text style={styles.fxChipLabel}>{fx.label}</Text>
+                    <Text style={styles.fxChipHint}>{fx.hint}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -464,6 +495,34 @@ function __makeStyles() {
   emojiRow: {
     paddingHorizontal: scale(16),
     gap: scale(8),
+  },
+  sectionLabel: {
+    color: COLORS.yellow,
+    fontSize: moderateScale(10),
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    paddingHorizontal: scale(16),
+    marginTop: verticalScale(4),
+  },
+  fxChip: {
+    minWidth: scale(88),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(8),
+    borderRadius: scale(12),
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    gap: verticalScale(2),
+  },
+  fxChipLabel: {
+    color: COLORS.textPrimary,
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+  },
+  fxChipHint: {
+    color: COLORS.textSecondary,
+    fontSize: moderateScale(9),
   },
   emojiChip: {
     width: scale(42),

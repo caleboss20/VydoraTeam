@@ -33,12 +33,12 @@ function easeOutBounce(t: number): number {
 
 export type AnimatedTextProps = {
   opacity: number;
-  transform: Array<{
-    translateY?: number;
-    translateX?: number;
-    scale?: number;
-    rotate?: string;
-  }>;
+  transform: Array<
+    | { translateY: number }
+    | { translateX: number }
+    | { scale: number }
+    | { rotate: string }
+  >;
   displayText: string;
   /** Ghost trail layer (AM echo look). */
   ghost?: { opacity: number; translateX: number; translateY: number };
