@@ -2,7 +2,7 @@
  * Central app configuration for the Vydora Expo client.
  *
  * Dual backends (auto-pick + failover):
- *   EXPO_PUBLIC_API_BASE_CLOUD  → Railway / public HTTPS
+ *   EXPO_PUBLIC_API_BASE_CLOUD  → Render / public HTTPS
  *   EXPO_PUBLIC_API_BASE_LOCAL  → USB adb reverse / LAN Spring Boot
  *   EXPO_PUBLIC_API_PREFER      → cloud | local  (default: cloud if set)
  *
