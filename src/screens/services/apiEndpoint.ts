@@ -42,7 +42,9 @@ function isUsableUrl(url: string): boolean {
 }
 
 function buildCandidates(): ApiEndpoint[] {
-  const cloudApi = strip(process.env.EXPO_PUBLIC_API_BASE_CLOUD);
+  const cloudApi =
+    strip(process.env.EXPO_PUBLIC_API_BASE_CLOUD) ||
+    'https://vydora-backend-mmgm.onrender.com/api/v1';
   const localApi =
     strip(process.env.EXPO_PUBLIC_API_BASE_LOCAL) ||
     strip(process.env.EXPO_PUBLIC_API_BASE) ||
