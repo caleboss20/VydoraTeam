@@ -811,7 +811,8 @@ const addTitleCard = (
 ): string | null => {
   let newId: string | null = null;
   setCurrentVideoProjectState((prev) => {
-    if (!prev) return prev;
+    const base = prev ?? projectRef.current;
+    if (!base) return prev;
     const dur = Math.max(500, Math.round(durationMs));
     newId = `title-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const titleOverlay = {
@@ -851,7 +852,7 @@ const addTitleCard = (
       volume: 0,
     };
 
-    const sorted = [...prev.clips].sort((a, b) => a.order - b.order);
+    const sorted = [...base.clips].sort((a, b) => a.order - b.order);
     let insertAt = sorted.length;
     if (where === 'start') insertAt = 0;
     else if (where === 'end') insertAt = sorted.length;
@@ -862,7 +863,7 @@ const addTitleCard = (
       else insertAt = where === 'before' ? relIdx : relIdx + 1;
     }
     sorted.splice(insertAt, 0, piece);
-    return persistClips(prev, sorted, 'add title card');
+    return persistClips(base, sorted, 'add title card');
   });
   return newId;
 };
@@ -876,7 +877,8 @@ const addFlyer = (
 ): string | null => {
   let newId: string | null = null;
   setCurrentVideoProjectState((prev) => {
-    if (!prev) return prev;
+    const base = prev ?? projectRef.current;
+    if (!base) return prev;
     const dur = Math.max(500, Math.round(durationMs));
     newId = `flyer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const overlays = caption?.trim()
@@ -907,7 +909,7 @@ const addFlyer = (
       filterId: 'none',
     };
 
-    const sorted = [...prev.clips].sort((a, b) => a.order - b.order);
+    const sorted = [...base.clips].sort((a, b) => a.order - b.order);
     let insertAt = sorted.length;
     if (where === 'start') insertAt = 0;
     else if (where === 'end') insertAt = sorted.length;
@@ -918,7 +920,7 @@ const addFlyer = (
       else insertAt = where === 'before' ? relIdx : relIdx + 1;
     }
     sorted.splice(insertAt, 0, piece);
-    return persistClips(prev, sorted, 'add flyer');
+    return persistClips(base, sorted, 'add flyer');
   });
   return newId;
 };
@@ -1000,6 +1002,9 @@ const persistClips = (prev: VideoProject, clips: VideoClip[], logLabel: string):
     ...(derivedCover ? { coverThumbnailUri: derivedCover } : null),
     updatedAt: new Date().toISOString(),
   };
+  // Keep ref in sync inside the setState updater so chained inserts in the same
+  // tick (multi-pick) don't fall back to a stale empty project.
+  projectRef.current = updated;
   AsyncStorage.setItem(
     CONFIG.ASYNC_STORAGE_KEYS.CURRENT_VIDEO_PROJECT,
     JSON.stringify(updated)

@@ -185,6 +185,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         token!,
         thumbnailUrl
       );
+      if (newProject.thumbnailUrl) {
+        const { markProjectCoverSynced } = await import('../services/projectCoverSync');
+        markProjectCoverSynced(newProject.id, newProject.thumbnailUrl);
+      }
       const updatedList = [newProject, ...projects];
       await persistList(updatedList);
       setCurrentProject(newProject);
@@ -234,6 +238,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       }
     } catch (e: any) {
       setError(e.message);
+      throw e;
     }
   };
 

@@ -39,6 +39,8 @@ import {
 import { useVersionHistory } from "../Contexts/VersionHistoryContext";
 import { uploadService } from "../services/uploadService";
 import { markProjectCoverSynced } from "../services/projectCoverSync";
+import { getCachedProjectCover } from "../services/projectCoverService";
+import { resolveMediaUrl } from "../services/mediaUrl";
 import { CONFIG } from "../config";
 import { Clip, Member, Comment } from "../types";
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -66,44 +68,75 @@ const Avatar = ({
   color: string;
   size?: number;
   avatarUrl?: string;
-}) =>
-  avatarUrl ? (
-    <Image
-      source={{ uri: avatarUrl }}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: 1.5,
-        borderColor: color,
-      }}
-    />
-  ) : (
-  <View
-    style={[
-      styles.avatar,
-      {
-        backgroundColor: color + "33",
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderColor: color,
-      },
-    ]}
-  >
-    <Text
+}) => {
+  const resolved = resolveMediaUrl(avatarUrl);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [resolved]);
+
+  if (resolved && !failed) {
+    return (
+      <Image
+        source={{ uri: resolved }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 1.5,
+          borderColor: color,
+        }}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <View
       style={[
-        styles.avatarText,
-        { color, fontSize: moderateScale(size * 0.35) },
+        styles.avatar,
+        {
+          backgroundColor: color + "33",
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderColor: color,
+        },
       ]}
     >
-      {initials}
-    </Text>
-  </View>
+      <Text
+        style={[
+          styles.avatarText,
+          { color, fontSize: moderateScale(size * 0.35) },
+        ]}
+      >
+        {initials}
+      </Text>
+    </View>
   );
+};
 
 
 // ─── Clips Tab ────────────────────────────────────────//
+
+const ClipThumb = ({ clip }: { clip: Clip }) => {
+  const uri = resolveMediaUrl(clip.thumbnailUrl);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [uri]);
+
+  if (uri && !failed) {
+    return (
+      <Image
+        source={{ uri }}
+        style={styles.clipThumbImage}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return <Ionicons name="play" size={moderateScale(18)} color={YELLOW} />;
+};
 
 const ClipsTab = ({
   clips,
@@ -164,7 +197,7 @@ const ClipsTab = ({
           onPress={() => onOpenClip(clip)}
         >
           <View style={styles.clipThumb}>
-            <Ionicons name="play" size={moderateScale(18)} color={YELLOW} />
+            <ClipThumb clip={clip} />
           </View>
           <View style={styles.clipInfo}>
             <Text style={styles.clipTitle}>{clip.title}</Text>
@@ -273,8 +306,10 @@ const MembersTab = ({
     <View>
       {members.map((member) => {
         const photoUri =
-          member.avatarUrl ||
-          (member.userId === user?.id ? user?.avatarUrl : undefined);
+          resolveMediaUrl(member.avatarUrl) ||
+          (member.userId === user?.id
+            ? resolveMediaUrl(user?.avatarUrl)
+            : undefined);
         return (
         <View key={member.id} style={styles.memberRow}>
           <View>
@@ -652,6 +687,8 @@ export default function ProjectDetailScreen() {
   const { user } = useAuth();
   const {
     currentProject,
+    projects,
+    setCurrentProject,
     updateThumbnail,
     renameProject,
     updateStatus,
@@ -662,6 +699,37 @@ export default function ProjectDetailScreen() {
 
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameInput, setRenameInput] = useState(currentProject?.name ?? "");
+  const [bannerFailed, setBannerFailed] = useState(false);
+
+  const bannerUri = React.useMemo(() => {
+    if (!currentProject) return undefined;
+    if (bannerFailed) return undefined;
+    return (
+      resolveMediaUrl(
+        currentProject.thumbnailUrl || getCachedProjectCover(currentProject.id)
+      ) || undefined
+    );
+  }, [currentProject?.id, currentProject?.thumbnailUrl, bannerFailed]);
+
+  useEffect(() => {
+    setBannerFailed(false);
+  }, [currentProject?.id, currentProject?.thumbnailUrl]);
+
+  // If create/list has a cover and the open project is missing it (or stale), adopt it.
+  useEffect(() => {
+    if (!currentProject?.id) return;
+    const fromList = projects.find((p) => p.id === currentProject.id);
+    if (!fromList?.thumbnailUrl) return;
+    if (fromList.thumbnailUrl === currentProject.thumbnailUrl) return;
+    if (!currentProject.thumbnailUrl) {
+      setCurrentProject(fromList);
+    }
+  }, [
+    projects,
+    currentProject?.id,
+    currentProject?.thumbnailUrl,
+    setCurrentProject,
+  ]);
 
   const openRenameSheet = () => {
     setRenameInput(currentProject?.name ?? "");
@@ -686,7 +754,7 @@ export default function ProjectDetailScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.7,
@@ -704,8 +772,10 @@ export default function ProjectDetailScreen() {
         fileName,
         mime
       );
-      await updateThumbnail(currentProject.id, uploaded.url);
-      markProjectCoverSynced(currentProject.id, uploaded.url);
+      const durable = resolveMediaUrl(uploaded.url) || uploaded.url;
+      await updateThumbnail(currentProject.id, durable);
+      markProjectCoverSynced(currentProject.id, durable);
+      setBannerFailed(false);
     } catch (e: any) {
       Alert.alert("Couldn’t update cover", e?.message || "Try again.");
     }
@@ -1202,10 +1272,14 @@ export default function ProjectDetailScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {/* Thumbnail */}
+        {/* Project cover — list thumbnail, not a clip. Tap to change. */}
         <Pressable style={styles.thumbnail} onPress={pickCoverImage}>
-          {currentProject.thumbnailUrl ? ( // CHANGED: read from currentProject, not local state
-            <Image source={{ uri: currentProject.thumbnailUrl }} style={styles.coverImage} />
+          {bannerUri ? (
+            <Image
+              source={{ uri: bannerUri }}
+              style={styles.coverImage}
+              onError={() => setBannerFailed(true)}
+            />
           ) : (
             <Ionicons
               name="film"
@@ -1214,6 +1288,11 @@ export default function ProjectDetailScreen() {
               style={{ opacity: 0.4 }}
             />
           )}
+          <View style={styles.coverHint} pointerEvents="none">
+            <Text style={styles.coverHintText}>
+              {bannerUri ? "Project cover · tap to change" : "Add project cover"}
+            </Text>
+          </View>
         </Pressable>
 
         {/* Title + Badge */}
@@ -1445,11 +1524,26 @@ function makeProjectStyles() {
     justifyContent: "center",
     alignItems: "center",
     marginBottom: verticalScale(16),
+    overflow: "hidden",
   },
   coverImage:{
   width:'100%',
   height:'100%',
   borderRadius:12,
+  },
+  coverHint: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(12),
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  coverHintText: {
+    color: "#FFFFFF",
+    fontSize: moderateScale(11),
+    fontWeight: "600",
   },
   centered: {
     flex: 1,
@@ -1648,6 +1742,11 @@ renamePencil: {
     borderRadius: moderateScale(8),
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
+  },
+  clipThumbImage: {
+    width: "100%",
+    height: "100%",
   },
   clipInfo: {
     flex: 1,

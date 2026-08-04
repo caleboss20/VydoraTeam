@@ -39,8 +39,12 @@ function titleFromName(name: string): string {
 export async function pickVideosFromGallery(
   selectionLimit = 12
 ): Promise<PickedMixVideo[]> {
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
+  // Prefer existing grant — requestMediaLibraryPermissionsAsync can stall on slow networks.
+  let perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+  if (!perm.granted) {
+    perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  }
+  if (!perm.granted) {
     throw new Error('Allow photo library access to add videos to the timeline.');
   }
 
@@ -110,8 +114,11 @@ export async function pickImagesFromGallery(
   selectionLimit = 12,
   durationMs = 5000
 ): Promise<PickedMixImage[]> {
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
+  let perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+  if (!perm.granted) {
+    perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  }
+  if (!perm.granted) {
     throw new Error('Allow photo library access to add photos to the timeline.');
   }
 

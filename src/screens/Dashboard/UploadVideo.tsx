@@ -344,29 +344,46 @@ export default function UploadVideoScreen({ navigation }: any) {
   };
 
   const pickFromCameraRoll = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow access to your camera roll to choose a video.');
-      return;
+    try {
+      let perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      }
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow access to your camera roll to choose a video.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        quality: 1,
+        allowsMultipleSelection: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const name = asset.fileName || `camera_roll_${Date.now()}.mp4`;
+      // duration from expo-image-picker is seconds on most platforms
+      const durationMs =
+        typeof asset.duration === 'number' && asset.duration > 0
+          ? Math.round(asset.duration > 1000 ? asset.duration : asset.duration * 1000)
+          : undefined;
+      addFile(name, asset.uri, asset.fileSize ?? 0, durationMs);
+    } catch (e: any) {
+      Alert.alert('Couldn’t open library', e?.message || 'Try Files instead.');
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      quality: 1,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    const name = asset.fileName || `camera_roll_${Date.now()}.mp4`;
-    addFile(name, asset.uri, asset.fileSize ?? 0, asset.duration ?? undefined);
   };
 
   const pickFromFiles = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'audio/mpeg'],
-      multiple: true,
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled) return;
-    result.assets.forEach((asset) => addFile(asset.name, asset.uri, asset.size ?? 0));
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'audio/mpeg', 'video/*'],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      result.assets.forEach((asset) => addFile(asset.name, asset.uri, asset.size ?? 0));
+    } catch (e: any) {
+      Alert.alert('Couldn’t open Files', e?.message || 'Try again.');
+    }
   };
 
   const pickFromCloud = pickFromFiles;

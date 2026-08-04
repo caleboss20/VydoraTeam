@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CONFIG } from '../config';
 import { clipService } from './clipService';
 import type { Project, VideoProject } from '../types';
+import { resolveMediaUrl } from './mediaUrl';
 
 const MEMORY = new Map<string, string>();
 const DISK_KEY = '@vydora/project_covers_v1';
@@ -51,16 +52,17 @@ type CoverListener = (projectId: string, uri: string) => void;
 const listeners = new Set<CoverListener>();
 
 function remember(projectId: string, uri: string): string {
-  MEMORY.set(projectId, uri);
+  const durable = resolveMediaUrl(uri) || uri;
+  MEMORY.set(projectId, durable);
   scheduleDiskPersist();
   listeners.forEach((fn) => {
     try {
-      fn(projectId, uri);
+      fn(projectId, durable);
     } catch {
       // ignore listener errors
     }
   });
-  return uri;
+  return durable;
 }
 
 /** Write a known cover into memory + disk (and notify subscribers). */
@@ -171,7 +173,10 @@ export async function resolveProjectCovers(
 
   // Instant pass: already-known URLs (API field + cache) — no network.
   for (const p of projects) {
-    const instant = p.thumbnailUrl || MEMORY.get(p.id);
+    const instant =
+      resolveMediaUrl(p.thumbnailUrl) ||
+      resolveMediaUrl(MEMORY.get(p.id)) ||
+      MEMORY.get(p.id);
     if (instant) {
       out[p.id] = instant;
       remember(p.id, instant);

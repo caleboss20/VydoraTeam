@@ -1,5 +1,8 @@
 import React, { useEffect } from "react";
+import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useFonts } from "expo-font";
+import { Ionicons } from "@expo/vector-icons";
 import MainStackNavigator from "./src/screens/MainstackNavigator";
 import { NavigationContainer, LinkingOptions, DefaultTheme, DarkTheme } from "@react-navigation/native";
 import { AuthProvider } from "./src/screens/Contexts/Authcontext";
@@ -61,37 +64,57 @@ function AppNavigation() {
 }
 
 export default function App() {
+  // Preload icon font so Ionicons don't flash/lag after Metro serves the JS.
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+  });
+
   useEffect(() => {
     void resolveApiEndpoint();
   }, []);
 
+  if (!fontsLoaded) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#0B0B0D",
+        }}
+      >
+        <ActivityIndicator color="#F5C518" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <ProjectProvider>
-            <VideoProjectProvider>
-              <InviteProvider>
-                <ClipProvider>
-                  <VersionHistoryProvider>
-                    <ExportProvider>
-                      <MemberProvider>
-                        <CommentProvider>
-                          <MessageProvider>
-                            <NotificationProvider>
-                              <AppNavigation />
-                            </NotificationProvider>
-                          </MessageProvider>
-                        </CommentProvider>
-                      </MemberProvider>
-                    </ExportProvider>
-                  </VersionHistoryProvider>
-                </ClipProvider>
-              </InviteProvider>
-            </VideoProjectProvider>
-          </ProjectProvider>
-        </AuthProvider>
-      </ThemeProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <ProjectProvider>
+          <VideoProjectProvider>
+            <InviteProvider>
+              <ClipProvider>
+                <VersionHistoryProvider>
+                  <ExportProvider>
+                    <MemberProvider>
+                      <CommentProvider>
+                        <MessageProvider>
+                          <NotificationProvider>
+                            <AppNavigation />
+                          </NotificationProvider>
+                        </MessageProvider>
+                      </CommentProvider>
+                    </MemberProvider>
+                  </ExportProvider>
+                </VersionHistoryProvider>
+              </ClipProvider>
+            </InviteProvider>
+          </VideoProjectProvider>
+        </ProjectProvider>
+      </AuthProvider>
+    </ThemeProvider>
     </SafeAreaProvider>
   );
 }

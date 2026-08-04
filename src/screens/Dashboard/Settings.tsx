@@ -240,7 +240,7 @@ const SettingsScreen: FC = () => {
               <View>
                 <Text style={styles.title}>Theme</Text>
                 <Text style={styles.subtitle}>
-                  {isDark ? 'Dark mode' : 'Light mode'}
+                  {isDark ? 'Light mode' : 'Dark mode'}
                 </Text>
               </View>
             </View>

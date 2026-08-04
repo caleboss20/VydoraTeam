@@ -161,7 +161,8 @@ let COLORS: Record<string, string> = {
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const PX_PER_SECOND = scale(50);
-const HANDLE_WIDTH = scale(14);
+const HANDLE_WIDTH = scale(18);
+const MIN_TRIM_PX = Math.max(HANDLE_WIDTH * 2, (PX_PER_SECOND * 200) / 1000);
 
 const formatTime = (ms: number) => {
   const totalSeconds = Math.floor(ms / 1000);
@@ -170,11 +171,29 @@ const formatTime = (ms: number) => {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
+const ClipFilmPlaceholder = ({ width }: { width: number }) => (
+  <View
+    style={[
+      styles.clipPlaceholder,
+      {
+        width,
+        backgroundColor: "#1A1D27",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+    ]}
+  >
+    <Ionicons name="film-outline" size={scale(16)} color="#4F5E7B" />
+  </View>
+);
+
 // Unified Clip Trimmer Component
 interface ClipTrimmerProps {
   clip: VideoClip;
   thumbnails: string[];
   onTrimEnd: (clipId: string, trimStartMs: number, trimEndMs: number) => void;
+  /** Lock the timeline ScrollView while a handle is dragged. */
+  onTrimGesture?: (active: boolean) => void;
   isActive: boolean;
   onPress: () => void;
 }
@@ -183,12 +202,14 @@ function ClipTrimmer({
   clip,
   thumbnails,
   onTrimEnd,
+  onTrimGesture,
   isActive,
   onPress,
 }: ClipTrimmerProps) {
-
-  
-  const clipDurationPx = (clip.durationMs / 1000) * PX_PER_SECOND;
+  const clipDurationPx = Math.max(
+    PX_PER_SECOND * 0.5,
+    (clip.durationMs / 1000) * PX_PER_SECOND
+  );
   const trimStartMs = clip.trimStartMs ?? 0;
   const trimEndMs = clip.trimEndMs ?? clip.durationMs;
 
@@ -197,23 +218,44 @@ function ClipTrimmer({
 
   useEffect(() => {
     setStartPx((trimStartMs / 1000) * PX_PER_SECOND);
-  }, [trimStartMs]);
+  }, [trimStartMs, clip.id]);
 
   useEffect(() => {
     setEndPx((trimEndMs / 1000) * PX_PER_SECOND);
-  }, [trimEndMs]);
+  }, [trimEndMs, clip.id]);
 
-  const stateRef = useRef({ startPx, endPx, clipDurationPx, onTrimEnd, clip });
-  stateRef.current = { startPx, endPx, clipDurationPx, onTrimEnd, clip };
+  const stateRef = useRef({
+    startPx,
+    endPx,
+    clipDurationPx,
+    onTrimEnd,
+    onTrimGesture,
+    clip,
+  });
+  stateRef.current = {
+    startPx,
+    endPx,
+    clipDurationPx,
+    onTrimEnd,
+    onTrimGesture,
+    clip,
+  };
 
   const dragStartRef = useRef(0);
 
-  const createPanResponder = (side: "left" | "right") => {
-    return PanResponder.create({
+  const createPanResponder = (side: "left" | "right") =>
+    PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2,
+      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 2,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => {
-        const { startPx: sPx, endPx: ePx } = stateRef.current;
+        const { startPx: sPx, endPx: ePx, onTrimGesture: lock } =
+          stateRef.current;
         dragStartRef.current = side === "left" ? sPx : ePx;
+        lock?.(true);
       },
       onPanResponderMove: (_, gestureState) => {
         const {
@@ -223,10 +265,10 @@ function ClipTrimmer({
         } = stateRef.current;
         if (side === "left") {
           const next = dragStartRef.current + gestureState.dx;
-          setStartPx(Math.max(0, Math.min(next, ePx - HANDLE_WIDTH)));
+          setStartPx(Math.max(0, Math.min(next, ePx - MIN_TRIM_PX)));
         } else {
           const next = dragStartRef.current + gestureState.dx;
-          setEndPx(Math.min(cDur, Math.max(next, sPx + HANDLE_WIDTH)));
+          setEndPx(Math.min(cDur, Math.max(next, sPx + MIN_TRIM_PX)));
         }
       },
       onPanResponderRelease: () => {
@@ -235,27 +277,38 @@ function ClipTrimmer({
           endPx: ePx,
           clip: currentClip,
           onTrimEnd: callback,
+          onTrimGesture: lock,
         } = stateRef.current;
-        const newStartMs = Math.round((sPx / PX_PER_SECOND) * 1000);
-        const newEndMs = Math.round((ePx / PX_PER_SECOND) * 1000);
+        lock?.(false);
+        const newStartMs = Math.max(
+          0,
+          Math.round((sPx / PX_PER_SECOND) * 1000)
+        );
+        const newEndMs = Math.min(
+          currentClip.durationMs,
+          Math.round((ePx / PX_PER_SECOND) * 1000)
+        );
+        if (newEndMs - newStartMs < 200) return;
         callback(currentClip.id, newStartMs, newEndMs);
       },
+      onPanResponderTerminate: () => {
+        stateRef.current.onTrimGesture?.(false);
+      },
     });
-  };
 
   const leftPanResponder = useRef(createPanResponder("left")).current;
   const rightPanResponder = useRef(createPanResponder("right")).current;
 
   const clipSeconds = Math.max(1, Math.ceil(clip.durationMs / 1000));
-  const isTitle = clip.kind === 'title';
-  const isFlyer = clip.kind === 'flyer';
-  const titleBg = clip.titleCard?.backgroundColor ?? '#000000';
-  const titleLabel = clip.titleCard?.title ?? 'Title';
+  const isTitle = clip.kind === "title";
+  const isFlyer = clip.kind === "flyer";
+  const titleBg = clip.titleCard?.backgroundColor ?? "#000000";
+  const titleLabel = clip.titleCard?.title ?? "Title";
   const titleFg =
     clip.titleCard?.textColor ??
-    (['#FFFFFF', '#F5C518'].includes(titleBg.toUpperCase())
-      ? '#0B0D13'
-      : '#FFFFFF');
+    (["#FFFFFF", "#F5C518"].includes(titleBg.toUpperCase())
+      ? "#0B0D13"
+      : "#FFFFFF");
 
   if (isFlyer && !isActive) {
     const trimStart = clip.trimStartMs ?? 0;
@@ -272,31 +325,20 @@ function ClipTrimmer({
           width: w,
           height: verticalScale(46),
           borderRadius: scale(4),
-          overflow: 'hidden',
+          overflow: "hidden",
           opacity: 0.85,
           borderWidth: 1,
-          borderColor: 'rgba(245,197,24,0.45)',
+          borderColor: "rgba(245,197,24,0.45)",
         }}
       >
         {clip.uri ? (
           <Image
             source={{ uri: clip.uri }}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: "100%", height: "100%" }}
             resizeMode="cover"
           />
         ) : (
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: '#222',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: moderateScale(9) }}>
-              Flyer
-            </Text>
-          </View>
+          <ClipFilmPlaceholder width={w} />
         )}
       </TouchableOpacity>
     );
@@ -319,11 +361,11 @@ function ClipTrimmer({
           backgroundColor: titleBg,
           borderRadius: scale(4),
           opacity: 0.75,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
           paddingHorizontal: scale(6),
           borderWidth: 1,
-          borderColor: 'rgba(245,197,24,0.35)',
+          borderColor: "rgba(245,197,24,0.35)",
         }}
       >
         <Text
@@ -331,7 +373,7 @@ function ClipTrimmer({
           style={{
             color: titleFg,
             fontSize: moderateScale(9),
-            fontWeight: '700',
+            fontWeight: "700",
           }}
         >
           {titleLabel}
@@ -341,55 +383,49 @@ function ClipTrimmer({
   }
 
   if (!isActive) {
-  const trimStart = clip.trimStartMs ?? 0;
-  const trimEnd = clip.trimEndMs ?? clip.durationMs;
-  const startFrame = Math.floor(trimStart / 1000);
-  const endFrame = Math.ceil(trimEnd / 1000);
-  const visibleThumbnails = thumbnails.slice(startFrame, endFrame);
-  const displayThumbs = visibleThumbnails.length > 0 ? visibleThumbnails : thumbnails;
+    const trimStart = clip.trimStartMs ?? 0;
+    const trimEnd = clip.trimEndMs ?? clip.durationMs;
+    const startFrame = Math.floor(trimStart / 1000);
+    const endFrame = Math.ceil(trimEnd / 1000);
+    const visibleThumbnails = thumbnails.slice(startFrame, endFrame);
+    const displayThumbs =
+      visibleThumbnails.length > 0 ? visibleThumbnails : thumbnails;
+    const inactiveW = Math.max(
+      PX_PER_SECOND * 0.5,
+      ((trimEnd - trimStart) / 1000) * PX_PER_SECOND
+    );
 
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={{
-        flexDirection: "row",
-        position: "relative",
-        height: verticalScale(46),
-      }}
-    >
-      {displayThumbs.length > 0 ? (
-        displayThumbs.map((uri, i) => (
-          <Image
-            key={i}
-            source={{ uri }}
-            style={{
-              width: PX_PER_SECOND,
-              height: verticalScale(46),
-              opacity: 0.6,
-            }}
-            resizeMode="cover"
-          />
-        ))
-      ) : (
-        <View
-          style={[
-            styles.clipPlaceholder,
-            { width: PX_PER_SECOND * Math.max(1, Math.ceil((trimEnd - trimStart) / 1000)) },
-          ]}
-        >
-          <Image
-            source={{
-              uri: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300",
-            }}
-            style={styles.clipPlaceholderImg}
-          />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-}
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        style={{
+          flexDirection: "row",
+          position: "relative",
+          height: verticalScale(46),
+        }}
+      >
+        {displayThumbs.length > 0 ? (
+          displayThumbs.map((uri, i) => (
+            <Image
+              key={i}
+              source={{ uri }}
+              style={{
+                width: PX_PER_SECOND,
+                height: verticalScale(46),
+                opacity: 0.6,
+              }}
+              resizeMode="cover"
+            />
+          ))
+        ) : (
+          <ClipFilmPlaceholder width={inactiveW} />
+        )}
+      </TouchableOpacity>
+    );
+  }
 
+  const keepMs = Math.max(200, Math.round(((endPx - startPx) / PX_PER_SECOND) * 1000));
 
   return (
     <View
@@ -405,26 +441,17 @@ function ClipTrimmer({
           style={{
             width: PX_PER_SECOND * clipSeconds,
             height: verticalScale(46),
-            overflow: 'hidden',
+            overflow: "hidden",
           }}
         >
           {clip.uri ? (
             <Image
               source={{ uri: clip.uri }}
-              style={{ width: '100%', height: '100%' }}
+              style={{ width: "100%", height: "100%" }}
               resizeMode="cover"
             />
           ) : (
-            <View
-              style={{
-                flex: 1,
-                backgroundColor: '#333',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '700' }}>Flyer</Text>
-            </View>
+            <ClipFilmPlaceholder width={PX_PER_SECOND * clipSeconds} />
           )}
         </View>
       ) : isTitle ? (
@@ -433,8 +460,8 @@ function ClipTrimmer({
             width: PX_PER_SECOND * clipSeconds,
             height: verticalScale(46),
             backgroundColor: titleBg,
-            alignItems: 'center',
-            justifyContent: 'center',
+            alignItems: "center",
+            justifyContent: "center",
             paddingHorizontal: scale(8),
           }}
         >
@@ -443,7 +470,7 @@ function ClipTrimmer({
             style={{
               color: titleFg,
               fontSize: moderateScale(10),
-              fontWeight: '800',
+              fontWeight: "800",
             }}
           >
             {titleLabel}
@@ -459,19 +486,7 @@ function ClipTrimmer({
           />
         ))
       ) : (
-        <View
-          style={[
-            styles.clipPlaceholder,
-            { width: PX_PER_SECOND * clipSeconds },
-          ]}
-        >
-          <Image
-            source={{
-              uri: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300",
-            }}
-            style={styles.clipPlaceholderImg}
-          />
-        </View>
+        <ClipFilmPlaceholder width={PX_PER_SECOND * clipSeconds} />
       )}
 
       {/* Dimmed Overlays */}
@@ -490,7 +505,7 @@ function ClipTrimmer({
           styles.dimOverlay,
           {
             left: endPx,
-            width: clipDurationPx - endPx,
+            width: Math.max(0, clipDurationPx - endPx),
           },
         ]}
         pointerEvents="none"
@@ -502,11 +517,39 @@ function ClipTrimmer({
           styles.activeBorderOutline,
           {
             left: startPx,
-            width: endPx - startPx,
+            width: Math.max(MIN_TRIM_PX, endPx - startPx),
           },
         ]}
         pointerEvents="none"
       />
+
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          left: startPx,
+          right: undefined,
+          width: Math.max(MIN_TRIM_PX, endPx - startPx),
+          bottom: verticalScale(2),
+          alignItems: "center",
+          zIndex: 6,
+        }}
+      >
+        <Text
+          style={{
+            color: "#0B0D13",
+            backgroundColor: COLORS.yellow,
+            fontSize: moderateScale(9),
+            fontWeight: "800",
+            paddingHorizontal: scale(5),
+            paddingVertical: 1,
+            borderRadius: scale(4),
+            overflow: "hidden",
+          }}
+        >
+          {formatTime(keepMs)}
+        </Text>
+      </View>
 
       {/* CapCut-style keyframe diamonds (volume = yellow, opacity = teal) */}
       {(clip.volumeKeyframes ?? []).map((kf, i) => {
@@ -517,15 +560,15 @@ function ClipTrimmer({
             key={`v-${i}-${kf.timeMs}`}
             pointerEvents="none"
             style={{
-              position: 'absolute',
+              position: "absolute",
               left: x - scale(4),
               top: verticalScale(4),
               width: scale(8),
               height: scale(8),
               backgroundColor: COLORS.yellow,
-              transform: [{ rotate: '45deg' }],
+              transform: [{ rotate: "45deg" }],
               borderWidth: 1,
-              borderColor: '#111',
+              borderColor: "#111",
               zIndex: 5,
             }}
           />
@@ -539,47 +582,33 @@ function ClipTrimmer({
             key={`o-${i}-${kf.timeMs}`}
             pointerEvents="none"
             style={{
-              position: 'absolute',
+              position: "absolute",
               left: x - scale(4),
               bottom: verticalScale(4),
               width: scale(8),
               height: scale(8),
               backgroundColor: COLORS.tealAccent,
-              transform: [{ rotate: '45deg' }],
+              transform: [{ rotate: "45deg" }],
               borderWidth: 1,
-              borderColor: '#111',
+              borderColor: "#111",
               zIndex: 5,
             }}
           />
         );
       })}
 
-     {/* Left Trim Handle */}
-<View
-  style={[
-    styles.trimHandle,
-    styles.leftTrimHandle,
-    { transform: [{ translateX: startPx }] },
-  ]}
-  hitSlop={{ left: scale(15), right: scale(15), top: 0, bottom: 0 }}
-  {...leftPanResponder.panHandlers}
->
-  <View style={styles.trimHandleBar} />
-</View>
-
-{/* Right Trim Handle */}
-<View
-  style={[
-    styles.trimHandle,
-    styles.rightTrimHandle,
-    { transform: [{ translateX: endPx - HANDLE_WIDTH }] },
-  ]}
-  hitSlop={{ left: scale(15), right: scale(15), top: 0, bottom: 0 }}
-  {...rightPanResponder.panHandlers}
->
-  <View style={styles.trimHandleBar} />
-</View>
-
+      {/* Left Trim Handle */}
+      <View
+        style={[
+          styles.trimHandle,
+          styles.leftTrimHandle,
+          { transform: [{ translateX: startPx }] },
+        ]}
+        hitSlop={{ left: scale(20), right: scale(20), top: scale(8), bottom: scale(8) }}
+        {...leftPanResponder.panHandlers}
+      >
+        <View style={styles.trimHandleBar} />
+      </View>
 
       {/* Right Trim Handle */}
       <View
@@ -588,6 +617,7 @@ function ClipTrimmer({
           styles.rightTrimHandle,
           { transform: [{ translateX: endPx - HANDLE_WIDTH }] },
         ]}
+        hitSlop={{ left: scale(20), right: scale(20), top: scale(8), bottom: scale(8) }}
         {...rightPanResponder.panHandlers}
       >
         <View style={styles.trimHandleBar} />
@@ -1906,11 +1936,6 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
     } catch {
       /* older expo-video builds */
     }
-    try {
-      p.muted = false;
-    } catch {
-      /* ignore */
-    }
   });
 
   // Allow video + music + voiceover to play at the same time.
@@ -1947,6 +1972,10 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
   /** Guard against repeated timeUpdate fires at a clip's trim end. */
   const clipAdvanceLockRef = useRef(false);
   const playRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMusicSeekRef = useRef(0);
+  const lastVoSeekRef = useRef(0);
+  const lastTimelineScrollXRef = useRef(0);
+  const lastBedAudioRef = useRef({ muted: false, vol: 1 });
 
   const [isPlaying, setIsPlaying] = useState(player.playing ?? false);
   /** True when preview hit the end — show Replay without closing tool sheets. */
@@ -1961,6 +1990,28 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
     if (!payload.isPlaying) {
       wantContinuousPlayRef.current = false;
     }
+  });
+
+  /** Natural EOF (duration wrong / trim past real length) — still advance the timeline. */
+  useEventListener(player, "playToEnd", () => {
+    if (!activeClip || activeClip.kind === "title" || activeClip.kind === "flyer") {
+      return;
+    }
+    if (clipAdvanceLockRef.current) return;
+    const activeIdx = clips.findIndex((c) => c.id === activeClip.id);
+    if (activeIdx !== -1 && activeIdx + 1 < clips.length) {
+      clipAdvanceLockRef.current = true;
+      const outgoing = activeClip.transitionOut;
+      if (outgoing && outgoing.type !== "none") {
+        runTransitionEffect(outgoing.type, outgoing.durationMs || 500);
+      }
+      playClipFromStart(clips[activeIdx + 1], true);
+      return;
+    }
+    wantContinuousPlayRef.current = false;
+    clearPlayRetry();
+    setIsPlaying(false);
+    setPlaybackEnded(true);
   });
 
   // ── PiP video overlay playback ──
@@ -2134,16 +2185,45 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
     : 0;
   const liveRotateCover = coverScaleForRotation(liveRotation);
 
-  useEffect(() => {
-    if (activeClip) {
+  /** Respect rail mute + keyframed volume; skip redundant OS calls that cause pops. */
+  const applyClipBedAudio = useCallback(
+    (bedVolume?: number) => {
+      if (
+        !activeClip ||
+        activeClip.kind === "title" ||
+        activeClip.kind === "flyer"
+      ) {
+        return;
+      }
+      const muted = (activeClip.volume ?? 1) <= 0.001;
+      const vol = muted ? 0 : (bedVolume ?? liveVolume);
+      const prev = lastBedAudioRef.current;
+      if (prev.muted === muted && Math.abs(prev.vol - vol) < 0.02) return;
+      lastBedAudioRef.current = { muted, vol };
       try {
-        player.muted = false;
-        player.volume = liveVolume;
+        player.muted = muted;
+        if (!muted) player.volume = vol;
+        try {
+          (player as any).audioMixingMode = "mixWithOthers";
+        } catch {
+          /* ignore */
+        }
       } catch {
         /* ignore */
       }
-    }
-  }, [liveVolume, activeClip?.id, player]);
+    },
+    [
+      activeClip?.id,
+      activeClip?.kind,
+      activeClip?.volume,
+      liveVolume,
+      player,
+    ]
+  );
+
+  useEffect(() => {
+    applyClipBedAudio();
+  }, [applyClipBedAudio]);
 
   //for the real time video speed//
   useEffect(() => {
@@ -2156,7 +2236,7 @@ const [pendingCropRatioId, setPendingCropRatioId] = useState<string>('original')
         curveId !== 'none' ? curveAverageSpeed(curveId) : base;
       player.playbackRate = rate;
     }
-  }, [activeClip?.speed, activeClip?.speedCurve, player]);
+  }, [activeClip?.id, activeClip?.speed, activeClip?.speedCurve, player]);
   
   // Handle active clip playback endpoint (video clips only).
 useEventListener(player, "timeUpdate", (payload) => {
@@ -2244,6 +2324,7 @@ const togglePlayback = () => {
   }
   if (activeClip?.kind === 'title' || activeClip?.kind === 'flyer') {
     if (isPlaying) {
+      wantContinuousPlayRef.current = false;
       setIsPlaying(false);
       musicPlayer.pause();
       try {
@@ -2259,6 +2340,8 @@ const togglePlayback = () => {
         setCurrentTime(trimStartMs / 1000);
       }
       setPlaybackEnded(false);
+      // Keep rolling through the whole timeline (next clips / stills).
+      wantContinuousPlayRef.current = true;
       setIsPlaying(true);
       musicPlayer.play();
       if (wowActive && wowStep === 'captions') {
@@ -2270,6 +2353,8 @@ const togglePlayback = () => {
 
   const currentlyPlaying = player.playing;
   if (currentlyPlaying) {
+    wantContinuousPlayRef.current = false;
+    clearPlayRetry();
     player.pause();
     musicPlayer.pause();
     try { voiceoverPlayer.pause(); } catch { /* ignore */ }
@@ -2284,8 +2369,10 @@ const togglePlayback = () => {
       }
     }
     setPlaybackEnded(false);
-    player.play();
-    musicPlayer.play();
+    // Continuous timeline: clip A → B → C without stopping between them.
+    wantContinuousPlayRef.current = true;
+    setIsPlaying(true);
+    ensurePlaybackRunning();
     if (wowActive && wowStep === 'captions') {
       setWowStep('export');
     }
@@ -2493,23 +2580,26 @@ const togglePlayback = () => {
     );
   }, [musicTracks, currentPositionMs]);
 
-  // Keep music preview URI + play/pause + fades/duck in sync with the timeline.
+  // Keep music preview URI in sync with the track under the playhead.
   useEffect(() => {
     const uri = activeMusicTrack?.uri ?? null;
     if (uri !== musicPreviewUri) {
       setMusicPreviewUri(uri);
-      return; // wait for player to remount on next tick
     }
-    if (!activeMusicTrack) {
+  }, [activeMusicTrack?.uri, musicPreviewUri]);
+
+  // Music volume + clip ducking (no transport seeks — those thrashed every frame).
+  useEffect(() => {
+    if (!activeMusicTrack || !musicPreviewUri) {
       try {
         if (musicPlayer.playing) musicPlayer.pause();
       } catch {
         /* ignore */
       }
+      applyClipBedAudio();
       return;
     }
     const start = activeMusicTrack.startMs ?? 0;
-    const trimStart = activeMusicTrack.trimStartMs ?? 0;
     const audible = musicAudibleMs(activeMusicTrack);
     const local = currentPositionMs - start;
     let vol = activeMusicTrack.volume ?? 0.5;
@@ -2532,65 +2622,7 @@ const togglePlayback = () => {
     } catch {
       /* ignore */
     }
-
-    // Keep clip audio alive whenever music is under the playhead — duck a bit
-    // so newly added BGM is actually audible over loud phone videos.
-    if (activeClip?.kind !== "title") {
-      try {
-        player.muted = false;
-        const bed = activeMusicTrack ? Math.min(liveVolume, 0.55) : liveVolume;
-        player.volume = bed;
-      } catch {
-        /* ignore */
-      }
-    }
-
-    if (!isPlaying) {
-      try {
-        if (musicPlayer.playing) musicPlayer.pause();
-      } catch {
-        /* ignore */
-      }
-      return;
-    }
-    const offsetMs = local + trimStart;
-    (async () => {
-      try {
-        let wantSec = Math.max(0, offsetMs) / 1000;
-        // Don't seek past the loaded file (library labels can exceed real length).
-        try {
-          const fileSec = musicPlayer.duration ?? 0;
-          if (fileSec > 0.25) {
-            wantSec = Math.min(wantSec, Math.max(0, fileSec - 0.05));
-          }
-        } catch {
-          /* ignore */
-        }
-        // Resync when scrubbing or drift > ~350ms so music tracks the playhead.
-        let drift = 999;
-        try {
-          drift = Math.abs((musicPlayer.currentTime ?? wantSec) - wantSec);
-        } catch {
-          drift = 999;
-        }
-        if (!musicPlayer.playing || drift > 0.35) {
-          await musicPlayer.seekTo(wantSec);
-          if (!musicPlayer.playing) musicPlayer.play();
-        }
-        // Re-assert mix after music starts (OS can duck/mute video otherwise).
-        if (activeClip?.kind !== "title") {
-          player.muted = false;
-          player.volume = activeMusicTrack ? Math.min(liveVolume, 0.55) : liveVolume;
-          try {
-            (player as any).audioMixingMode = "mixWithOthers";
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch (e) {
-        console.log("music sync failed", e);
-      }
-    })();
+    applyClipBedAudio(Math.min(liveVolume, 0.55));
   }, [
     activeMusicTrack?.id,
     activeMusicTrack?.uri,
@@ -2600,11 +2632,89 @@ const togglePlayback = () => {
     activeMusicTrack?.duckUnderVoiceover,
     musicPreviewUri,
     currentPositionMs,
-    isPlaying,
     voiceovers,
     liveVolume,
-    activeClip?.kind,
-    player,
+    applyClipBedAudio,
+    musicPlayer,
+  ]);
+
+  // Music transport — poll while playing instead of seeking every playhead tick.
+  useEffect(() => {
+    if (!activeMusicTrack || !musicPreviewUri) return;
+
+    const syncMusicTransport = async (force = false) => {
+      const start = activeMusicTrack.startMs ?? 0;
+      const trimStart = activeMusicTrack.trimStartMs ?? 0;
+      const local = currentPositionMs - start;
+      let wantSec = Math.max(0, local + trimStart) / 1000;
+      try {
+        const fileSec = musicPlayer.duration ?? 0;
+        if (fileSec > 0.25) {
+          wantSec = Math.min(wantSec, Math.max(0, fileSec - 0.05));
+        }
+      } catch {
+        /* ignore */
+      }
+
+      if (!isPlaying) {
+        try {
+          if (musicPlayer.playing) musicPlayer.pause();
+          let drift = 999;
+          try {
+            drift = Math.abs((musicPlayer.currentTime ?? wantSec) - wantSec);
+          } catch {
+            drift = 999;
+          }
+          if (force || drift > 0.2) {
+            await musicPlayer.seekTo(wantSec);
+          }
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
+      try {
+        let drift = 999;
+        try {
+          drift = Math.abs((musicPlayer.currentTime ?? wantSec) - wantSec);
+        } catch {
+          drift = 999;
+        }
+        const now = Date.now();
+        if (
+          force ||
+          drift > 0.45 ||
+          (!musicPlayer.playing && now - lastMusicSeekRef.current > 200)
+        ) {
+          if (!force && now - lastMusicSeekRef.current < 450 && drift < 1.2) {
+            return;
+          }
+          lastMusicSeekRef.current = now;
+          await musicPlayer.seekTo(wantSec);
+          if (!musicPlayer.playing) musicPlayer.play();
+        } else if (!musicPlayer.playing) {
+          musicPlayer.play();
+        }
+      } catch (e) {
+        console.log("music sync failed", e);
+      }
+    };
+
+    void syncMusicTransport(true);
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      void syncMusicTransport(false);
+    }, 500);
+    return () => clearInterval(id);
+  }, [
+    activeMusicTrack?.id,
+    activeMusicTrack?.startMs,
+    activeMusicTrack?.trimStartMs,
+    musicPreviewUri,
+    isPlaying,
+    currentPositionMs,
+    musicPlayer,
   ]);
 
   // Voiceover under the playhead — swap preview URI and keep audio in sync.
@@ -2634,26 +2744,64 @@ const togglePlayback = () => {
       try { if (voiceoverPlayer.playing) voiceoverPlayer.pause(); } catch { /* ignore */ }
       return;
     }
-    const offsetMs = currentPositionMs - activeVoiceover.startMs;
-    const sync = async () => {
+
+    const syncVoiceover = async (force = false) => {
+      const offsetMs = currentPositionMs - activeVoiceover.startMs;
+      const wantSec = Math.max(0, offsetMs) / 1000;
       try {
-        if (isPlaying) {
-          await voiceoverPlayer.seekTo(Math.max(0, offsetMs) / 1000);
+        if (!isPlaying) {
+          if (voiceoverPlayer.playing) voiceoverPlayer.pause();
+          let drift = 999;
+          try {
+            drift = Math.abs((voiceoverPlayer.currentTime ?? wantSec) - wantSec);
+          } catch {
+            drift = 999;
+          }
+          if (force || drift > 0.2) {
+            await voiceoverPlayer.seekTo(wantSec);
+          }
+          return;
+        }
+        let drift = 999;
+        try {
+          drift = Math.abs((voiceoverPlayer.currentTime ?? wantSec) - wantSec);
+        } catch {
+          drift = 999;
+        }
+        const now = Date.now();
+        if (
+          force ||
+          drift > 0.45 ||
+          (!voiceoverPlayer.playing && now - lastVoSeekRef.current > 200)
+        ) {
+          if (!force && now - lastVoSeekRef.current < 450 && drift < 1.2) {
+            return;
+          }
+          lastVoSeekRef.current = now;
+          await voiceoverPlayer.seekTo(wantSec);
           if (!voiceoverPlayer.playing) voiceoverPlayer.play();
-        } else if (voiceoverPlayer.playing) {
-          voiceoverPlayer.pause();
+        } else if (!voiceoverPlayer.playing) {
+          voiceoverPlayer.play();
         }
       } catch (e) {
         console.log("voiceover sync failed", e);
       }
     };
-    // Seek only when starting play or when the take changes — avoid thrashing.
-    if (isPlaying) {
-      const t = setTimeout(sync, 40);
-      return () => clearTimeout(t);
-    }
-    try { voiceoverPlayer.pause(); } catch { /* ignore */ }
-  }, [isPlaying, activeVoiceover?.id, voPreviewUri]);
+
+    void syncVoiceover(true);
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      void syncVoiceover(false);
+    }, 500);
+    return () => clearInterval(id);
+  }, [
+    isPlaying,
+    activeVoiceover?.id,
+    activeVoiceover?.startMs,
+    voPreviewUri,
+    currentPositionMs,
+    voiceoverPlayer,
+  ]);
 
   const rulerMarks = useMemo(() => {
     const marks: number[] = [];
@@ -2722,11 +2870,15 @@ const togglePlayback = () => {
 
   const timelineScrollRef = useRef<ScrollView>(null);
   const isScrubbingRef = useRef(false);
+  const [trimDragging, setTrimDragging] = useState(false);
 
   useEffect(() => {
     if (isPlaying && !isScrubbingRef.current) {
       const x = (currentPositionMs / 1000) * PX_PER_SECOND;
-      timelineScrollRef.current?.scrollTo({ x, animated: false });
+      if (Math.abs(x - lastTimelineScrollXRef.current) > 3) {
+        lastTimelineScrollXRef.current = x;
+        timelineScrollRef.current?.scrollTo({ x, animated: false });
+      }
     }
   }, [currentPositionMs, isPlaying]);
 
@@ -2942,12 +3094,15 @@ const togglePlayback = () => {
 
   /** Ensure a video project exists before adding media. */
   const ensureVideoProject = (): boolean => {
+    // `project` is filtered to the open workspace — if it matches, we're ready.
     if (project) return true;
     if (!currentProject) {
       Alert.alert("No project", "Open a project before adding media.");
       return false;
     }
     const now = new Date().toISOString();
+    // Replace a stale VP from another project (or null) so inserts always land
+    // on the open projectId and show in the editor preview.
     setCurrentVideoProject({
       id: `vp-${Date.now()}`,
       projectId: currentProject.id,
@@ -2981,21 +3136,7 @@ const togglePlayback = () => {
     let anchorId = relativeClipId ?? null;
     let insertWhere = where;
 
-    // Pre-grab frames for list cover + timeline chips (local = fast).
-    const thumbs = await Promise.all(
-      picked.map(async (item) => {
-        try {
-          const { uri } = await VideoThumbnails.getThumbnailAsync(item.uri, {
-            time: 400,
-            quality: 0.55,
-          });
-          return uri || undefined;
-        } catch {
-          return undefined;
-        }
-      })
-    );
-
+    // Insert local URIs immediately so editing can start — no backend wait.
     for (let i = 0; i < picked.length; i++) {
       const item = picked[i];
       const id = appendRemoteClip(
@@ -3003,7 +3144,6 @@ const togglePlayback = () => {
           uri: item.uri,
           durationMs: item.durationMs,
           title: item.title,
-          thumbnailUri: thumbs[i],
         },
         insertWhere,
         anchorId
@@ -3011,17 +3151,36 @@ const togglePlayback = () => {
       if (id) {
         addedIds.push(id);
         pendingUpload.push({ id, item });
-        // Stack further picks after the one we just inserted.
         insertWhere = "after";
         anchorId = id;
       }
     }
 
-    if (addedIds.length) {
-      setSelectedClipId(addedIds[addedIds.length - 1]);
+    if (!addedIds.length) {
+      Alert.alert(
+        "Couldn’t add video",
+        "The clip didn’t land on the timeline. Open a project and try again."
+      );
+      return;
     }
+    setSelectedClipId(addedIds[addedIds.length - 1]);
 
+    // Thumbnails + CDN upload in background (must not block the picker / timeline).
     for (const { id, item } of pendingUpload) {
+      void (async () => {
+        try {
+          const { uri: thumb } = await VideoThumbnails.getThumbnailAsync(item.uri, {
+            time: 400,
+            quality: 0.55,
+          });
+          if (thumb) {
+            updateClipMedia(id, { thumbnailUri: thumb });
+          }
+        } catch {
+          /* ignore thumb failures */
+        }
+      })();
+
       const uploadPromise = (async () => {
         try {
           const { url, durationMs } = await uploadMixVideo(item);
@@ -3059,9 +3218,14 @@ const togglePlayback = () => {
         anchorId = id;
       }
     }
-    if (addedIds.length) {
-      setSelectedClipId(addedIds[addedIds.length - 1]);
+    if (!addedIds.length) {
+      Alert.alert(
+        "Couldn’t add photo",
+        "The photo didn’t land on the timeline. Open a project and try again."
+      );
+      return;
     }
+    setSelectedClipId(addedIds[addedIds.length - 1]);
   };
 
   const handleAddBlankScreen = () => {
@@ -3096,9 +3260,11 @@ const togglePlayback = () => {
       return;
     }
     if (!ensureVideoProject()) return;
+    // Open the system picker first — never show "Adding…" before the sheet.
+    const picked = await pickVideosFromGallery(12);
+    if (!picked.length) return;
     setAddVideosBusy(true);
     try {
-      const picked = await pickVideosFromGallery(12);
       await appendPickedMixVideos(picked);
     } finally {
       setAddVideosBusy(false);
@@ -3111,9 +3277,10 @@ const togglePlayback = () => {
       return;
     }
     if (!ensureVideoProject()) return;
+    const picked = await pickVideosFromFiles();
+    if (!picked.length) return;
     setAddVideosBusy(true);
     try {
-      const picked = await pickVideosFromFiles();
       await appendPickedMixVideos(picked);
     } finally {
       setAddVideosBusy(false);
@@ -3126,9 +3293,10 @@ const togglePlayback = () => {
       return;
     }
     if (!ensureVideoProject()) return;
+    const picked = await pickImagesFromGallery(12, 5000);
+    if (!picked.length) return;
     setAddVideosBusy(true);
     try {
-      const picked = await pickImagesFromGallery(12, 5000);
       await appendPickedImagesAsClips(picked);
     } finally {
       setAddVideosBusy(false);
@@ -3152,10 +3320,16 @@ const togglePlayback = () => {
   const closeAddMediaSheet = () => setAddMediaSheet(null);
 
   const runFromAddSheet = (fn: () => void | Promise<void>) => {
-    closeAddMediaSheet();
-    void Promise.resolve(fn()).catch((e: any) =>
-      Alert.alert("Couldn’t add", e?.message ?? "Try again.")
-    );
+    // Open the system picker on the same tick as the tap (user-gesture).
+    // Closing the Modal first (or delaying) makes iOS cancel the picker → nothing
+    // appears on the timeline/preview.
+    void Promise.resolve(fn())
+      .catch((e: any) =>
+        Alert.alert("Couldn’t add", e?.message ?? "Try again.")
+      )
+      .finally(() => {
+        closeAddMediaSheet();
+      });
   };
 
   const handleToolPress = (
@@ -4740,65 +4914,49 @@ const handleAutoBeatCut = (): number => {
         </View>
       </View>
 
-      {/* CapCut-style deck under preview — floating white card in light mode */}
+      {/* CapCut-style deck under preview — sits below the stage, never over it */}
       <View style={styles.editorDeck}>
       {/* CapCut transport bar under preview */}
       <View style={styles.transportBar}>
-        <TouchableOpacity
-          style={styles.transportBtn}
-          hitSlop={8}
-          onPress={() => {
-            try {
-              player.pause();
-              musicPlayer.pause();
-            } catch {
-              /* ignore */
-            }
-            navigation.navigate("editorpreview", {
-              positionMs: Math.round(currentPositionMs),
-            });
-          }}
-          accessibilityLabel="Full screen"
-        >
-          <Ionicons name="scan-outline" size={scale(22)} color={COLORS.textPrimary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.transportPlay}
-          onPress={togglePlayback}
-          hitSlop={10}
-          accessibilityLabel={
-            isPlaying ? "Pause" : playbackEnded ? "Replay" : "Play"
-          }
-        >
-          <Ionicons
-            name={isPlaying ? "pause" : playbackEnded ? "refresh" : "play"}
-            size={scale(26)}
-            color={COLORS.textPrimary}
-          />
-        </TouchableOpacity>
-
-        <View style={styles.transportRight}>
+        <View style={[styles.transportSide, styles.transportLeft]}>
           <TouchableOpacity
-            style={styles.layersToggle}
-            onPress={() => setLayersOn((v) => !v)}
-            hitSlop={6}
-            accessibilityLabel="Toggle layers"
+            style={styles.transportBtn}
+            hitSlop={8}
+            onPress={() => {
+              try {
+                player.pause();
+                musicPlayer.pause();
+              } catch {
+                /* ignore */
+              }
+              navigation.navigate("editorpreview", {
+                positionMs: Math.round(currentPositionMs),
+              });
+            }}
+            accessibilityLabel="Full screen"
+          >
+            <Ionicons name="scan-outline" size={scale(22)} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.transportPlaySlot}>
+          <TouchableOpacity
+            style={styles.transportPlay}
+            onPress={togglePlayback}
+            hitSlop={14}
+            accessibilityLabel={
+              isPlaying ? "Pause" : playbackEnded ? "Replay" : "Play"
+            }
           >
             <Ionicons
-              name="copy-outline"
-              size={scale(18)}
-              color={layersOn ? COLORS.textPrimary : COLORS.textSecondary}
+              name={isPlaying ? "pause" : playbackEnded ? "refresh" : "play"}
+              size={scale(28)}
+              color={COLORS.textPrimary}
             />
-            <Text
-              style={[
-                styles.layersToggleLabel,
-                !layersOn && { color: COLORS.textSecondary },
-              ]}
-            >
-              {layersOn ? "ON" : "OFF"}
-            </Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={[styles.transportSide, styles.transportRight]}>
           <TouchableOpacity
             style={styles.transportBtn}
             hitSlop={8}
@@ -4822,6 +4980,28 @@ const handleAutoBeatCut = (): number => {
               size={scale(20)}
               color={canRedo ? COLORS.textPrimary : COLORS.textMuted}
             />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.layersToggle}
+            onPress={() => setLayersOn((v) => !v)}
+            hitSlop={6}
+            accessibilityLabel={
+              layersOn ? "Hide text and stickers" : "Show text and stickers"
+            }
+          >
+            <Ionicons
+              name="layers-outline"
+              size={scale(18)}
+              color={layersOn ? COLORS.textPrimary : COLORS.textSecondary}
+            />
+            <Text
+              style={[
+                styles.layersToggleLabel,
+                !layersOn && { color: COLORS.textSecondary },
+              ]}
+            >
+              {layersOn ? "ON" : "OFF"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -4856,6 +5036,11 @@ const handleAutoBeatCut = (): number => {
           />
         </TouchableOpacity>
       </View>
+      {activeClip && !isViewer && canEdit ? (
+        <Text style={styles.trimHintText}>
+          Tap a clip · drag yellow edges to trim · Split cuts at the playhead
+        </Text>
+      ) : null}
 
       {/* Multi-track Timeline — CapCut left rail + scroll tracks */}
       <View style={styles.timelineOuter}>
@@ -4876,11 +5061,6 @@ const handleAutoBeatCut = (): number => {
               if (!activeClip || isViewer || !canEdit) return;
               const muted = (activeClip.volume ?? 1) <= 0.001;
               updateClipVolume(activeClip.id, muted ? 1 : 0);
-              try {
-                player.muted = !muted;
-              } catch {
-                /* ignore */
-              }
             }}
             disabled={!activeClip || isViewer || !canEdit}
             accessibilityLabel="Mute clip audio"
@@ -4933,6 +5113,7 @@ const handleAutoBeatCut = (): number => {
         <ScrollView
           ref={timelineScrollRef}
           horizontal
+          scrollEnabled={!trimDragging}
           showsHorizontalScrollIndicator={false}
           bounces={false}
           decelerationRate="fast"
@@ -5039,6 +5220,7 @@ const handleAutoBeatCut = (): number => {
                       isActive={isClipActive}
                       onPress={() => setSelectedClipId(clip.id)}
                       onTrimEnd={handleTrimEnd}
+                      onTrimGesture={setTrimDragging}
                     />
                     {index < clips.length - 1 && (
                       <View style={styles.clipGapCol}>
@@ -6262,6 +6444,7 @@ const handleAutoBeatCut = (): number => {
     navigation.goBack();
   }}
 />
+{renderAddMediaSheet()}
 {/* <ExportProgressSheet
   visible={exportState !== 'idle'}
   progress={progress}
@@ -6491,7 +6674,7 @@ function __makeStyles(isDark = true) {
     width: "100%",
     paddingHorizontal: 0,
     paddingTop: verticalScale(isDark ? 8 : 6),
-    paddingBottom: verticalScale(isDark ? 36 : 14),
+    paddingBottom: verticalScale(isDark ? 10 : 8),
     backgroundColor: "#000000",
     alignItems: "center",
     justifyContent: "center",
@@ -6534,48 +6717,65 @@ function __makeStyles(isDark = true) {
       ? {}
       : {
           marginHorizontal: scale(12),
-          marginTop: verticalScale(-8),
-          borderTopLeftRadius: scale(28),
-          borderTopRightRadius: scale(28),
-          paddingTop: verticalScale(4),
+          marginTop: 0,
+          borderTopLeftRadius: scale(22),
+          borderTopRightRadius: scale(22),
+          paddingTop: verticalScale(2),
           overflow: "hidden" as const,
           shadowColor: "#000",
-          shadowOpacity: 0.08,
-          shadowRadius: 16,
-          shadowOffset: { width: 0, height: -4 },
-          elevation: 6,
+          shadowOpacity: 0.06,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: -2 },
+          elevation: 4,
         }),
   },
   transportBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: scale(isDark ? 20 : 18),
-    paddingTop: verticalScale(isDark ? 16 : 18),
-    paddingBottom: verticalScale(isDark ? 10 : 12),
+    paddingHorizontal: scale(isDark ? 14 : 12),
+    paddingTop: verticalScale(isDark ? 12 : 14),
+    paddingBottom: verticalScale(isDark ? 8 : 10),
     backgroundColor: deckSurface,
+  },
+  transportSide: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+  },
+  transportLeft: {
+    justifyContent: "flex-start",
+    paddingRight: scale(8),
   },
   transportBtn: {
     padding: scale(isDark ? 8 : 10),
   },
+  /** Fixed center slot so play never sits against the layers control. */
+  transportPlaySlot: {
+    width: scale(88),
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: scale(10),
+  },
   transportPlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
+    width: scale(52),
+    height: scale(52),
+    borderRadius: scale(26),
     alignItems: "center",
     justifyContent: "center",
   },
   transportRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scale(isDark ? 14 : 16),
-    marginLeft: "auto",
+    justifyContent: "flex-end",
+    gap: scale(isDark ? 6 : 8),
+    paddingLeft: scale(12),
   },
   layersToggle: {
     alignItems: "center",
     justifyContent: "center",
-    minWidth: scale(32),
+    minWidth: scale(36),
     paddingHorizontal: scale(4),
+    marginLeft: scale(4),
   },
   layersToggleLabel: {
     color: COLORS.textPrimary,
@@ -6590,7 +6790,7 @@ function __makeStyles(isDark = true) {
     justifyContent: "space-between",
     paddingHorizontal: scale(isDark ? 16 : 18),
     paddingTop: verticalScale(isDark ? 6 : 8),
-    paddingBottom: verticalScale(isDark ? 14 : 16),
+    paddingBottom: verticalScale(isDark ? 4 : 6),
     backgroundColor: deckSurface,
   },
   timelineClockText: {
@@ -6602,6 +6802,14 @@ function __makeStyles(isDark = true) {
   timelineClockMuted: {
     color: COLORS.textMuted,
     fontWeight: "400",
+  },
+  trimHintText: {
+    color: COLORS.textMuted,
+    fontSize: moderateScale(10),
+    fontWeight: "600",
+    paddingHorizontal: scale(isDark ? 16 : 18),
+    paddingBottom: verticalScale(10),
+    backgroundColor: deckSurface,
   },
   commentPinChip: {
     width: scale(28),

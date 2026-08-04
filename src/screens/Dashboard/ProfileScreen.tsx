@@ -33,6 +33,7 @@ import { useAuth } from "../Contexts/Authcontext";
 import { useProject } from "../Contexts/projectContext";
 import { useExport } from "../Contexts/exportContext";
 import { uploadService } from "../services/uploadService";
+import { resolveMediaUrl } from "../services/mediaUrl";
 import { Project } from "../types";
 import { useTheme } from "../Contexts/ThemeContext";
 // ─── Static content (not user data — these don't need a context) ──────────────
@@ -150,6 +151,11 @@ export default function ProfileScreen() {
 
   const navigation = useNavigation<any>();
   const { user, logout, updateUser } = useAuth();
+  const avatarUri = useMemo(() => resolveMediaUrl(user?.avatarUrl), [user?.avatarUrl]);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  React.useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarUri]);
   const { projects, setCurrentProject } = useProject();
   const { exports: exportsList } = useExport();
   const initials = useMemo(() => getInitials(user?.name), [user?.name]);
@@ -191,7 +197,7 @@ export default function ProfileScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
@@ -211,7 +217,9 @@ export default function ProfileScreen() {
     setSavingProfile(true);
     try {
       const uploaded = await uploadService.uploadImage(uri, fileName, mime);
-      await updateUser({ avatarUrl: uploaded.url });
+      const stableUrl = resolveMediaUrl(uploaded.url) || uploaded.url;
+      await updateUser({ avatarUrl: stableUrl });
+      setAvatarFailed(false);
     } catch (e: any) {
       Alert.alert("Couldn’t update photo", e?.message || "Try again.");
     } finally {
@@ -386,10 +394,11 @@ export default function ProfileScreen() {
     activeOpacity={0.8}
     onPress={handleChangeAvatar}
   >
-    {user?.avatarUrl ? (
+    {avatarUri && !avatarFailed ? (
       <Image
-        source={{ uri: user.avatarUrl }}
+        source={{ uri: avatarUri }}
         style={styles.avatarImage}
+        onError={() => setAvatarFailed(true)}
       />
     ) : (
       <Text style={styles.avatarInitial}>{initials}</Text>
@@ -523,10 +532,11 @@ export default function ProfileScreen() {
                   activeOpacity={0.8}
                   onPress={handleChangeAvatar}
                 >
-                  {user?.avatarUrl ? (
+                  {avatarUri && !avatarFailed ? (
                     <Image
-                      source={{ uri: user.avatarUrl }}
+                      source={{ uri: avatarUri }}
                       style={styles.avatarImage}
+                      onError={() => setAvatarFailed(true)}
                     />
                   ) : (
                     <Text style={styles.infoAvatarInitial}>{initials}</Text>

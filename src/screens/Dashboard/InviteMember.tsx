@@ -10,8 +10,9 @@ import {
   Animated,
   Easing,
   Platform,
-Clipboard,
+  Clipboard,
   Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -209,10 +210,16 @@ export default function InviteMemberScreen({ navigation }: any) {
           </Text>
         </Pressable>
       </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         showsVerticalScrollIndicator={false}
       >
         {/* Share link first — works even if teammate uses a different account */}
@@ -361,6 +368,7 @@ export default function InviteMemberScreen({ navigation }: any) {
           </Pressable>
         </Animated.View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

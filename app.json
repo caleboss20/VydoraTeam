@@ -7,7 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "vydora",
-  
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -27,7 +26,7 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
       ],
-      "package": "com.anonymous.Vydora",
+      "package": "com.vydora.app",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -64,6 +63,11 @@
       ],
       "expo-audio",
       "expo-web-browser"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "48acc982-08e2-4bd0-90b6-1c1d05344f04"
+      }
+    }
   }
 }
